@@ -106,6 +106,8 @@ const normalizeStatus = (status: string, eta: string): OrderStatus => {
   return "En curso";
 };
 
+const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
   orderNumber: order.numero_pedido,
