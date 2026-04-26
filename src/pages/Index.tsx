@@ -415,14 +415,23 @@ const Index = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {!isLoadingItems && pedidoItems.map((item) => (
-                        <tr key={item.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4 font-medium">{item.descripcion}</td>
+                      {!isLoadingItems && pedidoItems.map((item) => {
+                        const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
+
+                        return (
+                        <tr key={item.id} className={`transition hover:bg-surface-subtle/70 ${hasUpcomingAlert ? "bg-warning/20" : ""}`}>
+                          <td className="px-5 py-4 font-medium">
+                            <div className="flex items-center gap-2">
+                              {hasUpcomingAlert && <AlertTriangle className="h-4 w-4 text-warning-foreground" />}
+                              <span>{item.descripcion}</span>
+                            </div>
+                          </td>
                           <td className="px-5 py-4">{item.cantidad_pedida}</td>
                           <td className="px-5 py-4">{item.cantidad_recibida}</td>
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
                           <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Este pedido no tiene ítems cargados.</td>
@@ -436,6 +445,28 @@ const Index = () => {
                     </tbody>
                   </table>
                 </div>
+                {selectedOrder && (
+                  <div className="border-t p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h4 className="font-semibold">Alertas del pedido</h4>
+                      <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {pedidoAlertas.map((alerta) => (
+                        <div key={alerta.id} className={`rounded-md border p-3 ${alerta.fecha_aviso >= today() && alerta.estado !== "resuelta" ? "bg-warning/20 border-warning/30" : "bg-surface-subtle"}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-medium">{alerta.tipo}</p>
+                            <span className="rounded-md border px-2 py-0.5 text-xs font-semibold">{alerta.estado}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">Aviso: {formatDate(alerta.fecha_aviso)}{alerta.fecha_estimada ? ` · Estimada: ${formatDate(alerta.fecha_estimada)}` : ""}</p>
+                        </div>
+                      ))}
+                      {!isLoadingItems && pedidoAlertas.length === 0 && (
+                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Este pedido no tiene alertas.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selectedOrder && pedidoItems.length > 0 && (
                   <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
                     <div className="space-y-2 xl:col-span-2">
