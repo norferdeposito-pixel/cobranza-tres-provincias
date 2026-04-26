@@ -270,6 +270,30 @@ const Index = () => {
     setIsSaving(true);
     const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
 
+    if (isPreviewMode) {
+      const supplier = suppliers.find((item) => item.id === form.supplierId);
+      const createdOrder: PurchaseOrder = {
+        id: `preview-${Date.now()}`,
+        orderNumber: nextOrderNumber,
+        supplier: supplier?.nombre || "Sin proveedor",
+        supplierId: form.supplierId,
+        supplierPhone: supplier?.telefono || "",
+        status: normalizeStatus("oc_generada", form.eta),
+        rawStatus: "oc_generada",
+        ocNumber: form.ocNumber,
+        eta: form.eta,
+        notes: form.notes || "Sin observaciones",
+      };
+      setOrders((current) => [createdOrder, ...current]);
+      setSelectedOrderId(createdOrder.id);
+      setPedidoItems([]);
+      setPedidoAlertas([]);
+      setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+      setIsSaving(false);
+      toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
+      return;
+    }
+
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
