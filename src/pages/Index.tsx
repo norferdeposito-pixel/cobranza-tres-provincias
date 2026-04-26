@@ -307,7 +307,7 @@ const Index = () => {
                     </thead>
                     <tbody className="divide-y">
                       {!isLoading && filteredOrders.map((order) => (
-                        <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                        <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
                           <td className="px-5 py-4">{order.supplier}</td>
                           <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
@@ -317,6 +317,45 @@ const Index = () => {
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
                           <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedidos para mostrar.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="rounded-md border bg-card shadow-command">
+                <div className="border-b p-5">
+                  <h3 className="text-lg font-semibold">Detalle de pedido</h3>
+                  <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-sm">
+                    <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-5 py-3 font-semibold">descripcion</th>
+                        <th className="px-5 py-3 font-semibold">cantidad_pedida</th>
+                        <th className="px-5 py-3 font-semibold">cantidad_recibida</th>
+                        <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {!isLoadingItems && pedidoItems.map((item) => (
+                        <tr key={item.id} className="transition hover:bg-surface-subtle/70">
+                          <td className="px-5 py-4 font-medium">{item.descripcion}</td>
+                          <td className="px-5 py-4">{item.cantidad_pedida}</td>
+                          <td className="px-5 py-4">{item.cantidad_recibida}</td>
+                          <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
+                        </tr>
+                      ))}
+                      {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
+                        <tr>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Este pedido no tiene ítems cargados.</td>
+                        </tr>
+                      )}
+                      {!selectedOrder && (
+                        <tr>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
