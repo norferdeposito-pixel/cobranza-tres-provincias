@@ -13,6 +13,7 @@ type PurchaseOrder = {
   id: number | string;
   orderNumber: string;
   supplier: string;
+  supplierId: string;
   status: OrderStatus;
   ocNumber: string;
   eta: string;
@@ -21,22 +22,34 @@ type PurchaseOrder = {
 
 type PurchaseOrderRow = {
   id: number | string;
-  order_number: string;
-  supplier: string;
-  status: OrderStatus;
-  oc_number: string;
-  eta: string;
-  notes: string | null;
+  numero_pedido: string;
+  proveedor_id: string;
+  proveedores?: { nombre: string } | { nombre: string }[] | null;
+  estado: string;
+  numero_oc_qubigo: string;
+  fecha_estimada_entrega: string;
+  observaciones: string | null;
+};
+
+type Supplier = {
+  id: string;
+  nombre: string;
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
 ];
 
-const suppliers = ["Metalúrgica Norte", "Global Parts", "Insumos Delta", "Tecno Industrial", "Logística Andina"];
+const fallbackSuppliers: Supplier[] = [
+  { id: "", nombre: "Metalúrgica Norte" },
+  { id: "", nombre: "Global Parts" },
+  { id: "", nombre: "Insumos Delta" },
+  { id: "", nombre: "Tecno Industrial" },
+  { id: "", nombre: "Logística Andina" },
+];
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
