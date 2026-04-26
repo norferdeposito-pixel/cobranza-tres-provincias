@@ -405,6 +405,7 @@ const Index = () => {
                         <th className="px-5 py-3 font-semibold">Estado</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
+                        <th className="px-5 py-3 font-semibold">WhatsApp</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -414,11 +415,16 @@ const Index = () => {
                           <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
+                          <td className="px-5 py-4">
+                            <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
+                              <MessageCircle className="h-4 w-4" />
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
