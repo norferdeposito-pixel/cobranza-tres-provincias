@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Search } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,36 @@ type PedidoItem = {
   cantidad_pedida: number;
   cantidad_recibida: number;
   cantidad_pendiente: number;
+  unidad?: string;
+  costo_unitario?: number;
+  moneda?: string;
+  cod_articulo?: string;
+};
+
+type PedidoForm = {
+  fecha: string;
+  supplierId: string;
+  cliente: string;
+  numeroOcCliente: string;
+  plazoEntregaCliente: string;
+  plazoEntregaProveedor: string;
+  vendedor: string;
+  observaciones: string;
+  condicionesPago: string;
+  numeroPedido: string;
+  numeroOcQubigo: string;
+  estado: string;
+  fechaEstimadaEntrega: string;
+  mailVendedor: string;
+};
+
+type PedidoItemForm = {
+  descripcion: string;
+  cantidadPedida: string;
+  unidad: string;
+  costoUnitario: string;
+  moneda: string;
+  codArticulo: string;
 };
 
 type PedidoAlerta = {
