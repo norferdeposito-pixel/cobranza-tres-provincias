@@ -45,6 +45,16 @@ type PedidoItem = {
   cantidad_pendiente: number;
 };
 
+type PedidoAlerta = {
+  id: string;
+  pedido_id: string;
+  item_id: string | null;
+  tipo: string;
+  fecha_estimada: string | null;
+  fecha_aviso: string;
+  estado: string;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const initialOrders: PurchaseOrder[] = [
@@ -104,6 +114,7 @@ const Index = () => {
   const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
