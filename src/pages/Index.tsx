@@ -171,6 +171,8 @@ const Index = () => {
     [orders, query],
   );
 
+  const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
+
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
   const metrics = [
@@ -211,7 +213,11 @@ const Index = () => {
       return;
     }
 
-    if (data) setOrders((current) => [mapOrderFromSupabase(data as PurchaseOrderRow), ...current]);
+    if (data) {
+      const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
+      setOrders((current) => [createdOrder, ...current]);
+      setSelectedOrderId(createdOrder.id);
+    }
     setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
