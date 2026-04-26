@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, PackageCheck, Search } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ type PurchaseOrder = {
   orderNumber: string;
   supplier: string;
   supplierId: string;
+  supplierPhone: string;
   status: OrderStatus;
   rawStatus: string;
   ocNumber: string;
@@ -25,7 +26,7 @@ type PurchaseOrderRow = {
   id: number | string;
   numero_pedido: string;
   proveedor_id: string;
-  proveedores?: { nombre: string } | { nombre: string }[] | null;
+  proveedores?: { nombre: string; telefono: string | null } | { nombre: string; telefono: string | null }[] | null;
   estado: string;
   numero_oc_qubigo: string;
   fecha_estimada_entrega: string;
@@ -35,6 +36,7 @@ type PurchaseOrderRow = {
 type Supplier = {
   id: string;
   nombre: string;
+  telefono?: string | null;
 };
 
 type PedidoItem = {
@@ -67,10 +69,10 @@ const isUpcomingDueDate = (date: string) => {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
@@ -104,10 +106,13 @@ const normalizeStatus = (status: string, eta: string): OrderStatus => {
   return "En curso";
 };
 
+const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
   orderNumber: order.numero_pedido,
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
+  supplierPhone: Array.isArray(order.proveedores) ? order.proveedores[0]?.telefono || "" : order.proveedores?.telefono || "",
   supplierId: order.proveedor_id,
   status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
   rawStatus: order.estado,
@@ -134,10 +139,10 @@ const Index = () => {
   useEffect(() => {
     const loadOrders = async () => {
       const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
-        supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre", { ascending: true }),
+        supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
-          .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+          .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
           .order("fecha_estimada_entrega", { ascending: true }),
         supabase.from("alertas").select("id, fecha_aviso, estado"),
       ]);
@@ -244,7 +249,7 @@ const Index = () => {
         fecha_estimada_entrega: form.eta,
         observaciones: form.notes || "Sin observaciones",
       })
-      .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+        .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
       .maybeSingle();
 
     if (error) {
@@ -308,6 +313,16 @@ const Index = () => {
     setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
     setIsSavingReception(false);
     toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
+  };
+
+  const openWhatsAppMessage = (order: PurchaseOrder) => {
+    const pendingItems = selectedOrderId === order.id ? pedidoItems.filter((item) => item.cantidad_pendiente > 0) : [];
+    const pendingText = pendingItems.length > 0
+      ? pendingItems.map((item) => `- ${item.descripcion}: pendiente ${item.cantidad_pendiente} de ${item.cantidad_pedida}`).join("\n")
+      : "- Ítems pendientes según OC.";
+    const message = `Hola ${order.supplier}, consultamos por la OC ${order.ocNumber}.\nFecha estimada de entrega: ${formatDate(order.eta)}.\nÍtems pendientes:\n${pendingText}\nPor favor confirmar estado y fecha de entrega.`;
+    const phone = normalizePhoneForWhatsApp(order.supplierPhone);
+    window.open(`https://wa.me/${phone ? `${phone}?` : "?"}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -390,6 +405,7 @@ const Index = () => {
                         <th className="px-5 py-3 font-semibold">Estado</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
+                        <th className="px-5 py-3 font-semibold">WhatsApp</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -399,11 +415,16 @@ const Index = () => {
                           <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
+                          <td className="px-5 py-4">
+                            <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
+                              <MessageCircle className="h-4 w-4" />
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
@@ -461,7 +482,13 @@ const Index = () => {
                   <div className="border-t p-5">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h4 className="font-semibold">Alertas del pedido</h4>
-                      <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                        <Button size="sm" variant="outline" type="button" onClick={() => selectedOrder && openWhatsAppMessage(selectedOrder)}>
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       {pedidoAlertas.map((alerta) => (
