@@ -229,6 +229,49 @@ const Index = () => {
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
 
+  const addReception = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
+    const receivedQuantity = Number(receptionForm.quantity);
+
+    if (!selectedOrderId || !selectedItem || !receivedQuantity || receivedQuantity <= 0) return;
+
+    setIsSavingReception(true);
+    const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
+    const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+
+    const { error: receptionError } = await supabase.from("recepciones").insert({
+      pedido_id: selectedOrderId,
+      item_id: selectedItem.id,
+      fecha_recepcion: receptionForm.date,
+      cantidad_recibida: receivedQuantity,
+      nueva_fecha_entrega: receptionForm.newEta || null,
+      observaciones: receptionForm.notes || "Recepción cargada desde OC Control",
+    });
+
+    if (receptionError) {
+      toast({ title: "No se pudo guardar la recepción", description: "Revisá los permisos de inserción de recepciones.", variant: "destructive" });
+      setIsSavingReception(false);
+      return;
+    }
+
+    const { error: itemError } = await supabase
+      .from("pedido_items")
+      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending })
+      .eq("id", selectedItem.id);
+
+    if (itemError) {
+      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: "Revisá los permisos de actualización de pedido_items.", variant: "destructive" });
+      setIsSavingReception(false);
+      return;
+    }
+
+    setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+    setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
+    setIsSavingReception(false);
+    toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
