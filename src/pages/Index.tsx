@@ -76,12 +76,27 @@ const initialOrders: PurchaseOrder[] = [
 ];
 
 const fallbackSuppliers: Supplier[] = [
-  { id: "", nombre: "Metalúrgica Norte" },
-  { id: "", nombre: "Global Parts" },
-  { id: "", nombre: "Insumos Delta" },
-  { id: "", nombre: "Tecno Industrial" },
-  { id: "", nombre: "Logística Andina" },
+  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", telefono: "+54 9 11 5555-1001" },
+  { id: "demo-global-parts", nombre: "Global Parts", telefono: "+54 9 11 5555-1002" },
+  { id: "demo-insumos-delta", nombre: "Insumos Delta", telefono: "+54 9 11 5555-1003" },
+  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", telefono: "+54 9 11 5555-1004" },
+  { id: "demo-logistica-andina", nombre: "Logística Andina", telefono: "+54 9 11 5555-1005" },
 ];
+
+const demoItemsByOrderId: Record<string, PedidoItem[]> = {
+  "1": [
+    { id: "demo-1-1", descripcion: "Ruleman 6205", cantidad_pedida: 10, cantidad_recibida: 6, cantidad_pendiente: 4 },
+    { id: "demo-1-2", descripcion: "Correa industrial A42", cantidad_pedida: 18, cantidad_recibida: 18, cantidad_pendiente: 0 },
+  ],
+  "2": [{ id: "demo-2-1", descripcion: "Válvula neumática 1/2", cantidad_pedida: 8, cantidad_recibida: 0, cantidad_pendiente: 8 }],
+  "3": [{ id: "demo-3-1", descripcion: "Sensor inductivo M12", cantidad_pedida: 12, cantidad_recibida: 4, cantidad_pendiente: 8 }],
+  "4": [{ id: "demo-4-1", descripcion: "Acople flexible", cantidad_pedida: 6, cantidad_recibida: 6, cantidad_pendiente: 0 }],
+};
+
+const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
+  "1": [{ id: "demo-alerta-1", pedido_id: "1", item_id: "demo-1-1", tipo: "pendiente_parcial", fecha_estimada: "2026-05-03", fecha_aviso: "2026-05-01", estado: "en_curso" }],
+  "2": [{ id: "demo-alerta-2", pedido_id: "2", item_id: "demo-2-1", tipo: "entrega_atrasada", fecha_estimada: "2026-04-22", fecha_aviso: today(), estado: "en_curso" }],
+};
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -107,6 +122,9 @@ const normalizeStatus = (status: string, eta: string): OrderStatus => {
 };
 
 const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
+
+const getDemoItems = (orderId: string | number) => demoItemsByOrderId[String(orderId)] || [];
+const getDemoAlertas = (orderId: string | number) => demoAlertasByOrderId[String(orderId)] || [];
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
@@ -135,6 +153,7 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingReception, setIsSavingReception] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -149,10 +168,15 @@ const Index = () => {
 
       if (suppliersError || error || alertasError) {
         toast({
-          title: "No se pudieron cargar pedidos desde Supabase",
-          description: "Verificá los permisos de lectura de pedidos, proveedores y alertas.",
-          variant: "destructive",
+          title: "Preview interactivo activado",
+          description: "No se pudo conectar con la base remota, se usan datos demo editables.",
         });
+        setIsPreviewMode(true);
+        setSuppliers(fallbackSuppliers);
+        setForm((current) => ({ ...current, supplierId: fallbackSuppliers[0]?.id || "" }));
+        setOrders(initialOrders);
+        setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
+        setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
         return;
       }
@@ -179,6 +203,15 @@ const Index = () => {
 
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
+      if (isPreviewMode) {
+        const items = getDemoItems(selectedOrderId);
+        setPedidoItems(items);
+        setPedidoAlertas(getDemoAlertas(selectedOrderId));
+        setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
+        setIsLoadingItems(false);
+        return;
+      }
+
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
@@ -208,7 +241,7 @@ const Index = () => {
     };
 
     loadPedidoItems();
-  }, [selectedOrderId]);
+  }, [selectedOrderId, isPreviewMode]);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
@@ -236,6 +269,30 @@ const Index = () => {
 
     setIsSaving(true);
     const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
+
+    if (isPreviewMode) {
+      const supplier = suppliers.find((item) => item.id === form.supplierId);
+      const createdOrder: PurchaseOrder = {
+        id: `preview-${Date.now()}`,
+        orderNumber: nextOrderNumber,
+        supplier: supplier?.nombre || "Sin proveedor",
+        supplierId: form.supplierId,
+        supplierPhone: supplier?.telefono || "",
+        status: normalizeStatus("oc_generada", form.eta),
+        rawStatus: "oc_generada",
+        ocNumber: form.ocNumber,
+        eta: form.eta,
+        notes: form.notes || "Sin observaciones",
+      };
+      setOrders((current) => [createdOrder, ...current]);
+      setSelectedOrderId(createdOrder.id);
+      setPedidoItems([]);
+      setPedidoAlertas([]);
+      setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+      setIsSaving(false);
+      toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
+      return;
+    }
 
     const { data, error } = await supabase
       .from("pedidos")
@@ -282,6 +339,14 @@ const Index = () => {
     setIsSavingReception(true);
     const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
     const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+
+    if (isPreviewMode) {
+      setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+      setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
+      setIsSavingReception(false);
+      toast({ title: "Recepción cargada en preview", description: "Las cantidades se actualizaron localmente." });
+      return;
+    }
 
     const { error: receptionError } = await supabase.from("recepciones").insert({
       pedido_id: selectedOrderId,
