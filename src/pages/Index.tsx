@@ -45,6 +45,16 @@ type PedidoItem = {
   cantidad_pendiente: number;
 };
 
+type PedidoAlerta = {
+  id: string;
+  pedido_id: string;
+  item_id: string | null;
+  tipo: string;
+  fecha_estimada: string | null;
+  fecha_aviso: string;
+  estado: string;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const initialOrders: PurchaseOrder[] = [
@@ -104,6 +114,7 @@ const Index = () => {
   const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -145,26 +156,36 @@ const Index = () => {
   useEffect(() => {
     if (!selectedOrderId) {
       setPedidoItems([]);
+      setPedidoAlertas([]);
       return;
     }
 
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
-      const { data, error } = await supabase
-        .from("pedido_items")
-        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
-        .eq("pedido_id", selectedOrderId)
-        .order("created_at", { ascending: true });
+      const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
+        supabase
+          .from("pedido_items")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
+          .eq("pedido_id", selectedOrderId)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("alertas")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado")
+          .eq("pedido_id", selectedOrderId)
+          .order("fecha_aviso", { ascending: true }),
+      ]);
 
-      if (error) {
-        toast({ title: "No se pudieron cargar los ítems", description: "Revisá los permisos de lectura de pedido_items.", variant: "destructive" });
+      if (error || alertasError) {
+        toast({ title: "No se pudo cargar el detalle", description: "Revisá los permisos de lectura de pedido_items y alertas.", variant: "destructive" });
         setPedidoItems([]);
+        setPedidoAlertas([]);
         setIsLoadingItems(false);
         return;
       }
 
       const items = (data || []) as PedidoItem[];
       setPedidoItems(items);
+      setPedidoAlertas((alertasData || []) as PedidoAlerta[]);
       setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
@@ -178,6 +199,11 @@ const Index = () => {
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
+  const upcomingAlertItemIds = new Set(
+    pedidoAlertas
+      .filter((alerta) => alerta.item_id && alerta.estado !== "resuelta" && alerta.fecha_aviso >= today())
+      .map((alerta) => alerta.item_id),
+  );
 
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
@@ -389,14 +415,23 @@ const Index = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {!isLoadingItems && pedidoItems.map((item) => (
-                        <tr key={item.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4 font-medium">{item.descripcion}</td>
+                      {!isLoadingItems && pedidoItems.map((item) => {
+                        const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
+
+                        return (
+                        <tr key={item.id} className={`transition hover:bg-surface-subtle/70 ${hasUpcomingAlert ? "bg-warning/20" : ""}`}>
+                          <td className="px-5 py-4 font-medium">
+                            <div className="flex items-center gap-2">
+                              {hasUpcomingAlert && <AlertTriangle className="h-4 w-4 text-warning-foreground" />}
+                              <span>{item.descripcion}</span>
+                            </div>
+                          </td>
                           <td className="px-5 py-4">{item.cantidad_pedida}</td>
                           <td className="px-5 py-4">{item.cantidad_recibida}</td>
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
                           <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Este pedido no tiene ítems cargados.</td>
@@ -410,6 +445,28 @@ const Index = () => {
                     </tbody>
                   </table>
                 </div>
+                {selectedOrder && (
+                  <div className="border-t p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h4 className="font-semibold">Alertas del pedido</h4>
+                      <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {pedidoAlertas.map((alerta) => (
+                        <div key={alerta.id} className={`rounded-md border p-3 ${alerta.fecha_aviso >= today() && alerta.estado !== "resuelta" ? "bg-warning/20 border-warning/30" : "bg-surface-subtle"}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-medium">{alerta.tipo}</p>
+                            <span className="rounded-md border px-2 py-0.5 text-xs font-semibold">{alerta.estado}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">Aviso: {formatDate(alerta.fecha_aviso)}{alerta.fecha_estimada ? ` · Estimada: ${formatDate(alerta.fecha_estimada)}` : ""}</p>
+                        </div>
+                      ))}
+                      {!isLoadingItems && pedidoAlertas.length === 0 && (
+                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Este pedido no tiene alertas.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selectedOrder && pedidoItems.length > 0 && (
                   <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
                     <div className="space-y-2 xl:col-span-2">
