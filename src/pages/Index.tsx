@@ -315,6 +315,16 @@ const Index = () => {
     toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
   };
 
+  const openWhatsAppMessage = (order: PurchaseOrder) => {
+    const pendingItems = selectedOrderId === order.id ? pedidoItems.filter((item) => item.cantidad_pendiente > 0) : [];
+    const pendingText = pendingItems.length > 0
+      ? pendingItems.map((item) => `- ${item.descripcion}: pendiente ${item.cantidad_pendiente} de ${item.cantidad_pedida}`).join("\n")
+      : "- Ítems pendientes según OC.";
+    const message = `Hola ${order.supplier}, consultamos por la OC ${order.ocNumber}.\nFecha estimada de entrega: ${formatDate(order.eta)}.\nÍtems pendientes:\n${pendingText}\nPor favor confirmar estado y fecha de entrega.`;
+    const phone = normalizePhoneForWhatsApp(order.supplierPhone);
+    window.open(`https://wa.me/${phone ? `${phone}?` : "?"}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
