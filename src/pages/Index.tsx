@@ -199,6 +199,11 @@ const Index = () => {
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
+  const upcomingAlertItemIds = new Set(
+    pedidoAlertas
+      .filter((alerta) => alerta.item_id && alerta.estado !== "resuelta" && alerta.fecha_aviso >= today())
+      .map((alerta) => alerta.item_id),
+  );
 
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
