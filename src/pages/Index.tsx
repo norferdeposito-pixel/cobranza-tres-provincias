@@ -291,6 +291,10 @@ const Index = () => {
                 </div>
                 <form className="space-y-4" onSubmit={createOrder}>
                   <div className="space-y-2">
+                    <Label htmlFor="order-number">Número de pedido</Label>
+                    <Input id="order-number" value={form.orderNumber} onChange={(event) => setForm({ ...form, orderNumber: event.target.value })} placeholder="2" />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="supplier">Proveedor</Label>
                     <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                       {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
