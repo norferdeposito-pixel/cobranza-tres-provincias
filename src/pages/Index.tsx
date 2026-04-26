@@ -45,6 +45,8 @@ type PedidoItem = {
   cantidad_pendiente: number;
 };
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
@@ -102,9 +104,11 @@ const Index = () => {
   const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingReception, setIsSavingReception] = useState(false);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -159,7 +163,9 @@ const Index = () => {
         return;
       }
 
-      setPedidoItems((data || []) as PedidoItem[]);
+      const items = (data || []) as PedidoItem[];
+      setPedidoItems(items);
+      setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
 
