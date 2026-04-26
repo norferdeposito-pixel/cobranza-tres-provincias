@@ -95,22 +95,28 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const { data, error } = await supabase
-        .from("purchase_orders")
-        .select("id, order_number, supplier, status, oc_number, eta, notes")
-        .order("eta", { ascending: true });
+      const [{ data: suppliersData, error: suppliersError }, { data, error }] = await Promise.all([
+        supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre", { ascending: true }),
+        supabase
+          .from("pedidos")
+          .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+          .order("fecha_estimada_entrega", { ascending: true }),
+      ]);
 
-      if (error) {
+      if (suppliersError || error) {
         toast({
           title: "No se pudieron cargar pedidos desde Supabase",
-          description: "Verificá que exista la tabla purchase_orders y sus permisos de lectura.",
+          description: "Verificá los permisos de lectura de pedidos y proveedores.",
           variant: "destructive",
         });
         setIsLoading(false);
         return;
       }
 
-      setOrders((data || []).map(mapOrderFromSupabase));
+      const activeSuppliers = suppliersData || [];
+      setSuppliers(activeSuppliers.length > 0 ? activeSuppliers : fallbackSuppliers);
+      setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
+      setOrders(((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase));
       setIsLoading(false);
     };
 
@@ -132,38 +138,40 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.ocNumber || !form.eta) return;
+    if (!form.supplierId || !form.ocNumber || !form.eta) return;
 
     setIsSaving(true);
     const nextOrderNumber = `PED-${1048 + orders.length}`;
 
     const { data, error } = await supabase
-      .from("purchase_orders")
+      .from("pedidos")
       .insert({
-        order_number: nextOrderNumber,
-        supplier: form.supplier,
-        status: "En curso",
-        oc_number: form.ocNumber,
-        eta: form.eta,
-        notes: form.notes || "Sin observaciones",
+        numero_pedido: nextOrderNumber,
+        proveedor_id: form.supplierId,
+        origen: "compras",
+        estado: "oc_generada",
+        numero_oc_qubigo: form.ocNumber,
+        fecha_pedido: new Date().toISOString().slice(0, 10),
+        fecha_estimada_entrega: form.eta,
+        observaciones: form.notes || "Sin observaciones",
       })
-      .select("id, order_number, supplier, status, oc_number, eta, notes")
-      .single();
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .maybeSingle();
 
     if (error) {
       toast({
         title: "No se pudo guardar el pedido",
-        description: "Revisá que la tabla purchase_orders permita insertar registros con la anon key.",
+        description: "Revisá los permisos de inserción de la tabla pedidos.",
         variant: "destructive",
       });
       setIsSaving(false);
       return;
     }
 
-    setOrders((current) => [mapOrderFromSupabase(data), ...current]);
-    setForm({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+    if (data) setOrders((current) => [mapOrderFromSupabase(data as PurchaseOrderRow), ...current]);
+    setForm({ supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
-    toast({ title: "Pedido guardado", description: "La OC quedó registrada en Supabase." });
+    toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
 
   return (
