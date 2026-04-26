@@ -340,6 +340,14 @@ const Index = () => {
     const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
     const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
 
+    if (isPreviewMode) {
+      setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+      setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
+      setIsSavingReception(false);
+      toast({ title: "Recepción cargada en preview", description: "Las cantidades se actualizaron localmente." });
+      return;
+    }
+
     const { error: receptionError } = await supabase.from("recepciones").insert({
       pedido_id: selectedOrderId,
       item_id: selectedItem.id,
