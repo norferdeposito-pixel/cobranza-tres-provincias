@@ -1,20 +1,32 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, PackageCheck, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/lib/supabase";
+import { toast } from "@/hooks/use-toast";
 
 type OrderStatus = "En curso" | "Atrasado" | "Confirmado" | "Entregado";
 
 type PurchaseOrder = {
-  id: number;
+  id: number | string;
   orderNumber: string;
   supplier: string;
   status: OrderStatus;
   ocNumber: string;
   eta: string;
   notes: string;
+};
+
+type PurchaseOrderRow = {
+  id: number | string;
+  order_number: string;
+  supplier: string;
+  status: OrderStatus;
+  oc_number: string;
+  eta: string;
+  notes: string | null;
 };
 
 const initialOrders: PurchaseOrder[] = [
@@ -42,10 +54,46 @@ const statusClasses: Record<OrderStatus, string> = {
 
 const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 
+const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
+  id: order.id,
+  orderNumber: order.order_number,
+  supplier: order.supplier,
+  status: order.status,
+  ocNumber: order.oc_number,
+  eta: order.eta,
+  notes: order.notes || "Sin observaciones",
+});
+
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, supplier, status, oc_number, eta, notes")
+        .order("eta", { ascending: true });
+
+      if (error) {
+        toast({
+          title: "No se pudieron cargar pedidos desde Supabase",
+          description: "Verificá que exista la tabla purchase_orders y sus permisos de lectura.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      setOrders((data || []).map(mapOrderFromSupabase));
+      setIsLoading(false);
+    };
+
+    loadOrders();
+  }, []);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
@@ -60,23 +108,40 @@ const Index = () => {
     { label: "Próximas entregas", value: nextDeliveries.length, icon: CalendarClock },
   ];
 
-  const createOrder = (event: FormEvent<HTMLFormElement>) => {
+  const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.ocNumber || !form.eta) return;
 
-    setOrders((current) => [
-      {
-        id: Date.now(),
-        orderNumber: `PED-${1048 + current.length}`,
+    setIsSaving(true);
+    const nextOrderNumber = `PED-${1048 + orders.length}`;
+
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .insert({
+        order_number: nextOrderNumber,
         supplier: form.supplier,
         status: "En curso",
-        ocNumber: form.ocNumber,
+        oc_number: form.ocNumber,
         eta: form.eta,
         notes: form.notes || "Sin observaciones",
-      },
-      ...current,
-    ]);
+      })
+      .select("id, order_number, supplier, status, oc_number, eta, notes")
+      .single();
+
+    if (error) {
+      toast({
+        title: "No se pudo guardar el pedido",
+        description: "Revisá que la tabla purchase_orders permita insertar registros con la anon key.",
+        variant: "destructive",
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    setOrders((current) => [mapOrderFromSupabase(data), ...current]);
     setForm({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+    setIsSaving(false);
+    toast({ title: "Pedido guardado", description: "La OC quedó registrada en Supabase." });
   };
 
   return (
@@ -144,7 +209,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
-                    <p className="text-sm text-muted-foreground">Seguimiento centralizado por proveedor, estado y OC.</p>
+                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Seguimiento centralizado por proveedor, estado y OC."}</p>
                   </div>
                   <div className="relative md:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -163,7 +228,7 @@ const Index = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredOrders.map((order) => (
+                      {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} className="transition hover:bg-surface-subtle/70">
                           <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
                           <td className="px-5 py-4">{order.supplier}</td>
@@ -172,6 +237,11 @@ const Index = () => {
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                         </tr>
                       ))}
+                      {!isLoading && filteredOrders.length === 0 && (
+                        <tr>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -208,9 +278,9 @@ const Index = () => {
                     <Label htmlFor="notes">Observaciones</Label>
                     <Textarea id="notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Detalle de despacho, recepción o condición especial" />
                   </div>
-                  <Button className="w-full" variant="command" type="submit">
+                  <Button className="w-full" variant="command" type="submit" disabled={isSaving}>
                     <CheckCircle2 className="h-4 w-4" />
-                    Guardar pedido
+                    {isSaving ? "Guardando..." : "Guardar pedido"}
                   </Button>
                 </form>
               </section>
