@@ -203,6 +203,15 @@ const Index = () => {
 
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
+      if (isPreviewMode) {
+        const items = getDemoItems(selectedOrderId);
+        setPedidoItems(items);
+        setPedidoAlertas(getDemoAlertas(selectedOrderId));
+        setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
+        setIsLoadingItems(false);
+        return;
+      }
+
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
@@ -232,7 +241,7 @@ const Index = () => {
     };
 
     loadPedidoItems();
-  }, [selectedOrderId]);
+  }, [selectedOrderId, isPreviewMode]);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
