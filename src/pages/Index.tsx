@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Search } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,36 @@ type PedidoItem = {
   cantidad_pedida: number;
   cantidad_recibida: number;
   cantidad_pendiente: number;
+  unidad?: string;
+  costo_unitario?: number;
+  moneda?: string;
+  cod_articulo?: string;
+};
+
+type PedidoForm = {
+  fecha: string;
+  supplierId: string;
+  cliente: string;
+  numeroOcCliente: string;
+  plazoEntregaCliente: string;
+  plazoEntregaProveedor: string;
+  vendedor: string;
+  observaciones: string;
+  condicionesPago: string;
+  numeroPedido: string;
+  numeroOcQubigo: string;
+  estado: string;
+  fechaEstimadaEntrega: string;
+  mailVendedor: string;
+};
+
+type PedidoItemForm = {
+  descripcion: string;
+  cantidadPedida: string;
+  unidad: string;
+  costoUnitario: string;
+  moneda: string;
+  codArticulo: string;
 };
 
 type PedidoAlerta = {
@@ -126,6 +156,32 @@ const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
 const getDemoItems = (orderId: string | number) => demoItemsByOrderId[String(orderId)] || [];
 const getDemoAlertas = (orderId: string | number) => demoAlertasByOrderId[String(orderId)] || [];
 
+const createEmptyOrderForm = (supplierId = ""): PedidoForm => ({
+  fecha: today(),
+  supplierId,
+  cliente: "",
+  numeroOcCliente: "",
+  plazoEntregaCliente: "",
+  plazoEntregaProveedor: "",
+  vendedor: "",
+  observaciones: "",
+  condicionesPago: "",
+  numeroPedido: "",
+  numeroOcQubigo: "",
+  estado: "oc_generada",
+  fechaEstimadaEntrega: "",
+  mailVendedor: "",
+});
+
+const createEmptyItemForm = (): PedidoItemForm => ({
+  descripcion: "",
+  cantidadPedida: "",
+  unidad: "",
+  costoUnitario: "",
+  moneda: "USD",
+  codArticulo: "",
+});
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
   orderNumber: order.numero_pedido,
@@ -143,10 +199,12 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
+  const [itemForms, setItemForms] = useState<PedidoItemForm[]>([createEmptyItemForm()]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
+  const [previewItemsByOrderId, setPreviewItemsByOrderId] = useState<Record<string, PedidoItem[]>>({});
   const [dashboardAlertasCount, setDashboardAlertasCount] = useState(0);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
@@ -204,7 +262,7 @@ const Index = () => {
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
       if (isPreviewMode) {
-        const items = getDemoItems(selectedOrderId);
+        const items = previewItemsByOrderId[String(selectedOrderId)] || getDemoItems(selectedOrderId);
         setPedidoItems(items);
         setPedidoAlertas(getDemoAlertas(selectedOrderId));
         setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
@@ -241,7 +299,7 @@ const Index = () => {
     };
 
     loadPedidoItems();
-  }, [selectedOrderId, isPreviewMode]);
+  }, [selectedOrderId, isPreviewMode, previewItemsByOrderId]);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
@@ -263,12 +321,21 @@ const Index = () => {
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
   ];
 
+  const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
+    setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
+
+  const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.supplierId || !form.ocNumber || !form.eta) return;
+    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0);
+    if (!form.supplierId || !form.numeroPedido || !form.numeroOcQubigo || !form.fechaEstimadaEntrega || validItems.length === 0) return;
 
     setIsSaving(true);
-    const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
+    const nextOrderNumber = form.numeroPedido;
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === form.supplierId);
@@ -278,17 +345,30 @@ const Index = () => {
         supplier: supplier?.nombre || "Sin proveedor",
         supplierId: form.supplierId,
         supplierPhone: supplier?.telefono || "",
-        status: normalizeStatus("oc_generada", form.eta),
-        rawStatus: "oc_generada",
-        ocNumber: form.ocNumber,
-        eta: form.eta,
-        notes: form.notes || "Sin observaciones",
+        status: normalizeStatus(form.estado, form.fechaEstimadaEntrega),
+        rawStatus: form.estado,
+        ocNumber: form.numeroOcQubigo,
+        eta: form.fechaEstimadaEntrega,
+        notes: form.observaciones || "Sin observaciones",
       };
+      const createdItems: PedidoItem[] = validItems.map((item, index) => ({
+        id: `${createdOrder.id}-item-${index + 1}`,
+        descripcion: item.descripcion,
+        cantidad_pedida: Number(item.cantidadPedida),
+        cantidad_recibida: 0,
+        cantidad_pendiente: Number(item.cantidadPedida),
+        unidad: item.unidad,
+        costo_unitario: Number(item.costoUnitario) || 0,
+        moneda: item.moneda,
+        cod_articulo: item.codArticulo,
+      }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
-      setPedidoItems([]);
+      setPedidoItems(createdItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(createdOrder.id)]: createdItems }));
       setPedidoAlertas([]);
-      setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+      setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+      setItemForms([createEmptyItemForm()]);
       setIsSaving(false);
       toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
       return;
@@ -300,13 +380,20 @@ const Index = () => {
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
         origen: "compras",
-        estado: "oc_generada",
-        numero_oc_qubigo: form.ocNumber,
-        fecha_pedido: new Date().toISOString().slice(0, 10),
-        fecha_estimada_entrega: form.eta,
-        observaciones: form.notes || "Sin observaciones",
+        fecha_pedido: form.fecha,
+        cliente: form.cliente,
+        numero_oc_cliente: form.numeroOcCliente,
+        plazo_entrega_cliente: form.plazoEntregaCliente,
+        plazo_entrega_proveedor: form.plazoEntregaProveedor,
+        vendedor: form.vendedor,
+        observaciones: form.observaciones || "Sin observaciones",
+        condiciones_pago: form.condicionesPago,
+        estado: form.estado,
+        numero_oc_qubigo: form.numeroOcQubigo,
+        fecha_estimada_entrega: form.fechaEstimadaEntrega,
+        mail_vendedor: form.mailVendedor,
       })
-        .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
       .maybeSingle();
 
     if (error) {
@@ -321,10 +408,34 @@ const Index = () => {
 
     if (data) {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
+      const itemsToInsert = validItems.map((item) => ({
+        pedido_id: createdOrder.id,
+        descripcion: item.descripcion,
+        cantidad_pedida: Number(item.cantidadPedida),
+        cantidad_recibida: 0,
+        cantidad_pendiente: Number(item.cantidadPedida),
+        unidad: item.unidad,
+        costo_unitario: Number(item.costoUnitario) || 0,
+        moneda: item.moneda,
+        cod_articulo: item.codArticulo,
+      }));
+      const { data: createdItems, error: itemsError } = await supabase
+        .from("pedido_items")
+        .insert(itemsToInsert)
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
+
+      if (itemsError) {
+        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: "Revisá los permisos de inserción de pedido_items.", variant: "destructive" });
+        setIsSaving(false);
+        return;
+      }
+
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
+      setPedidoItems((createdItems || []) as PedidoItem[]);
     }
-    setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+    setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+    setItemForms([createEmptyItemForm()]);
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
@@ -618,28 +729,51 @@ const Index = () => {
                   </div>
                 </div>
                 <form className="space-y-4" onSubmit={createOrder}>
-                  <div className="space-y-2">
-                    <Label htmlFor="order-number">Número de pedido</Label>
-                    <Input id="order-number" value={form.orderNumber} onChange={(event) => setForm({ ...form, orderNumber: event.target.value })} placeholder="2" />
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                    <div className="space-y-2">
+                      <Label htmlFor="fecha">Fecha</Label>
+                      <Input id="fecha" type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="supplier">Proveedor</Label>
+                      <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                        {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2"><Label htmlFor="cliente">Cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="plazo-cliente">plazo_entrega_cliente</Label><Input id="plazo-cliente" value={form.plazoEntregaCliente} onChange={(event) => setForm({ ...form, plazoEntregaCliente: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="vendedor">Vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="mail-vendedor">mail_vendedor</Label><Input id="mail-vendedor" type="email" value={form.mailVendedor} onChange={(event) => setForm({ ...form, mailVendedor: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="numero-pedido">numero_pedido</Label><Input id="numero-pedido" value={form.numeroPedido} onChange={(event) => setForm({ ...form, numeroPedido: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="estado">Estado</Label><Input id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="fecha-estimada-entrega">fecha_estimada_entrega</Label><Input id="fecha-estimada-entrega" type="date" value={form.fechaEstimadaEntrega} onChange={(event) => setForm({ ...form, fechaEstimadaEntrega: event.target.value })} required /></div>
+                    <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">Observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} required /></div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="supplier">Proveedor</Label>
-                    <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                      {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
-                    </select>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="font-semibold">Ítems del pedido</h4>
+                      <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Ítem</Button>
+                    </div>
+                    {itemForms.map((item, index) => (
+                      <div key={index} className="space-y-3 rounded-md border bg-surface-subtle p-3">
+                        <div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Ítem {index + 1}</p><Button type="button" size="icon" variant="ghost" onClick={() => removeItemForm(index)} disabled={itemForms.length === 1}><Trash2 className="h-4 w-4" /></Button></div>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                          <div className="space-y-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>costo_unitario</Label><Input type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>cod_articulo</Label><Input value={item.codArticulo} onChange={(event) => updateItemForm(index, "codArticulo", event.target.value)} required /></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="oc">Número de OC</Label>
-                    <Input id="oc" value={form.ocNumber} onChange={(event) => setForm({ ...form, ocNumber: event.target.value })} placeholder="OC-77900" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="eta">Fecha estimada de entrega</Label>
-                    <Input id="eta" type="date" value={form.eta} onChange={(event) => setForm({ ...form, eta: event.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Observaciones</Label>
-                    <Textarea id="notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Detalle de despacho, recepción o condición especial" />
-                  </div>
+
                   <Button className="w-full" variant="command" type="submit" disabled={isSaving}>
                     <CheckCircle2 className="h-4 w-4" />
                     {isSaving ? "Guardando..." : "Guardar pedido"}
