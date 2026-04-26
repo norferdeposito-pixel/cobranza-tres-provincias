@@ -76,12 +76,27 @@ const initialOrders: PurchaseOrder[] = [
 ];
 
 const fallbackSuppliers: Supplier[] = [
-  { id: "", nombre: "Metalúrgica Norte" },
-  { id: "", nombre: "Global Parts" },
-  { id: "", nombre: "Insumos Delta" },
-  { id: "", nombre: "Tecno Industrial" },
-  { id: "", nombre: "Logística Andina" },
+  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", telefono: "+54 9 11 5555-1001" },
+  { id: "demo-global-parts", nombre: "Global Parts", telefono: "+54 9 11 5555-1002" },
+  { id: "demo-insumos-delta", nombre: "Insumos Delta", telefono: "+54 9 11 5555-1003" },
+  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", telefono: "+54 9 11 5555-1004" },
+  { id: "demo-logistica-andina", nombre: "Logística Andina", telefono: "+54 9 11 5555-1005" },
 ];
+
+const demoItemsByOrderId: Record<string, PedidoItem[]> = {
+  "1": [
+    { id: "demo-1-1", descripcion: "Ruleman 6205", cantidad_pedida: 10, cantidad_recibida: 6, cantidad_pendiente: 4 },
+    { id: "demo-1-2", descripcion: "Correa industrial A42", cantidad_pedida: 18, cantidad_recibida: 18, cantidad_pendiente: 0 },
+  ],
+  "2": [{ id: "demo-2-1", descripcion: "Válvula neumática 1/2", cantidad_pedida: 8, cantidad_recibida: 0, cantidad_pendiente: 8 }],
+  "3": [{ id: "demo-3-1", descripcion: "Sensor inductivo M12", cantidad_pedida: 12, cantidad_recibida: 4, cantidad_pendiente: 8 }],
+  "4": [{ id: "demo-4-1", descripcion: "Acople flexible", cantidad_pedida: 6, cantidad_recibida: 6, cantidad_pendiente: 0 }],
+};
+
+const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
+  "1": [{ id: "demo-alerta-1", pedido_id: "1", item_id: "demo-1-1", tipo: "pendiente_parcial", fecha_estimada: "2026-05-03", fecha_aviso: "2026-05-01", estado: "en_curso" }],
+  "2": [{ id: "demo-alerta-2", pedido_id: "2", item_id: "demo-2-1", tipo: "entrega_atrasada", fecha_estimada: "2026-04-22", fecha_aviso: today(), estado: "en_curso" }],
+};
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -107,6 +122,9 @@ const normalizeStatus = (status: string, eta: string): OrderStatus => {
 };
 
 const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
+
+const getDemoItems = (orderId: string | number) => demoItemsByOrderId[String(orderId)] || [];
+const getDemoAlertas = (orderId: string | number) => demoAlertasByOrderId[String(orderId)] || [];
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
