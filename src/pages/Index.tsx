@@ -365,6 +365,7 @@ const Index = () => {
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
       setPedidoItems(createdItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(createdOrder.id)]: createdItems }));
       setPedidoAlertas([]);
       setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
       setItemForms([createEmptyItemForm()]);
