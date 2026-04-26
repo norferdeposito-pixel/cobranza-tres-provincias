@@ -37,6 +37,14 @@ type Supplier = {
   nombre: string;
 };
 
+type PedidoItem = {
+  id: string;
+  descripcion: string;
+  cantidad_pedida: number;
+  cantidad_recibida: number;
+  cantidad_pendiente: number;
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
@@ -92,6 +100,9 @@ const Index = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
+  const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
+  const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -118,12 +129,42 @@ const Index = () => {
       const activeSuppliers = suppliersData || [];
       setSuppliers(activeSuppliers.length > 0 ? activeSuppliers : fallbackSuppliers);
       setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
-      setOrders(((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase));
+      const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
+      setOrders(mappedOrders);
+      setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
     };
 
     loadOrders();
   }, []);
+
+  useEffect(() => {
+    if (!selectedOrderId) {
+      setPedidoItems([]);
+      return;
+    }
+
+    const loadPedidoItems = async () => {
+      setIsLoadingItems(true);
+      const { data, error } = await supabase
+        .from("pedido_items")
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
+        .eq("pedido_id", selectedOrderId)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        toast({ title: "No se pudieron cargar los ítems", description: "Revisá los permisos de lectura de pedido_items.", variant: "destructive" });
+        setPedidoItems([]);
+        setIsLoadingItems(false);
+        return;
+      }
+
+      setPedidoItems((data || []) as PedidoItem[]);
+      setIsLoadingItems(false);
+    };
+
+    loadPedidoItems();
+  }, [selectedOrderId]);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
