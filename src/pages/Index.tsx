@@ -67,20 +67,29 @@ const statusClasses: Record<OrderStatus, string> = {
 
 const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 
+const normalizeStatus = (status: string, eta: string): OrderStatus => {
+  if (status === "cerrado" || status === "entregado") return "Entregado";
+  if (new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  if (status === "oc_generada" || status === "confirmado") return "Confirmado";
+  return "En curso";
+};
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
-  orderNumber: order.order_number,
-  supplier: order.supplier,
-  status: order.status,
-  ocNumber: order.oc_number,
-  eta: order.eta,
-  notes: order.notes || "Sin observaciones",
+  orderNumber: order.numero_pedido,
+  supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
+  supplierId: order.proveedor_id,
+  status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  ocNumber: order.numero_oc_qubigo,
+  eta: order.fecha_estimada_entrega,
+  notes: order.observaciones || "Sin observaciones",
 });
 
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState({ supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
