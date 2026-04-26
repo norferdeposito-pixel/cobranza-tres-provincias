@@ -204,6 +204,7 @@ const Index = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
+  const [previewItemsByOrderId, setPreviewItemsByOrderId] = useState<Record<string, PedidoItem[]>>({});
   const [dashboardAlertasCount, setDashboardAlertasCount] = useState(0);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
@@ -261,7 +262,7 @@ const Index = () => {
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
       if (isPreviewMode) {
-        const items = getDemoItems(selectedOrderId);
+        const items = previewItemsByOrderId[String(selectedOrderId)] || getDemoItems(selectedOrderId);
         setPedidoItems(items);
         setPedidoAlertas(getDemoAlertas(selectedOrderId));
         setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
@@ -298,7 +299,7 @@ const Index = () => {
     };
 
     loadPedidoItems();
-  }, [selectedOrderId, isPreviewMode]);
+  }, [selectedOrderId, isPreviewMode, previewItemsByOrderId]);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
