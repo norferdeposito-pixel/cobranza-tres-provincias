@@ -45,6 +45,8 @@ type PedidoItem = {
   cantidad_pendiente: number;
 };
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
@@ -102,9 +104,11 @@ const Index = () => {
   const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingReception, setIsSavingReception] = useState(false);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -159,7 +163,9 @@ const Index = () => {
         return;
       }
 
-      setPedidoItems((data || []) as PedidoItem[]);
+      const items = (data || []) as PedidoItem[];
+      setPedidoItems(items);
+      setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
 
@@ -221,6 +227,49 @@ const Index = () => {
     setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
+  };
+
+  const addReception = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
+    const receivedQuantity = Number(receptionForm.quantity);
+
+    if (!selectedOrderId || !selectedItem || !receivedQuantity || receivedQuantity <= 0) return;
+
+    setIsSavingReception(true);
+    const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
+    const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+
+    const { error: receptionError } = await supabase.from("recepciones").insert({
+      pedido_id: selectedOrderId,
+      item_id: selectedItem.id,
+      fecha_recepcion: receptionForm.date,
+      cantidad_recibida: receivedQuantity,
+      nueva_fecha_entrega: receptionForm.newEta || null,
+      observaciones: receptionForm.notes || "Recepción cargada desde OC Control",
+    });
+
+    if (receptionError) {
+      toast({ title: "No se pudo guardar la recepción", description: "Revisá los permisos de inserción de recepciones.", variant: "destructive" });
+      setIsSavingReception(false);
+      return;
+    }
+
+    const { error: itemError } = await supabase
+      .from("pedido_items")
+      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending })
+      .eq("id", selectedItem.id);
+
+    if (itemError) {
+      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: "Revisá los permisos de actualización de pedido_items.", variant: "destructive" });
+      setIsSavingReception(false);
+      return;
+    }
+
+    setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+    setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
+    setIsSavingReception(false);
+    toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
   };
 
   return (
@@ -361,6 +410,38 @@ const Index = () => {
                     </tbody>
                   </table>
                 </div>
+                {selectedOrder && pedidoItems.length > 0 && (
+                  <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label htmlFor="reception-item">Ítem</Label>
+                      <select id="reception-item" value={receptionForm.itemId} onChange={(event) => setReceptionForm({ ...receptionForm, itemId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                        {pedidoItems.map((item) => <option key={item.id} value={item.id}>{item.descripcion}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-quantity">Cantidad recibida</Label>
+                      <Input id="reception-quantity" type="number" min="0" step="0.01" value={receptionForm.quantity} onChange={(event) => setReceptionForm({ ...receptionForm, quantity: event.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-date">Fecha recepción</Label>
+                      <Input id="reception-date" type="date" value={receptionForm.date} onChange={(event) => setReceptionForm({ ...receptionForm, date: event.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-new-eta">Nueva entrega</Label>
+                      <Input id="reception-new-eta" type="date" value={receptionForm.newEta} onChange={(event) => setReceptionForm({ ...receptionForm, newEta: event.target.value })} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                      <Label htmlFor="reception-notes">Observaciones</Label>
+                      <Input id="reception-notes" value={receptionForm.notes} onChange={(event) => setReceptionForm({ ...receptionForm, notes: event.target.value })} placeholder="Entrega parcial, remito o comentario" />
+                    </div>
+                    <div className="flex items-end">
+                      <Button className="w-full" variant="command" type="submit" disabled={isSavingReception}>
+                        <PackageCheck className="h-4 w-4" />
+                        {isSavingReception ? "Cargando..." : "Agregar recepción"}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </section>
             </div>
 
