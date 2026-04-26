@@ -292,8 +292,8 @@ const Index = () => {
                 <form className="space-y-4" onSubmit={createOrder}>
                   <div className="space-y-2">
                     <Label htmlFor="supplier">Proveedor</Label>
-                    <select id="supplier" value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                      {suppliers.map((supplier) => <option key={supplier}>{supplier}</option>)}
+                    <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                      {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
