@@ -57,6 +57,15 @@ type PedidoAlerta = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const isUpcomingDueDate = (date: string) => {
+  const current = new Date(`${today()}T00:00:00`);
+  const dueDate = new Date(`${date}T00:00:00`);
+  const sevenDaysFromNow = new Date(current);
+  sevenDaysFromNow.setDate(current.getDate() + 7);
+
+  return dueDate >= current && dueDate <= sevenDaysFromNow;
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
@@ -115,6 +124,7 @@ const Index = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
+  const [dashboardAlertasCount, setDashboardAlertasCount] = useState(0);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,18 +133,19 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }] = await Promise.all([
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
           .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
           .order("fecha_estimada_entrega", { ascending: true }),
+        supabase.from("alertas").select("id, fecha_aviso, estado"),
       ]);
 
-      if (suppliersError || error) {
+      if (suppliersError || error || alertasError) {
         toast({
           title: "No se pudieron cargar pedidos desde Supabase",
-          description: "Verificá los permisos de lectura de pedidos y proveedores.",
+          description: "Verificá los permisos de lectura de pedidos, proveedores y alertas.",
           variant: "destructive",
         });
         setIsLoading(false);
@@ -146,6 +157,7 @@ const Index = () => {
       setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
+      setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
     };
