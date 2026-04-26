@@ -1,20 +1,32 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, PackageCheck, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/lib/supabase";
+import { toast } from "@/hooks/use-toast";
 
 type OrderStatus = "En curso" | "Atrasado" | "Confirmado" | "Entregado";
 
 type PurchaseOrder = {
-  id: number;
+  id: number | string;
   orderNumber: string;
   supplier: string;
   status: OrderStatus;
   ocNumber: string;
   eta: string;
   notes: string;
+};
+
+type PurchaseOrderRow = {
+  id: number | string;
+  order_number: string;
+  supplier: string;
+  status: OrderStatus;
+  oc_number: string;
+  eta: string;
+  notes: string | null;
 };
 
 const initialOrders: PurchaseOrder[] = [
@@ -42,10 +54,46 @@ const statusClasses: Record<OrderStatus, string> = {
 
 const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 
+const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
+  id: order.id,
+  orderNumber: order.order_number,
+  supplier: order.supplier,
+  status: order.status,
+  ocNumber: order.oc_number,
+  eta: order.eta,
+  notes: order.notes || "Sin observaciones",
+});
+
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, supplier, status, oc_number, eta, notes")
+        .order("eta", { ascending: true });
+
+      if (error) {
+        toast({
+          title: "No se pudieron cargar pedidos desde Supabase",
+          description: "Verificá que exista la tabla purchase_orders y sus permisos de lectura.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      setOrders((data || []).map(mapOrderFromSupabase));
+      setIsLoading(false);
+    };
+
+    loadOrders();
+  }, []);
 
   const filteredOrders = useMemo(
     () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
@@ -60,23 +108,40 @@ const Index = () => {
     { label: "Próximas entregas", value: nextDeliveries.length, icon: CalendarClock },
   ];
 
-  const createOrder = (event: FormEvent<HTMLFormElement>) => {
+  const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.ocNumber || !form.eta) return;
 
-    setOrders((current) => [
-      {
-        id: Date.now(),
-        orderNumber: `PED-${1048 + current.length}`,
+    setIsSaving(true);
+    const nextOrderNumber = `PED-${1048 + orders.length}`;
+
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .insert({
+        order_number: nextOrderNumber,
         supplier: form.supplier,
         status: "En curso",
-        ocNumber: form.ocNumber,
+        oc_number: form.ocNumber,
         eta: form.eta,
         notes: form.notes || "Sin observaciones",
-      },
-      ...current,
-    ]);
+      })
+      .select("id, order_number, supplier, status, oc_number, eta, notes")
+      .single();
+
+    if (error) {
+      toast({
+        title: "No se pudo guardar el pedido",
+        description: "Revisá que la tabla purchase_orders permita insertar registros con la anon key.",
+        variant: "destructive",
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    setOrders((current) => [mapOrderFromSupabase(data), ...current]);
     setForm({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+    setIsSaving(false);
+    toast({ title: "Pedido guardado", description: "La OC quedó registrada en Supabase." });
   };
 
   return (
