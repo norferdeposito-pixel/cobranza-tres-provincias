@@ -209,7 +209,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
-                    <p className="text-sm text-muted-foreground">Seguimiento centralizado por proveedor, estado y OC.</p>
+                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Seguimiento centralizado por proveedor, estado y OC."}</p>
                   </div>
                   <div className="relative md:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -228,7 +228,7 @@ const Index = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredOrders.map((order) => (
+                      {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} className="transition hover:bg-surface-subtle/70">
                           <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
                           <td className="px-5 py-4">{order.supplier}</td>
@@ -237,6 +237,11 @@ const Index = () => {
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                         </tr>
                       ))}
+                      {!isLoading && filteredOrders.length === 0 && (
+                        <tr>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -273,9 +278,9 @@ const Index = () => {
                     <Label htmlFor="notes">Observaciones</Label>
                     <Textarea id="notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Detalle de despacho, recepción o condición especial" />
                   </div>
-                  <Button className="w-full" variant="command" type="submit">
+                  <Button className="w-full" variant="command" type="submit" disabled={isSaving}>
                     <CheckCircle2 className="h-4 w-4" />
-                    Guardar pedido
+                    {isSaving ? "Guardando..." : "Guardar pedido"}
                   </Button>
                 </form>
               </section>
