@@ -482,7 +482,13 @@ const Index = () => {
                   <div className="border-t p-5">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h4 className="font-semibold">Alertas del pedido</h4>
-                      <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
+                        <Button size="sm" variant="outline" type="button" onClick={() => selectedOrder && openWhatsAppMessage(selectedOrder)}>
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       {pedidoAlertas.map((alerta) => (
