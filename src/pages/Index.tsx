@@ -410,6 +410,38 @@ const Index = () => {
                     </tbody>
                   </table>
                 </div>
+                {selectedOrder && pedidoItems.length > 0 && (
+                  <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label htmlFor="reception-item">Ítem</Label>
+                      <select id="reception-item" value={receptionForm.itemId} onChange={(event) => setReceptionForm({ ...receptionForm, itemId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                        {pedidoItems.map((item) => <option key={item.id} value={item.id}>{item.descripcion}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-quantity">Cantidad recibida</Label>
+                      <Input id="reception-quantity" type="number" min="0" step="0.01" value={receptionForm.quantity} onChange={(event) => setReceptionForm({ ...receptionForm, quantity: event.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-date">Fecha recepción</Label>
+                      <Input id="reception-date" type="date" value={receptionForm.date} onChange={(event) => setReceptionForm({ ...receptionForm, date: event.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-new-eta">Nueva entrega</Label>
+                      <Input id="reception-new-eta" type="date" value={receptionForm.newEta} onChange={(event) => setReceptionForm({ ...receptionForm, newEta: event.target.value })} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                      <Label htmlFor="reception-notes">Observaciones</Label>
+                      <Input id="reception-notes" value={receptionForm.notes} onChange={(event) => setReceptionForm({ ...receptionForm, notes: event.target.value })} placeholder="Entrega parcial, remito o comentario" />
+                    </div>
+                    <div className="flex items-end">
+                      <Button className="w-full" variant="command" type="submit" disabled={isSavingReception}>
+                        <PackageCheck className="h-4 w-4" />
+                        {isSavingReception ? "Cargando..." : "Agregar recepción"}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </section>
             </div>
 
