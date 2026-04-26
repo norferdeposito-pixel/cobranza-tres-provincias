@@ -153,6 +153,7 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingReception, setIsSavingReception] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -167,10 +168,15 @@ const Index = () => {
 
       if (suppliersError || error || alertasError) {
         toast({
-          title: "No se pudieron cargar pedidos desde Supabase",
-          description: "Verificá los permisos de lectura de pedidos, proveedores y alertas.",
-          variant: "destructive",
+          title: "Preview interactivo activado",
+          description: "No se pudo conectar con la base remota, se usan datos demo editables.",
         });
+        setIsPreviewMode(true);
+        setSuppliers(fallbackSuppliers);
+        setForm((current) => ({ ...current, supplierId: fallbackSuppliers[0]?.id || "" }));
+        setOrders(initialOrders);
+        setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
+        setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
         return;
       }
