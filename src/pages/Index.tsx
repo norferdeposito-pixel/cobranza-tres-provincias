@@ -320,12 +320,21 @@ const Index = () => {
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
   ];
 
+  const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
+    setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
+
+  const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.supplierId || !form.ocNumber || !form.eta) return;
+    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0);
+    if (!form.supplierId || !form.numeroPedido || !form.numeroOcQubigo || !form.fechaEstimadaEntrega || validItems.length === 0) return;
 
     setIsSaving(true);
-    const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
+    const nextOrderNumber = form.numeroPedido;
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === form.supplierId);
@@ -335,17 +344,29 @@ const Index = () => {
         supplier: supplier?.nombre || "Sin proveedor",
         supplierId: form.supplierId,
         supplierPhone: supplier?.telefono || "",
-        status: normalizeStatus("oc_generada", form.eta),
-        rawStatus: "oc_generada",
-        ocNumber: form.ocNumber,
-        eta: form.eta,
-        notes: form.notes || "Sin observaciones",
+        status: normalizeStatus(form.estado, form.fechaEstimadaEntrega),
+        rawStatus: form.estado,
+        ocNumber: form.numeroOcQubigo,
+        eta: form.fechaEstimadaEntrega,
+        notes: form.observaciones || "Sin observaciones",
       };
+      const createdItems: PedidoItem[] = validItems.map((item, index) => ({
+        id: `${createdOrder.id}-item-${index + 1}`,
+        descripcion: item.descripcion,
+        cantidad_pedida: Number(item.cantidadPedida),
+        cantidad_recibida: 0,
+        cantidad_pendiente: Number(item.cantidadPedida),
+        unidad: item.unidad,
+        costo_unitario: Number(item.costoUnitario) || 0,
+        moneda: item.moneda,
+        cod_articulo: item.codArticulo,
+      }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
-      setPedidoItems([]);
+      setPedidoItems(createdItems);
       setPedidoAlertas([]);
-      setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+      setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+      setItemForms([createEmptyItemForm()]);
       setIsSaving(false);
       toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
       return;
