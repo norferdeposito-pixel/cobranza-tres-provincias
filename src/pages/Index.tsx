@@ -15,6 +15,7 @@ type PurchaseOrder = {
   supplier: string;
   supplierId: string;
   status: OrderStatus;
+  rawStatus: string;
   ocNumber: string;
   eta: string;
   notes: string;
@@ -37,10 +38,10 @@ type Supplier = {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
@@ -80,6 +81,7 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierId: order.proveedor_id,
   status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  rawStatus: order.estado,
   ocNumber: order.numero_oc_qubigo,
   eta: order.fecha_estimada_entrega,
   notes: order.observaciones || "Sin observaciones",
@@ -89,7 +91,7 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ supplierId: "", ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -141,7 +143,7 @@ const Index = () => {
     if (!form.supplierId || !form.ocNumber || !form.eta) return;
 
     setIsSaving(true);
-    const nextOrderNumber = `PED-${1048 + orders.length}`;
+    const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
 
     const { data, error } = await supabase
       .from("pedidos")
@@ -169,7 +171,7 @@ const Index = () => {
     }
 
     if (data) setOrders((current) => [mapOrderFromSupabase(data as PurchaseOrderRow), ...current]);
-    setForm({ supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+    setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
@@ -239,7 +241,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
-                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Seguimiento centralizado por proveedor, estado y OC."}</p>
+                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Pedidos desde Supabase con proveedor, estado, OC y entrega estimada."}</p>
                   </div>
                   <div className="relative md:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -250,26 +252,24 @@ const Index = () => {
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
-                        <th className="px-5 py-3 font-semibold">Número de pedido</th>
                         <th className="px-5 py-3 font-semibold">Proveedor</th>
                         <th className="px-5 py-3 font-semibold">Estado</th>
-                        <th className="px-5 py-3 font-semibold">Número de OC</th>
-                        <th className="px-5 py-3 font-semibold">Entrega estimada</th>
+                        <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                        <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
                           <td className="px-5 py-4">{order.supplier}</td>
-                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.status}</span></td>
+                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
@@ -290,6 +290,10 @@ const Index = () => {
                   </div>
                 </div>
                 <form className="space-y-4" onSubmit={createOrder}>
+                  <div className="space-y-2">
+                    <Label htmlFor="order-number">Número de pedido</Label>
+                    <Input id="order-number" value={form.orderNumber} onChange={(event) => setForm({ ...form, orderNumber: event.target.value })} placeholder="2" />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="supplier">Proveedor</Label>
                     <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
