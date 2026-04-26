@@ -143,7 +143,7 @@ const Index = () => {
     if (!form.supplierId || !form.ocNumber || !form.eta) return;
 
     setIsSaving(true);
-    const nextOrderNumber = `PED-${1048 + orders.length}`;
+    const nextOrderNumber = form.orderNumber || `${orders.length + 1}`;
 
     const { data, error } = await supabase
       .from("pedidos")
@@ -171,7 +171,7 @@ const Index = () => {
     }
 
     if (data) setOrders((current) => [mapOrderFromSupabase(data as PurchaseOrderRow), ...current]);
-    setForm({ supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+    setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
