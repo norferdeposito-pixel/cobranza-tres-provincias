@@ -13,6 +13,7 @@ type PurchaseOrder = {
   id: number | string;
   orderNumber: string;
   supplier: string;
+  supplierId: string;
   status: OrderStatus;
   ocNumber: string;
   eta: string;
@@ -21,22 +22,34 @@ type PurchaseOrder = {
 
 type PurchaseOrderRow = {
   id: number | string;
-  order_number: string;
-  supplier: string;
-  status: OrderStatus;
-  oc_number: string;
-  eta: string;
-  notes: string | null;
+  numero_pedido: string;
+  proveedor_id: string;
+  proveedores?: { nombre: string } | { nombre: string }[] | null;
+  estado: string;
+  numero_oc_qubigo: string;
+  fecha_estimada_entrega: string;
+  observaciones: string | null;
+};
+
+type Supplier = {
+  id: string;
+  nombre: string;
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
 ];
 
-const suppliers = ["Metalúrgica Norte", "Global Parts", "Insumos Delta", "Tecno Industrial", "Logística Andina"];
+const fallbackSuppliers: Supplier[] = [
+  { id: "", nombre: "Metalúrgica Norte" },
+  { id: "", nombre: "Global Parts" },
+  { id: "", nombre: "Insumos Delta" },
+  { id: "", nombre: "Tecno Industrial" },
+  { id: "", nombre: "Logística Andina" },
+];
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -54,41 +67,56 @@ const statusClasses: Record<OrderStatus, string> = {
 
 const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 
+const normalizeStatus = (status: string, eta: string): OrderStatus => {
+  if (status === "cerrado" || status === "entregado") return "Entregado";
+  if (new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  if (status === "oc_generada" || status === "confirmado") return "Confirmado";
+  return "En curso";
+};
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
-  orderNumber: order.order_number,
-  supplier: order.supplier,
-  status: order.status,
-  ocNumber: order.oc_number,
-  eta: order.eta,
-  notes: order.notes || "Sin observaciones",
+  orderNumber: order.numero_pedido,
+  supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
+  supplierId: order.proveedor_id,
+  status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  ocNumber: order.numero_oc_qubigo,
+  eta: order.fecha_estimada_entrega,
+  notes: order.observaciones || "Sin observaciones",
 });
 
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState({ supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const loadOrders = async () => {
-      const { data, error } = await supabase
-        .from("purchase_orders")
-        .select("id, order_number, supplier, status, oc_number, eta, notes")
-        .order("eta", { ascending: true });
+      const [{ data: suppliersData, error: suppliersError }, { data, error }] = await Promise.all([
+        supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre", { ascending: true }),
+        supabase
+          .from("pedidos")
+          .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+          .order("fecha_estimada_entrega", { ascending: true }),
+      ]);
 
-      if (error) {
+      if (suppliersError || error) {
         toast({
           title: "No se pudieron cargar pedidos desde Supabase",
-          description: "Verificá que exista la tabla purchase_orders y sus permisos de lectura.",
+          description: "Verificá los permisos de lectura de pedidos y proveedores.",
           variant: "destructive",
         });
         setIsLoading(false);
         return;
       }
 
-      setOrders((data || []).map(mapOrderFromSupabase));
+      const activeSuppliers = suppliersData || [];
+      setSuppliers(activeSuppliers.length > 0 ? activeSuppliers : fallbackSuppliers);
+      setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
+      setOrders(((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase));
       setIsLoading(false);
     };
 
@@ -110,38 +138,40 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.ocNumber || !form.eta) return;
+    if (!form.supplierId || !form.ocNumber || !form.eta) return;
 
     setIsSaving(true);
     const nextOrderNumber = `PED-${1048 + orders.length}`;
 
     const { data, error } = await supabase
-      .from("purchase_orders")
+      .from("pedidos")
       .insert({
-        order_number: nextOrderNumber,
-        supplier: form.supplier,
-        status: "En curso",
-        oc_number: form.ocNumber,
-        eta: form.eta,
-        notes: form.notes || "Sin observaciones",
+        numero_pedido: nextOrderNumber,
+        proveedor_id: form.supplierId,
+        origen: "compras",
+        estado: "oc_generada",
+        numero_oc_qubigo: form.ocNumber,
+        fecha_pedido: new Date().toISOString().slice(0, 10),
+        fecha_estimada_entrega: form.eta,
+        observaciones: form.notes || "Sin observaciones",
       })
-      .select("id, order_number, supplier, status, oc_number, eta, notes")
-      .single();
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .maybeSingle();
 
     if (error) {
       toast({
         title: "No se pudo guardar el pedido",
-        description: "Revisá que la tabla purchase_orders permita insertar registros con la anon key.",
+        description: "Revisá los permisos de inserción de la tabla pedidos.",
         variant: "destructive",
       });
       setIsSaving(false);
       return;
     }
 
-    setOrders((current) => [mapOrderFromSupabase(data), ...current]);
-    setForm({ supplier: suppliers[0], ocNumber: "", eta: "", notes: "" });
+    if (data) setOrders((current) => [mapOrderFromSupabase(data as PurchaseOrderRow), ...current]);
+    setForm({ supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
     setIsSaving(false);
-    toast({ title: "Pedido guardado", description: "La OC quedó registrada en Supabase." });
+    toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
 
   return (
@@ -262,8 +292,8 @@ const Index = () => {
                 <form className="space-y-4" onSubmit={createOrder}>
                   <div className="space-y-2">
                     <Label htmlFor="supplier">Proveedor</Label>
-                    <select id="supplier" value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                      {suppliers.map((supplier) => <option key={supplier}>{supplier}</option>)}
+                    <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                      {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
