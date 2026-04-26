@@ -241,7 +241,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
-                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Seguimiento centralizado por proveedor, estado y OC."}</p>
+                    <p className="text-sm text-muted-foreground">{isLoading ? "Cargando pedidos desde Supabase..." : "Pedidos desde Supabase con proveedor, estado, OC y entrega estimada."}</p>
                   </div>
                   <div className="relative md:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -252,26 +252,24 @@ const Index = () => {
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
-                        <th className="px-5 py-3 font-semibold">Número de pedido</th>
                         <th className="px-5 py-3 font-semibold">Proveedor</th>
                         <th className="px-5 py-3 font-semibold">Estado</th>
-                        <th className="px-5 py-3 font-semibold">Número de OC</th>
-                        <th className="px-5 py-3 font-semibold">Entrega estimada</th>
+                        <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                        <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
                           <td className="px-5 py-4">{order.supplier}</td>
-                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.status}</span></td>
+                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
