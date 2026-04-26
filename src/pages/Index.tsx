@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, PackageCheck, Search } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ type PurchaseOrder = {
   orderNumber: string;
   supplier: string;
   supplierId: string;
+  supplierPhone: string;
   status: OrderStatus;
   rawStatus: string;
   ocNumber: string;
@@ -25,7 +26,7 @@ type PurchaseOrderRow = {
   id: number | string;
   numero_pedido: string;
   proveedor_id: string;
-  proveedores?: { nombre: string } | { nombre: string }[] | null;
+  proveedores?: { nombre: string; telefono: string | null } | { nombre: string; telefono: string | null }[] | null;
   estado: string;
   numero_oc_qubigo: string;
   fecha_estimada_entrega: string;
@@ -35,6 +36,7 @@ type PurchaseOrderRow = {
 type Supplier = {
   id: string;
   nombre: string;
+  telefono?: string | null;
 };
 
 type PedidoItem = {
