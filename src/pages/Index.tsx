@@ -15,6 +15,7 @@ type PurchaseOrder = {
   supplier: string;
   supplierId: string;
   status: OrderStatus;
+  rawStatus: string;
   ocNumber: string;
   eta: string;
   notes: string;
@@ -37,10 +38,10 @@ type Supplier = {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
@@ -80,6 +81,7 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierId: order.proveedor_id,
   status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  rawStatus: order.estado,
   ocNumber: order.numero_oc_qubigo,
   eta: order.fecha_estimada_entrega,
   notes: order.observaciones || "Sin observaciones",
@@ -89,7 +91,7 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ supplierId: "", ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
