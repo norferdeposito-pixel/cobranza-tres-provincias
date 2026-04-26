@@ -220,9 +220,9 @@ const Index = () => {
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
   const metrics = [
-    { label: "Pedidos en curso", value: orders.filter((order) => order.status === "En curso" || order.status === "Confirmado").length, icon: PackageCheck },
+    { label: "Total pedidos en curso", value: orders.filter((order) => order.rawStatus !== "cerrado" && order.rawStatus !== "entregado").length, icon: PackageCheck },
     { label: "Pedidos atrasados", value: orders.filter((order) => order.status === "Atrasado").length, icon: AlertTriangle },
-    { label: "Próximas entregas", value: nextDeliveries.length, icon: CalendarClock },
+    { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
   ];
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
