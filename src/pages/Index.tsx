@@ -156,26 +156,36 @@ const Index = () => {
   useEffect(() => {
     if (!selectedOrderId) {
       setPedidoItems([]);
+      setPedidoAlertas([]);
       return;
     }
 
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
-      const { data, error } = await supabase
-        .from("pedido_items")
-        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
-        .eq("pedido_id", selectedOrderId)
-        .order("created_at", { ascending: true });
+      const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
+        supabase
+          .from("pedido_items")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
+          .eq("pedido_id", selectedOrderId)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("alertas")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado")
+          .eq("pedido_id", selectedOrderId)
+          .order("fecha_aviso", { ascending: true }),
+      ]);
 
-      if (error) {
-        toast({ title: "No se pudieron cargar los ítems", description: "Revisá los permisos de lectura de pedido_items.", variant: "destructive" });
+      if (error || alertasError) {
+        toast({ title: "No se pudo cargar el detalle", description: "Revisá los permisos de lectura de pedido_items y alertas.", variant: "destructive" });
         setPedidoItems([]);
+        setPedidoAlertas([]);
         setIsLoadingItems(false);
         return;
       }
 
       const items = (data || []) as PedidoItem[];
       setPedidoItems(items);
+      setPedidoAlertas((alertasData || []) as PedidoAlerta[]);
       setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
