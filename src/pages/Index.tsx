@@ -379,13 +379,20 @@ const Index = () => {
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
         origen: "compras",
-        estado: "oc_generada",
-        numero_oc_qubigo: form.ocNumber,
-        fecha_pedido: new Date().toISOString().slice(0, 10),
-        fecha_estimada_entrega: form.eta,
-        observaciones: form.notes || "Sin observaciones",
+        fecha_pedido: form.fecha,
+        cliente: form.cliente,
+        numero_oc_cliente: form.numeroOcCliente,
+        plazo_entrega_cliente: form.plazoEntregaCliente,
+        plazo_entrega_proveedor: form.plazoEntregaProveedor,
+        vendedor: form.vendedor,
+        observaciones: form.observaciones || "Sin observaciones",
+        condiciones_pago: form.condicionesPago,
+        estado: form.estado,
+        numero_oc_qubigo: form.numeroOcQubigo,
+        fecha_estimada_entrega: form.fechaEstimadaEntrega,
+        mail_vendedor: form.mailVendedor,
       })
-        .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
       .maybeSingle();
 
     if (error) {
@@ -400,10 +407,34 @@ const Index = () => {
 
     if (data) {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
+      const itemsToInsert = validItems.map((item) => ({
+        pedido_id: createdOrder.id,
+        descripcion: item.descripcion,
+        cantidad_pedida: Number(item.cantidadPedida),
+        cantidad_recibida: 0,
+        cantidad_pendiente: Number(item.cantidadPedida),
+        unidad: item.unidad,
+        costo_unitario: Number(item.costoUnitario) || 0,
+        moneda: item.moneda,
+        cod_articulo: item.codArticulo,
+      }));
+      const { data: createdItems, error: itemsError } = await supabase
+        .from("pedido_items")
+        .insert(itemsToInsert)
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
+
+      if (itemsError) {
+        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: "Revisá los permisos de inserción de pedido_items.", variant: "destructive" });
+        setIsSaving(false);
+        return;
+      }
+
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
+      setPedidoItems((createdItems || []) as PedidoItem[]);
     }
-    setForm({ orderNumber: "", supplierId: suppliers[0]?.id || "", ocNumber: "", eta: "", notes: "" });
+    setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+    setItemForms([createEmptyItemForm()]);
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
