@@ -156,6 +156,32 @@ const normalizePhoneForWhatsApp = (phone: string) => phone.replace(/\D/g, "");
 const getDemoItems = (orderId: string | number) => demoItemsByOrderId[String(orderId)] || [];
 const getDemoAlertas = (orderId: string | number) => demoAlertasByOrderId[String(orderId)] || [];
 
+const createEmptyOrderForm = (supplierId = ""): PedidoForm => ({
+  fecha: today(),
+  supplierId,
+  cliente: "",
+  numeroOcCliente: "",
+  plazoEntregaCliente: "",
+  plazoEntregaProveedor: "",
+  vendedor: "",
+  observaciones: "",
+  condicionesPago: "",
+  numeroPedido: "",
+  numeroOcQubigo: "",
+  estado: "oc_generada",
+  fechaEstimadaEntrega: "",
+  mailVendedor: "",
+});
+
+const createEmptyItemForm = (): PedidoItemForm => ({
+  descripcion: "",
+  cantidadPedida: "",
+  unidad: "",
+  costoUnitario: "",
+  moneda: "USD",
+  codArticulo: "",
+});
+
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
   orderNumber: order.numero_pedido,
@@ -173,7 +199,8 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ orderNumber: "", supplierId: "", ocNumber: "", eta: "", notes: "" });
+  const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
+  const [itemForms, setItemForms] = useState<PedidoItemForm[]>([createEmptyItemForm()]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
