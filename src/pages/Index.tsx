@@ -28,8 +28,8 @@ type PurchaseOrderRow = {
   proveedor_id: string;
   proveedores?: { nombre: string; telefono: string | null } | { nombre: string; telefono: string | null }[] | null;
   estado: string;
-  numero_oc_qubigo: string;
-  fecha_estimada_entrega: string;
+  numero_oc_qubigo: string | null;
+  fecha_estimada_entrega: string | null;
   observaciones: string | null;
 };
 
@@ -89,7 +89,25 @@ type PedidoAlerta = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const pedidoEstados = [
+  "pedido_cargado",
+  "oc_generada",
+  "pedido_enviado",
+  "en_curso",
+  "recibido_parcial",
+  "recibido_total",
+  "terminado",
+  "anulado",
+];
+
+const isValidDateValue = (date?: string | null) => {
+  if (!date) return false;
+  const parsedDate = new Date(`${date}T12:00:00`);
+  return !Number.isNaN(parsedDate.getTime());
+};
+
 const isUpcomingDueDate = (date: string) => {
+  if (!isValidDateValue(date)) return false;
   const current = new Date(`${today()}T00:00:00`);
   const dueDate = new Date(`${date}T00:00:00`);
   const sevenDaysFromNow = new Date(current);
@@ -142,11 +160,14 @@ const statusClasses: Record<OrderStatus, string> = {
   Entregado: "bg-success/10 text-success border-success/20",
 };
 
-const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+const formatDate = (date?: string | null) => {
+  if (!isValidDateValue(date)) return "-";
+  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+};
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
   if (status === "cerrado" || status === "entregado") return "Entregado";
-  if (new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
 };
@@ -202,10 +223,10 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierPhone: Array.isArray(order.proveedores) ? order.proveedores[0]?.telefono || "" : order.proveedores?.telefono || "",
   supplierId: order.proveedor_id,
-  status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  status: normalizeStatus(order.estado, order.fecha_estimada_entrega || ""),
   rawStatus: order.estado,
-  ocNumber: order.numero_oc_qubigo,
-  eta: order.fecha_estimada_entrega,
+  ocNumber: order.numero_oc_qubigo || "-",
+  eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
 });
 
@@ -397,6 +418,7 @@ const Index = () => {
         proveedor_id: form.supplierId,
         cliente: form.cliente.trim(),
         numero_oc_cliente: optionalValue(form.numeroOcCliente),
+        numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
         plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
         plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
         vendedor: form.vendedor.trim(),
@@ -778,6 +800,13 @@ const Index = () => {
                       ))}
                       <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} /></div>
+                      <div className="space-y-2">
+                        <Label htmlFor="estado">estado</Label>
+                        <select id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                          {pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
+                        </select>
+                      </div>
                       <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} /></div>
                     </div>
