@@ -168,7 +168,7 @@ const createEmptyOrderForm = (supplierId = ""): PedidoForm => ({
   condicionesPago: "",
   numeroPedido: "",
   numeroOcQubigo: "",
-  estado: "oc_generada",
+  estado: "pedido_cargado",
   fechaEstimadaEntrega: "",
   mailVendedor: "",
 });
@@ -178,9 +178,23 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   cantidadPedida: "",
   unidad: "",
   costoUnitario: "",
-  moneda: "USD",
+  moneda: "ARS",
   codArticulo: "",
 });
+
+const optionalValue = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const generateOrderNumber = () => `PED-${Date.now()}`;
+
+const getSellerEmail = (seller: string, explicitEmail: string) => {
+  const trimmedEmail = explicitEmail.trim();
+  if (trimmedEmail) return trimmedEmail;
+  const trimmedSeller = seller.trim();
+  return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
+};
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
@@ -331,11 +345,13 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0);
-    if (!form.supplierId || !form.numeroPedido || !form.numeroOcQubigo || !form.fechaEstimadaEntrega || validItems.length === 0) return;
+    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    if (!form.supplierId || !form.cliente.trim() || !form.vendedor.trim() || !form.plazoEntregaCliente.trim() || validItems.length === 0) return;
 
     setIsSaving(true);
-    const nextOrderNumber = form.numeroPedido;
+    const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
+    const nextStatus = optionalValue(form.estado) || "pedido_cargado";
+    const nextSellerEmail = getSellerEmail(form.vendedor, form.mailVendedor);
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === form.supplierId);
@@ -345,10 +361,10 @@ const Index = () => {
         supplier: supplier?.nombre || "Sin proveedor",
         supplierId: form.supplierId,
         supplierPhone: supplier?.telefono || "",
-        status: normalizeStatus(form.estado, form.fechaEstimadaEntrega),
-        rawStatus: form.estado,
+        status: normalizeStatus(nextStatus, form.fechaEstimadaEntrega || today()),
+        rawStatus: nextStatus,
         ocNumber: form.numeroOcQubigo,
-        eta: form.fechaEstimadaEntrega,
+        eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
@@ -357,10 +373,9 @@ const Index = () => {
         cantidad_pedida: Number(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad,
-        costo_unitario: Number(item.costoUnitario) || 0,
-        moneda: item.moneda,
-        cod_articulo: item.codArticulo,
+        unidad: item.unidad.trim(),
+        costo_unitario: Number(item.costoUnitario) || undefined,
+        moneda: optionalValue(item.moneda) || "ARS",
       }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
@@ -377,21 +392,18 @@ const Index = () => {
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
+        fecha: optionalValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
-        origen: "compras",
-        fecha_pedido: form.fecha,
-        cliente: form.cliente,
-        numero_oc_cliente: form.numeroOcCliente,
-        plazo_entrega_cliente: form.plazoEntregaCliente,
-        plazo_entrega_proveedor: form.plazoEntregaProveedor,
-        vendedor: form.vendedor,
-        observaciones: form.observaciones || "Sin observaciones",
-        condiciones_pago: form.condicionesPago,
-        estado: form.estado,
-        numero_oc_qubigo: form.numeroOcQubigo,
-        fecha_estimada_entrega: form.fechaEstimadaEntrega,
-        mail_vendedor: form.mailVendedor,
+        cliente: form.cliente.trim(),
+        numero_oc_cliente: optionalValue(form.numeroOcCliente),
+        plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
+        plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
+        vendedor: form.vendedor.trim(),
+        observaciones: optionalValue(form.observaciones),
+        condiciones_pago: optionalValue(form.condicionesPago),
+        estado: nextStatus,
+        mail_vendedor: nextSellerEmail,
       })
       .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
       .maybeSingle();
@@ -399,7 +411,7 @@ const Index = () => {
     if (error) {
       toast({
         title: "No se pudo guardar el pedido",
-        description: "Revisá los permisos de inserción de la tabla pedidos.",
+        description: error.message,
         variant: "destructive",
       });
       setIsSaving(false);
@@ -410,14 +422,13 @@ const Index = () => {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
       const itemsToInsert = validItems.map((item) => ({
         pedido_id: createdOrder.id,
-        descripcion: item.descripcion,
+        descripcion: item.descripcion.trim(),
         cantidad_pedida: Number(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad,
-        costo_unitario: Number(item.costoUnitario) || 0,
-        moneda: item.moneda,
-        cod_articulo: item.codArticulo,
+        unidad: item.unidad.trim(),
+        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+        moneda: optionalValue(item.moneda) || "ARS",
       }));
       const { data: createdItems, error: itemsError } = await supabase
         .from("pedido_items")
@@ -425,7 +436,7 @@ const Index = () => {
         .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
 
       if (itemsError) {
-        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: "Revisá los permisos de inserción de pedido_items.", variant: "destructive" });
+        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
         setIsSaving(false);
         return;
       }
@@ -729,34 +740,16 @@ const Index = () => {
                   </div>
                 </div>
                 <form className="space-y-4" onSubmit={createOrder}>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                    <div className="space-y-2">
-                      <Label htmlFor="fecha">Fecha</Label>
-                      <Input id="fecha" type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="supplier">Proveedor</Label>
-                      <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                        {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-2"><Label htmlFor="cliente">Cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="plazo-cliente">plazo_entrega_cliente</Label><Input id="plazo-cliente" value={form.plazoEntregaCliente} onChange={(event) => setForm({ ...form, plazoEntregaCliente: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="vendedor">Vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="mail-vendedor">mail_vendedor</Label><Input id="mail-vendedor" type="email" value={form.mailVendedor} onChange={(event) => setForm({ ...form, mailVendedor: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="numero-pedido">numero_pedido</Label><Input id="numero-pedido" value={form.numeroPedido} onChange={(event) => setForm({ ...form, numeroPedido: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="estado">Estado</Label><Input id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} required /></div>
-                    <div className="space-y-2"><Label htmlFor="fecha-estimada-entrega">fecha_estimada_entrega</Label><Input id="fecha-estimada-entrega" type="date" value={form.fechaEstimadaEntrega} onChange={(event) => setForm({ ...form, fechaEstimadaEntrega: event.target.value })} required /></div>
-                    <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">Observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} required /></div>
+                  <div className="space-y-2">
+                    <Label htmlFor="supplier">Proveedor</Label>
+                    <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                      {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
+                    </select>
                   </div>
 
                   <div className="space-y-3 border-t pt-4">
                     <div className="flex items-center justify-between gap-3">
-                      <h4 className="font-semibold">Ítems del pedido</h4>
+                      <h4 className="font-semibold">Paso 1 · Requeridos</h4>
                       <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Ítem</Button>
                     </div>
                     {itemForms.map((item, index) => (
@@ -766,13 +759,29 @@ const Index = () => {
                           <div className="space-y-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>costo_unitario</Label><Input type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>cod_articulo</Label><Input value={item.codArticulo} onChange={(event) => updateItemForm(index, "codArticulo", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
                         </div>
                       </div>
                     ))}
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                      <div className="space-y-2"><Label htmlFor="cliente">cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
+                      <div className="space-y-2"><Label htmlFor="vendedor">vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
+                      <div className="space-y-2"><Label htmlFor="plazo-cliente">plazo_entrega_cliente</Label><Input id="plazo-cliente" value={form.plazoEntregaCliente} onChange={(event) => setForm({ ...form, plazoEntregaCliente: event.target.value })} required /></div>
+                    </div>
                   </div>
+
+                  <details className="rounded-md border bg-surface-subtle p-3">
+                    <summary className="cursor-pointer font-semibold">Paso 2 · Opcionales</summary>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                      {itemForms.map((item, index) => (
+                        <div className="space-y-2" key={`costo-${index}`}><Label htmlFor={`costo-unitario-${index}`}>costo_unitario {itemForms.length > 1 ? `ítem ${index + 1}` : ""}</Label><Input id={`costo-unitario-${index}`} type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} /></div>
+                      ))}
+                      <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
+                      <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} /></div>
+                    </div>
+                  </details>
 
                   <Button className="w-full" variant="command" type="submit" disabled={isSaving}>
                     <CheckCircle2 className="h-4 w-4" />
