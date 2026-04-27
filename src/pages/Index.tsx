@@ -557,6 +557,108 @@ const Index = () => {
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
 
+  const saveEditOrder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedOrder) return;
+
+    setIsSavingEdit(true);
+    const nextStatus = optionalValue(editForm.estado) || "pedido_cargado";
+    const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
+    const nextItems = editItemForms.map((item) => {
+      const ordered = Number(item.cantidadPedida) || 0;
+      const original = pedidoItems.find((current) => current.id === item.id);
+      const received = original?.cantidad_recibida || 0;
+      return {
+        ...original,
+        id: item.id,
+        descripcion: item.descripcion.trim(),
+        cantidad_pedida: ordered,
+        cantidad_recibida: received,
+        cantidad_pendiente: Math.max(ordered - received, 0),
+        unidad: item.unidad.trim(),
+        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
+        moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo) || undefined,
+      } as PedidoItem;
+    });
+
+    if (isPreviewMode) {
+      const supplier = suppliers.find((item) => item.id === editForm.supplierId);
+      setOrders((current) => current.map((order) => order.id === selectedOrder.id ? {
+        ...order,
+        supplier: supplier?.nombre || order.supplier,
+        supplierId: editForm.supplierId,
+        rawStatus: nextStatus,
+        status: normalizeStatus(nextStatus, nextEta || ""),
+        ocNumber: editForm.numeroOcQubigo || "-",
+        eta: nextEta || "",
+        notes: editForm.observaciones || "Sin observaciones",
+      } : order));
+      setPedidoItems(nextItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
+      setIsSavingEdit(false);
+      setIsEditOpen(false);
+      toast({ title: "Pedido actualizado en preview", description: "Los cambios se aplicaron localmente." });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedidos")
+      .update({
+        proveedor_id: editForm.supplierId,
+        cliente: editForm.cliente.trim(),
+        numero_oc_cliente: optionalValue(editForm.numeroOcCliente),
+        plazo_entrega_cliente: optionalValue(editForm.plazoEntregaCliente),
+        plazo_entrega_proveedor: optionalValue(editForm.plazoEntregaProveedor),
+        vendedor: editForm.vendedor.trim(),
+        observaciones: optionalValue(editForm.observaciones),
+        condiciones_pago: optionalValue(editForm.condicionesPago),
+        numero_oc_qubigo: optionalValue(editForm.numeroOcQubigo),
+        estado: nextStatus,
+        fecha_estimada_entrega: nextEta,
+        mail_vendedor: getSellerEmail(editForm.vendedor, editForm.mailVendedor),
+      })
+      .eq("id", selectedOrder.id)
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .maybeSingle();
+
+    if (error) {
+      toast({ title: "No se pudo actualizar el pedido", description: error.message, variant: "destructive" });
+      setIsSavingEdit(false);
+      return;
+    }
+
+    for (const item of editItemForms) {
+      const ordered = Number(item.cantidadPedida) || 0;
+      const original = pedidoItems.find((current) => current.id === item.id);
+      const received = original?.cantidad_recibida || 0;
+      const { error: itemError } = await supabase
+        .from("pedido_items")
+        .update({
+          descripcion: item.descripcion.trim(),
+          cantidad_pedida: ordered,
+          cantidad_pendiente: Math.max(ordered - received, 0),
+          unidad: item.unidad.trim(),
+          moneda: optionalValue(item.moneda) || "ARS",
+          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          cod_articulo: optionalValue(item.codArticulo),
+        })
+        .eq("id", item.id);
+
+      if (itemError) {
+        toast({ title: "Pedido actualizado, pero falló un ítem", description: itemError.message, variant: "destructive" });
+        setIsSavingEdit(false);
+        return;
+      }
+    }
+
+    if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
+    setPedidoItems(nextItems);
+    setIsSavingEdit(false);
+    setIsEditOpen(false);
+    toast({ title: "Pedido actualizado", description: "Los cambios fueron guardados." });
+  };
+
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
