@@ -345,11 +345,13 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0);
-    if (!form.supplierId || !form.numeroPedido || !form.numeroOcQubigo || !form.fechaEstimadaEntrega || validItems.length === 0) return;
+    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    if (!form.supplierId || !form.cliente.trim() || !form.vendedor.trim() || !form.plazoEntregaCliente.trim() || validItems.length === 0) return;
 
     setIsSaving(true);
-    const nextOrderNumber = form.numeroPedido;
+    const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
+    const nextStatus = optionalValue(form.estado) || "pedido_cargado";
+    const nextSellerEmail = getSellerEmail(form.vendedor, form.mailVendedor);
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === form.supplierId);
@@ -359,10 +361,10 @@ const Index = () => {
         supplier: supplier?.nombre || "Sin proveedor",
         supplierId: form.supplierId,
         supplierPhone: supplier?.telefono || "",
-        status: normalizeStatus(form.estado, form.fechaEstimadaEntrega),
-        rawStatus: form.estado,
+        status: normalizeStatus(nextStatus, form.fechaEstimadaEntrega || today()),
+        rawStatus: nextStatus,
         ocNumber: form.numeroOcQubigo,
-        eta: form.fechaEstimadaEntrega,
+        eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
@@ -371,10 +373,9 @@ const Index = () => {
         cantidad_pedida: Number(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad,
-        costo_unitario: Number(item.costoUnitario) || 0,
-        moneda: item.moneda,
-        cod_articulo: item.codArticulo,
+        unidad: item.unidad.trim(),
+        costo_unitario: Number(item.costoUnitario) || undefined,
+        moneda: optionalValue(item.moneda) || "ARS",
       }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
@@ -391,21 +392,18 @@ const Index = () => {
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
+        fecha: optionalValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
-        origen: "compras",
-        fecha_pedido: form.fecha,
-        cliente: form.cliente,
-        numero_oc_cliente: form.numeroOcCliente,
-        plazo_entrega_cliente: form.plazoEntregaCliente,
-        plazo_entrega_proveedor: form.plazoEntregaProveedor,
-        vendedor: form.vendedor,
-        observaciones: form.observaciones || "Sin observaciones",
-        condiciones_pago: form.condicionesPago,
-        estado: form.estado,
-        numero_oc_qubigo: form.numeroOcQubigo,
-        fecha_estimada_entrega: form.fechaEstimadaEntrega,
-        mail_vendedor: form.mailVendedor,
+        cliente: form.cliente.trim(),
+        numero_oc_cliente: optionalValue(form.numeroOcCliente),
+        plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
+        plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
+        vendedor: form.vendedor.trim(),
+        observaciones: optionalValue(form.observaciones),
+        condiciones_pago: optionalValue(form.condicionesPago),
+        estado: nextStatus,
+        mail_vendedor: nextSellerEmail,
       })
       .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
       .maybeSingle();
@@ -413,7 +411,7 @@ const Index = () => {
     if (error) {
       toast({
         title: "No se pudo guardar el pedido",
-        description: "Revisá los permisos de inserción de la tabla pedidos.",
+        description: error.message,
         variant: "destructive",
       });
       setIsSaving(false);
