@@ -418,6 +418,7 @@ const Index = () => {
         proveedor_id: form.supplierId,
         cliente: form.cliente.trim(),
         numero_oc_cliente: optionalValue(form.numeroOcCliente),
+        numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
         plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
         plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
         vendedor: form.vendedor.trim(),
@@ -799,6 +800,13 @@ const Index = () => {
                       ))}
                       <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} /></div>
+                      <div className="space-y-2">
+                        <Label htmlFor="estado">estado</Label>
+                        <select id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                          {pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
+                        </select>
+                      </div>
                       <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} /></div>
                     </div>
