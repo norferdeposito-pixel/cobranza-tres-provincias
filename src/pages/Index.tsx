@@ -329,7 +329,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
@@ -384,6 +384,69 @@ const Index = () => {
   const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
 
   const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+
+  const updateEditItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
+    setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const openEditOrder = async () => {
+    if (!selectedOrder) return;
+    setIsEditOpen(true);
+    setIsLoadingEdit(true);
+
+    if (isPreviewMode) {
+      setEditForm({
+        fecha: today(),
+        supplierId: selectedOrder.supplierId || suppliers[0]?.id || "",
+        cliente: "",
+        numeroOcCliente: "",
+        plazoEntregaCliente: "",
+        plazoEntregaProveedor: "",
+        vendedor: "",
+        observaciones: selectedOrder.notes === "Sin observaciones" ? "" : selectedOrder.notes,
+        condicionesPago: "",
+        numeroPedido: selectedOrder.orderNumber,
+        numeroOcQubigo: selectedOrder.ocNumber === "-" ? "" : selectedOrder.ocNumber,
+        estado: selectedOrder.rawStatus || "pedido_cargado",
+        fechaEstimadaEntrega: isValidDateValue(selectedOrder.eta) ? selectedOrder.eta : "",
+        mailVendedor: "",
+      });
+      setEditItemForms(pedidoItems.map(itemToForm));
+      setIsLoadingEdit(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("proveedor_id, cliente, numero_oc_cliente, plazo_entrega_cliente, plazo_entrega_proveedor, vendedor, observaciones, condiciones_pago, numero_pedido, numero_oc_qubigo, estado, fecha_estimada_entrega, mail_vendedor")
+      .eq("id", selectedOrder.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      toast({ title: "No se pudo cargar el pedido", description: error?.message || "Pedido no encontrado.", variant: "destructive" });
+      setIsLoadingEdit(false);
+      return;
+    }
+
+    setEditForm({
+      fecha: "",
+      supplierId: data.proveedor_id || "",
+      cliente: data.cliente || "",
+      numeroOcCliente: data.numero_oc_cliente || "",
+      plazoEntregaCliente: data.plazo_entrega_cliente || "",
+      plazoEntregaProveedor: data.plazo_entrega_proveedor || "",
+      vendedor: data.vendedor || "",
+      observaciones: data.observaciones || "",
+      condicionesPago: data.condiciones_pago || "",
+      numeroPedido: data.numero_pedido || "",
+      numeroOcQubigo: data.numero_oc_qubigo || "",
+      estado: data.estado || "pedido_cargado",
+      fechaEstimadaEntrega: isValidDateValue(data.fecha_estimada_entrega) ? data.fecha_estimada_entrega : "",
+      mailVendedor: data.mail_vendedor || "",
+    });
+    setEditItemForms(pedidoItems.map(itemToForm));
+    setIsLoadingEdit(false);
+  };
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
