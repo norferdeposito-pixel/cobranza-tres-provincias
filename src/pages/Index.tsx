@@ -168,7 +168,7 @@ const createEmptyOrderForm = (supplierId = ""): PedidoForm => ({
   condicionesPago: "",
   numeroPedido: "",
   numeroOcQubigo: "",
-  estado: "oc_generada",
+  estado: "pedido_cargado",
   fechaEstimadaEntrega: "",
   mailVendedor: "",
 });
@@ -178,9 +178,23 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   cantidadPedida: "",
   unidad: "",
   costoUnitario: "",
-  moneda: "USD",
+  moneda: "ARS",
   codArticulo: "",
 });
+
+const optionalValue = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const generateOrderNumber = () => `PED-${Date.now()}`;
+
+const getSellerEmail = (seller: string, explicitEmail: string) => {
+  const trimmedEmail = explicitEmail.trim();
+  if (trimmedEmail) return trimmedEmail;
+  const trimmedSeller = seller.trim();
+  return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
+};
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
