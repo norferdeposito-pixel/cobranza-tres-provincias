@@ -211,6 +211,8 @@ const optionalValue = (value: string) => {
   return trimmed ? trimmed : null;
 };
 
+const optionalDateValue = (value: string) => isValidDateValue(value) ? value : null;
+
 const generateOrderNumber = () => `PED-${Date.now()}`;
 
 const getSellerEmail = (seller: string, explicitEmail: string) => {
@@ -219,6 +221,16 @@ const getSellerEmail = (seller: string, explicitEmail: string) => {
   const trimmedSeller = seller.trim();
   return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
 };
+
+const itemToForm = (item: PedidoItem): PedidoItemEditForm => ({
+  id: item.id,
+  descripcion: item.descripcion || "",
+  cantidadPedida: String(item.cantidad_pedida ?? ""),
+  unidad: item.unidad || "",
+  costoUnitario: item.costo_unitario == null ? "" : String(item.costo_unitario),
+  moneda: item.moneda || "ARS",
+  codArticulo: item.cod_articulo || "",
+});
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
