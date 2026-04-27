@@ -28,8 +28,8 @@ type PurchaseOrderRow = {
   proveedor_id: string;
   proveedores?: { nombre: string; telefono: string | null } | { nombre: string; telefono: string | null }[] | null;
   estado: string;
-  numero_oc_qubigo: string;
-  fecha_estimada_entrega: string;
+  numero_oc_qubigo: string | null;
+  fecha_estimada_entrega: string | null;
   observaciones: string | null;
 };
 
@@ -223,10 +223,10 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierPhone: Array.isArray(order.proveedores) ? order.proveedores[0]?.telefono || "" : order.proveedores?.telefono || "",
   supplierId: order.proveedor_id,
-  status: normalizeStatus(order.estado, order.fecha_estimada_entrega),
+  status: normalizeStatus(order.estado, order.fecha_estimada_entrega || ""),
   rawStatus: order.estado,
-  ocNumber: order.numero_oc_qubigo,
-  eta: order.fecha_estimada_entrega,
+  ocNumber: order.numero_oc_qubigo || "-",
+  eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
 });
 
