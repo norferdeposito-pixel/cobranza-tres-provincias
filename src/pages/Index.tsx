@@ -773,7 +773,9 @@ const Index = () => {
                   <details className="rounded-md border bg-surface-subtle p-3">
                     <summary className="cursor-pointer font-semibold">Paso 2 · Opcionales</summary>
                     <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                      <div className="space-y-2"><Label htmlFor="costo-unitario">costo_unitario</Label><Input id="costo-unitario" type="number" min="0" step="0.01" value={itemForms[0]?.costoUnitario || ""} onChange={(event) => updateItemForm(0, "costoUnitario", event.target.value)} /></div>
+                      {itemForms.map((item, index) => (
+                        <div className="space-y-2" key={`costo-${index}`}><Label htmlFor={`costo-unitario-${index}`}>costo_unitario {itemForms.length > 1 ? `ítem ${index + 1}` : ""}</Label><Input id={`costo-unitario-${index}`} type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} /></div>
+                      ))}
                       <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
                       <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
