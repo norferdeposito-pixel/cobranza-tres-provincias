@@ -89,7 +89,25 @@ type PedidoAlerta = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const pedidoEstados = [
+  "pedido_cargado",
+  "oc_generada",
+  "pedido_enviado",
+  "en_curso",
+  "recibido_parcial",
+  "recibido_total",
+  "terminado",
+  "anulado",
+];
+
+const isValidDateValue = (date?: string | null) => {
+  if (!date) return false;
+  const parsedDate = new Date(`${date}T12:00:00`);
+  return !Number.isNaN(parsedDate.getTime());
+};
+
 const isUpcomingDueDate = (date: string) => {
+  if (!isValidDateValue(date)) return false;
   const current = new Date(`${today()}T00:00:00`);
   const dueDate = new Date(`${date}T00:00:00`);
   const sevenDaysFromNow = new Date(current);
@@ -142,11 +160,14 @@ const statusClasses: Record<OrderStatus, string> = {
   Entregado: "bg-success/10 text-success border-success/20",
 };
 
-const formatDate = (date: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+const formatDate = (date?: string | null) => {
+  if (!isValidDateValue(date)) return "-";
+  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+};
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
   if (status === "cerrado" || status === "entregado") return "Entregado";
-  if (new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
 };
