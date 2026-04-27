@@ -422,14 +422,13 @@ const Index = () => {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
       const itemsToInsert = validItems.map((item) => ({
         pedido_id: createdOrder.id,
-        descripcion: item.descripcion,
+        descripcion: item.descripcion.trim(),
         cantidad_pedida: Number(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad,
-        costo_unitario: Number(item.costoUnitario) || 0,
-        moneda: item.moneda,
-        cod_articulo: item.codArticulo,
+        unidad: item.unidad.trim(),
+        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+        moneda: optionalValue(item.moneda) || "ARS",
       }));
       const { data: createdItems, error: itemsError } = await supabase
         .from("pedido_items")
@@ -437,7 +436,7 @@ const Index = () => {
         .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
 
       if (itemsError) {
-        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: "Revisá los permisos de inserción de pedido_items.", variant: "destructive" });
+        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
         setIsSaving(false);
         return;
       }
