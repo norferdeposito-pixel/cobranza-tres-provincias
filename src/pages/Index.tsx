@@ -828,9 +828,17 @@ const Index = () => {
               </section>
 
               <section className="rounded-md border bg-card shadow-command">
-                <div className="border-b p-5">
-                  <h3 className="text-lg font-semibold">Detalle de pedido</h3>
-                  <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Detalle de pedido</h3>
+                    <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                  </div>
+                  {isAdmin && selectedOrder && (
+                    <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
+                      <Pencil className="h-4 w-4" />
+                      Editar pedido
+                    </Button>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
