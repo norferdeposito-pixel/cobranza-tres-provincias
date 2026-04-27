@@ -1031,6 +1031,52 @@ const Index = () => {
           </div>
         </section>
       </div>
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar pedido</DialogTitle>
+          </DialogHeader>
+          {isLoadingEdit ? (
+            <p className="text-sm text-muted-foreground">Cargando datos del pedido...</p>
+          ) : (
+            <form className="space-y-5" onSubmit={saveEditOrder}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="edit-proveedor">proveedor_id</Label><select id="edit-proveedor" value={editForm.supplierId} onChange={(event) => setEditForm({ ...editForm, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}</select></div>
+                <div className="space-y-2"><Label htmlFor="edit-cliente">cliente</Label><Input id="edit-cliente" value={editForm.cliente} onChange={(event) => setEditForm({ ...editForm, cliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-oc-cliente">numero_oc_cliente</Label><Input id="edit-oc-cliente" value={editForm.numeroOcCliente} onChange={(event) => setEditForm({ ...editForm, numeroOcCliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-plazo-cliente">plazo_entrega_cliente</Label><Input id="edit-plazo-cliente" value={editForm.plazoEntregaCliente} onChange={(event) => setEditForm({ ...editForm, plazoEntregaCliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-plazo-proveedor">plazo_entrega_proveedor</Label><Input id="edit-plazo-proveedor" value={editForm.plazoEntregaProveedor} onChange={(event) => setEditForm({ ...editForm, plazoEntregaProveedor: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-vendedor">vendedor</Label><Input id="edit-vendedor" value={editForm.vendedor} onChange={(event) => setEditForm({ ...editForm, vendedor: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-condiciones">condiciones_pago</Label><Input id="edit-condiciones" value={editForm.condicionesPago} onChange={(event) => setEditForm({ ...editForm, condicionesPago: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-oc-qubigo">numero_oc_qubigo</Label><Input id="edit-oc-qubigo" value={editForm.numeroOcQubigo} onChange={(event) => setEditForm({ ...editForm, numeroOcQubigo: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-estado">estado</Label><select id="edit-estado" value={editForm.estado} onChange={(event) => setEditForm({ ...editForm, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select></div>
+                <div className="space-y-2"><Label htmlFor="edit-fecha-estimada">fecha_estimada_entrega</Label><Input id="edit-fecha-estimada" type="date" value={editForm.fechaEstimadaEntrega} onChange={(event) => setEditForm({ ...editForm, fechaEstimadaEntrega: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-mail">mail_vendedor</Label><Input id="edit-mail" type="email" value={editForm.mailVendedor} onChange={(event) => setEditForm({ ...editForm, mailVendedor: event.target.value })} /></div>
+                <div className="space-y-2 md:col-span-2"><Label htmlFor="edit-observaciones">observaciones</Label><Textarea id="edit-observaciones" value={editForm.observaciones} onChange={(event) => setEditForm({ ...editForm, observaciones: event.target.value })} /></div>
+              </div>
+
+              <div className="space-y-3 border-t pt-4">
+                <h4 className="font-semibold">Ítems del pedido</h4>
+                {editItemForms.map((item, index) => (
+                  <div key={item.id} className="grid gap-3 rounded-md border bg-surface-subtle p-3 md:grid-cols-3">
+                    <div className="space-y-2 md:col-span-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateEditItemForm(index, "descripcion", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateEditItemForm(index, "cantidadPedida", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateEditItemForm(index, "unidad", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateEditItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
+                    <div className="space-y-2"><Label>costo_unitario</Label><Input type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateEditItemForm(index, "costoUnitario", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>cod_articulo</Label><Input value={item.codArticulo} onChange={(event) => updateEditItemForm(index, "codArticulo", event.target.value)} /></div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancelar</Button>
+                <Button type="submit" variant="command" disabled={isSavingEdit}>{isSavingEdit ? "Guardando..." : "Guardar cambios"}</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 };
