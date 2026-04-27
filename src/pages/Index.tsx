@@ -262,6 +262,12 @@ const Index = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingReception, setIsSavingReception] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
+  const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
+  const isAdmin = true;
 
   useEffect(() => {
     const loadOrders = async () => {
