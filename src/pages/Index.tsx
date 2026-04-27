@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/hooks/use-toast";
 
@@ -76,6 +77,8 @@ type PedidoItemForm = {
   moneda: string;
   codArticulo: string;
 };
+
+type PedidoItemEditForm = PedidoItemForm & { id: string };
 
 type PedidoAlerta = {
   id: string;
@@ -208,6 +211,8 @@ const optionalValue = (value: string) => {
   return trimmed ? trimmed : null;
 };
 
+const optionalDateValue = (value: string) => isValidDateValue(value) ? value : null;
+
 const generateOrderNumber = () => `PED-${Date.now()}`;
 
 const getSellerEmail = (seller: string, explicitEmail: string) => {
@@ -216,6 +221,16 @@ const getSellerEmail = (seller: string, explicitEmail: string) => {
   const trimmedSeller = seller.trim();
   return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
 };
+
+const itemToForm = (item: PedidoItem): PedidoItemEditForm => ({
+  id: item.id,
+  descripcion: item.descripcion || "",
+  cantidadPedida: String(item.cantidad_pedida ?? ""),
+  unidad: item.unidad || "",
+  costoUnitario: item.costo_unitario == null ? "" : String(item.costo_unitario),
+  moneda: item.moneda || "ARS",
+  codArticulo: item.cod_articulo || "",
+});
 
 const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   id: order.id,
@@ -247,6 +262,12 @@ const Index = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingReception, setIsSavingReception] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
+  const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
+  const isAdmin = true;
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -308,7 +329,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
@@ -363,6 +384,69 @@ const Index = () => {
   const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
 
   const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+
+  const updateEditItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
+    setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const openEditOrder = async () => {
+    if (!selectedOrder) return;
+    setIsEditOpen(true);
+    setIsLoadingEdit(true);
+
+    if (isPreviewMode) {
+      setEditForm({
+        fecha: today(),
+        supplierId: selectedOrder.supplierId || suppliers[0]?.id || "",
+        cliente: "",
+        numeroOcCliente: "",
+        plazoEntregaCliente: "",
+        plazoEntregaProveedor: "",
+        vendedor: "",
+        observaciones: selectedOrder.notes === "Sin observaciones" ? "" : selectedOrder.notes,
+        condicionesPago: "",
+        numeroPedido: selectedOrder.orderNumber,
+        numeroOcQubigo: selectedOrder.ocNumber === "-" ? "" : selectedOrder.ocNumber,
+        estado: selectedOrder.rawStatus || "pedido_cargado",
+        fechaEstimadaEntrega: isValidDateValue(selectedOrder.eta) ? selectedOrder.eta : "",
+        mailVendedor: "",
+      });
+      setEditItemForms(pedidoItems.map(itemToForm));
+      setIsLoadingEdit(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("proveedor_id, cliente, numero_oc_cliente, plazo_entrega_cliente, plazo_entrega_proveedor, vendedor, observaciones, condiciones_pago, numero_pedido, numero_oc_qubigo, estado, fecha_estimada_entrega, mail_vendedor")
+      .eq("id", selectedOrder.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      toast({ title: "No se pudo cargar el pedido", description: error?.message || "Pedido no encontrado.", variant: "destructive" });
+      setIsLoadingEdit(false);
+      return;
+    }
+
+    setEditForm({
+      fecha: "",
+      supplierId: data.proveedor_id || "",
+      cliente: data.cliente || "",
+      numeroOcCliente: data.numero_oc_cliente || "",
+      plazoEntregaCliente: data.plazo_entrega_cliente || "",
+      plazoEntregaProveedor: data.plazo_entrega_proveedor || "",
+      vendedor: data.vendedor || "",
+      observaciones: data.observaciones || "",
+      condicionesPago: data.condiciones_pago || "",
+      numeroPedido: data.numero_pedido || "",
+      numeroOcQubigo: data.numero_oc_qubigo || "",
+      estado: data.estado || "pedido_cargado",
+      fechaEstimadaEntrega: isValidDateValue(data.fecha_estimada_entrega) ? data.fecha_estimada_entrega : "",
+      mailVendedor: data.mail_vendedor || "",
+    });
+    setEditItemForms(pedidoItems.map(itemToForm));
+    setIsLoadingEdit(false);
+  };
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -471,6 +555,108 @@ const Index = () => {
     setItemForms([createEmptyItemForm()]);
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
+  };
+
+  const saveEditOrder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedOrder) return;
+
+    setIsSavingEdit(true);
+    const nextStatus = optionalValue(editForm.estado) || "pedido_cargado";
+    const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
+    const nextItems = editItemForms.map((item) => {
+      const ordered = Number(item.cantidadPedida) || 0;
+      const original = pedidoItems.find((current) => current.id === item.id);
+      const received = original?.cantidad_recibida || 0;
+      return {
+        ...original,
+        id: item.id,
+        descripcion: item.descripcion.trim(),
+        cantidad_pedida: ordered,
+        cantidad_recibida: received,
+        cantidad_pendiente: Math.max(ordered - received, 0),
+        unidad: item.unidad.trim(),
+        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
+        moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo) || undefined,
+      } as PedidoItem;
+    });
+
+    if (isPreviewMode) {
+      const supplier = suppliers.find((item) => item.id === editForm.supplierId);
+      setOrders((current) => current.map((order) => order.id === selectedOrder.id ? {
+        ...order,
+        supplier: supplier?.nombre || order.supplier,
+        supplierId: editForm.supplierId,
+        rawStatus: nextStatus,
+        status: normalizeStatus(nextStatus, nextEta || ""),
+        ocNumber: editForm.numeroOcQubigo || "-",
+        eta: nextEta || "",
+        notes: editForm.observaciones || "Sin observaciones",
+      } : order));
+      setPedidoItems(nextItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
+      setIsSavingEdit(false);
+      setIsEditOpen(false);
+      toast({ title: "Pedido actualizado en preview", description: "Los cambios se aplicaron localmente." });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedidos")
+      .update({
+        proveedor_id: editForm.supplierId,
+        cliente: editForm.cliente.trim(),
+        numero_oc_cliente: optionalValue(editForm.numeroOcCliente),
+        plazo_entrega_cliente: optionalValue(editForm.plazoEntregaCliente),
+        plazo_entrega_proveedor: optionalValue(editForm.plazoEntregaProveedor),
+        vendedor: editForm.vendedor.trim(),
+        observaciones: optionalValue(editForm.observaciones),
+        condiciones_pago: optionalValue(editForm.condicionesPago),
+        numero_oc_qubigo: optionalValue(editForm.numeroOcQubigo),
+        estado: nextStatus,
+        fecha_estimada_entrega: nextEta,
+        mail_vendedor: getSellerEmail(editForm.vendedor, editForm.mailVendedor),
+      })
+      .eq("id", selectedOrder.id)
+      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .maybeSingle();
+
+    if (error) {
+      toast({ title: "No se pudo actualizar el pedido", description: error.message, variant: "destructive" });
+      setIsSavingEdit(false);
+      return;
+    }
+
+    for (const item of editItemForms) {
+      const ordered = Number(item.cantidadPedida) || 0;
+      const original = pedidoItems.find((current) => current.id === item.id);
+      const received = original?.cantidad_recibida || 0;
+      const { error: itemError } = await supabase
+        .from("pedido_items")
+        .update({
+          descripcion: item.descripcion.trim(),
+          cantidad_pedida: ordered,
+          cantidad_pendiente: Math.max(ordered - received, 0),
+          unidad: item.unidad.trim(),
+          moneda: optionalValue(item.moneda) || "ARS",
+          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          cod_articulo: optionalValue(item.codArticulo),
+        })
+        .eq("id", item.id);
+
+      if (itemError) {
+        toast({ title: "Pedido actualizado, pero falló un ítem", description: itemError.message, variant: "destructive" });
+        setIsSavingEdit(false);
+        return;
+      }
+    }
+
+    if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
+    setPedidoItems(nextItems);
+    setIsSavingEdit(false);
+    setIsEditOpen(false);
+    toast({ title: "Pedido actualizado", description: "Los cambios fueron guardados." });
   };
 
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
@@ -642,9 +828,17 @@ const Index = () => {
               </section>
 
               <section className="rounded-md border bg-card shadow-command">
-                <div className="border-b p-5">
-                  <h3 className="text-lg font-semibold">Detalle de pedido</h3>
-                  <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Detalle de pedido</h3>
+                    <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                  </div>
+                  {isAdmin && selectedOrder && (
+                    <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
+                      <Pencil className="h-4 w-4" />
+                      Editar pedido
+                    </Button>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
@@ -837,6 +1031,52 @@ const Index = () => {
           </div>
         </section>
       </div>
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar pedido</DialogTitle>
+          </DialogHeader>
+          {isLoadingEdit ? (
+            <p className="text-sm text-muted-foreground">Cargando datos del pedido...</p>
+          ) : (
+            <form className="space-y-5" onSubmit={saveEditOrder}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="edit-proveedor">proveedor_id</Label><select id="edit-proveedor" value={editForm.supplierId} onChange={(event) => setEditForm({ ...editForm, supplierId: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}</select></div>
+                <div className="space-y-2"><Label htmlFor="edit-cliente">cliente</Label><Input id="edit-cliente" value={editForm.cliente} onChange={(event) => setEditForm({ ...editForm, cliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-oc-cliente">numero_oc_cliente</Label><Input id="edit-oc-cliente" value={editForm.numeroOcCliente} onChange={(event) => setEditForm({ ...editForm, numeroOcCliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-plazo-cliente">plazo_entrega_cliente</Label><Input id="edit-plazo-cliente" value={editForm.plazoEntregaCliente} onChange={(event) => setEditForm({ ...editForm, plazoEntregaCliente: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-plazo-proveedor">plazo_entrega_proveedor</Label><Input id="edit-plazo-proveedor" value={editForm.plazoEntregaProveedor} onChange={(event) => setEditForm({ ...editForm, plazoEntregaProveedor: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-vendedor">vendedor</Label><Input id="edit-vendedor" value={editForm.vendedor} onChange={(event) => setEditForm({ ...editForm, vendedor: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-condiciones">condiciones_pago</Label><Input id="edit-condiciones" value={editForm.condicionesPago} onChange={(event) => setEditForm({ ...editForm, condicionesPago: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-oc-qubigo">numero_oc_qubigo</Label><Input id="edit-oc-qubigo" value={editForm.numeroOcQubigo} onChange={(event) => setEditForm({ ...editForm, numeroOcQubigo: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-estado">estado</Label><select id="edit-estado" value={editForm.estado} onChange={(event) => setEditForm({ ...editForm, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select></div>
+                <div className="space-y-2"><Label htmlFor="edit-fecha-estimada">fecha_estimada_entrega</Label><Input id="edit-fecha-estimada" type="date" value={editForm.fechaEstimadaEntrega} onChange={(event) => setEditForm({ ...editForm, fechaEstimadaEntrega: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-mail">mail_vendedor</Label><Input id="edit-mail" type="email" value={editForm.mailVendedor} onChange={(event) => setEditForm({ ...editForm, mailVendedor: event.target.value })} /></div>
+                <div className="space-y-2 md:col-span-2"><Label htmlFor="edit-observaciones">observaciones</Label><Textarea id="edit-observaciones" value={editForm.observaciones} onChange={(event) => setEditForm({ ...editForm, observaciones: event.target.value })} /></div>
+              </div>
+
+              <div className="space-y-3 border-t pt-4">
+                <h4 className="font-semibold">Ítems del pedido</h4>
+                {editItemForms.map((item, index) => (
+                  <div key={item.id} className="grid gap-3 rounded-md border bg-surface-subtle p-3 md:grid-cols-3">
+                    <div className="space-y-2 md:col-span-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateEditItemForm(index, "descripcion", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateEditItemForm(index, "cantidadPedida", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateEditItemForm(index, "unidad", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateEditItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
+                    <div className="space-y-2"><Label>costo_unitario</Label><Input type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateEditItemForm(index, "costoUnitario", event.target.value)} /></div>
+                    <div className="space-y-2"><Label>cod_articulo</Label><Input value={item.codArticulo} onChange={(event) => updateEditItemForm(index, "codArticulo", event.target.value)} /></div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancelar</Button>
+                <Button type="submit" variant="command" disabled={isSavingEdit}>{isSavingEdit ? "Guardando..." : "Guardar cambios"}</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 };
