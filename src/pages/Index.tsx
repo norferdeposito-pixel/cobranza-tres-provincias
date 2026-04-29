@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,9 @@ type PurchaseOrder = {
   ocNumber: string;
   eta: string;
   notes: string;
+  cliente: string;
+  vendedor: string;
+  fecha: string;
 };
 
 type PurchaseOrderRow = {
@@ -32,6 +35,9 @@ type PurchaseOrderRow = {
   numero_oc_qubigo: string | null;
   fecha_estimada_entrega: string | null;
   observaciones: string | null;
+  cliente: string | null;
+  vendedor: string | null;
+  fecha: string | null;
 };
 
 type Supplier = {
@@ -50,6 +56,7 @@ type PedidoItem = {
   costo_unitario?: number;
   moneda?: string;
   cod_articulo?: string;
+  estado_entrega?: string;
 };
 
 type PedidoForm = {
@@ -120,10 +127,10 @@ const isUpcomingDueDate = (date: string) => {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central", cliente: "Producción", vendedor: "María", fecha: "2026-04-21" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "terminado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades", cliente: "Calidad", vendedor: "Sofía", fecha: "2026-04-16" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
@@ -163,13 +170,45 @@ const statusClasses: Record<OrderStatus, string> = {
   Entregado: "bg-success/10 text-success border-success/20",
 };
 
+const rawStatusClasses: Record<string, string> = {
+  en_curso: "bg-success/10 text-success border-success/30",
+  pedido_cargado: "bg-primary/10 text-primary border-primary/25",
+  anulado: "bg-foreground/10 text-foreground border-foreground/25",
+  pendiente: "bg-warning/20 text-warning-foreground border-warning/40",
+  sin_oc: "bg-warning/20 text-warning-foreground border-warning/40",
+  terminado: "bg-muted text-muted-foreground border-border",
+  recibido_total: "bg-success/10 text-success border-success/20",
+  recibido_parcial: "bg-success/10 text-success border-success/30",
+};
+
+const getStatusBadgeClass = (rawStatus: string, ocNumber?: string | null) => {
+  if (rawStatus === "pedido_cargado" && (!ocNumber || ocNumber === "-")) return rawStatusClasses.sin_oc;
+  return rawStatusClasses[rawStatus] || "bg-secondary text-secondary-foreground border-border";
+};
+
+const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
+  const currentStatus = optionalValue(estado || "") || "pedido_cargado";
+  const protectedStatuses = ["terminado", "anulado", "recibido_total", "recibido_parcial"];
+  if (optionalValue(numeroOcQubigo) && currentStatus === "pedido_cargado" && !protectedStatuses.includes(currentStatus)) return "en_curso";
+  return currentStatus;
+};
+
+const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
+  if (currentStatus === "anulado") return "anulado";
+  if (items.length > 0 && items.every((item) => Number(item.cantidad_pendiente) <= 0)) return "terminado";
+  if (items.some((item) => Number(item.cantidad_recibida) > 0)) return "recibido_parcial";
+  return "en_curso";
+};
+
+const getItemSubtotal = (item: PedidoItem) => Number(item.cantidad_pedida || 0) * Number(item.costo_unitario || 0);
+
 const formatDate = (date?: string | null) => {
   if (!isValidDateValue(date)) return "-";
   return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 };
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
-  if (status === "cerrado" || status === "entregado") return "Entregado";
+  if (status === "cerrado" || status === "entregado" || status === "terminado" || status === "recibido_total") return "Entregado";
   if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
@@ -243,12 +282,20 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   ocNumber: order.numero_oc_qubigo || "-",
   eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
+  cliente: order.cliente || "-",
+  vendedor: order.vendedor || "-",
+  fecha: order.fecha || "",
 });
 
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
+  const [sellerFilter, setSellerFilter] = useState("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [supplierFilter, setSupplierFilter] = useState("todos");
+  const [onlyWithoutOc, setOnlyWithoutOc] = useState(false);
+  const [onlyMyActiveOrders, setOnlyMyActiveOrders] = useState(false);
   const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [itemForms, setItemForms] = useState<PedidoItemForm[]>([createEmptyItemForm()]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
@@ -265,9 +312,13 @@ const Index = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [sellerMessage, setSellerMessage] = useState("");
+  const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
+  const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const isAdmin = true;
+  const currentSeller = "María";
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -275,7 +326,7 @@ const Index = () => {
         supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
-          .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+          .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
           .order("fecha_estimada_entrega", { ascending: true }),
         supabase.from("alertas").select("id, fecha_aviso, estado"),
       ]);
@@ -329,7 +380,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
@@ -357,9 +408,20 @@ const Index = () => {
     loadPedidoItems();
   }, [selectedOrderId, isPreviewMode, previewItemsByOrderId]);
 
+  const sellerOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.vendedor).filter(Boolean))).sort(), [orders]);
+  const supplierOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.supplier).filter(Boolean))).sort(), [orders]);
   const filteredOrders = useMemo(
-    () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
-    [orders, query],
+    () => orders.filter((order) => {
+      const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
+      const matchesSearch = `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status} ${order.vendedor}`.toLowerCase().includes(query.toLowerCase());
+      const matchesSeller = sellerFilter === "todos" || order.vendedor === sellerFilter;
+      const matchesStatus = statusFilter === "todos" || order.rawStatus === statusFilter;
+      const matchesSupplier = supplierFilter === "todos" || order.supplier === supplierFilter;
+      const matchesWithoutOc = !onlyWithoutOc || withoutOc;
+      const matchesMyActive = !onlyMyActiveOrders || (order.vendedor === currentSeller && ["en_curso", "recibido_parcial"].includes(order.rawStatus));
+      return matchesSearch && matchesSeller && matchesStatus && matchesSupplier && matchesWithoutOc && matchesMyActive;
+    }),
+    [orders, query, sellerFilter, statusFilter, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
@@ -371,22 +433,37 @@ const Index = () => {
 
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
+  const ordersWithoutOcCount = orders.filter((order) => order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-")).length;
+  const totalOcAmount = pedidoItems.reduce((total, item) => total + getItemSubtotal(item), 0);
+  const totalOcCurrency = pedidoItems.find((item) => item.moneda)?.moneda || "ARS";
+
   const metrics = [
     { label: "Total pedidos en curso", value: orders.filter((order) => order.rawStatus !== "cerrado" && order.rawStatus !== "entregado").length, icon: PackageCheck },
     { label: "Pedidos atrasados", value: orders.filter((order) => order.status === "Atrasado").length, icon: AlertTriangle },
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
+    { label: "Pedidos sin OC", value: ordersWithoutOcCount, icon: AlertTriangle },
   ];
 
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
 
-  const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
+  const addItemForm = () => {
+    const nextIndex = itemForms.length;
+    setItemForms((current) => [...current, createEmptyItemForm()]);
+    window.requestAnimationFrame(() => itemDescriptionRefs.current[`create-${nextIndex}`]?.focus());
+  };
 
   const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
 
   const updateEditItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addEditItemForm = () => {
+    const id = `new-${Date.now()}`;
+    setEditItemForms((current) => [...current, { ...createEmptyItemForm(), id }]);
+    window.requestAnimationFrame(() => itemDescriptionRefs.current[id]?.focus());
   };
 
   const openEditOrder = async () => {
@@ -455,7 +532,7 @@ const Index = () => {
 
     setIsSaving(true);
     const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
-    const nextStatus = optionalValue(form.estado) || "pedido_cargado";
+    const nextStatus = deriveStatusByOc(form.numeroOcQubigo, form.estado);
     const nextSellerEmail = getSellerEmail(form.vendedor, form.mailVendedor);
 
     if (isPreviewMode) {
@@ -471,6 +548,9 @@ const Index = () => {
         ocNumber: form.numeroOcQubigo,
         eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
+        cliente: form.cliente.trim(),
+        vendedor: form.vendedor.trim(),
+        fecha: form.fecha,
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
@@ -481,6 +561,8 @@ const Index = () => {
         unidad: item.unidad.trim(),
         costo_unitario: Number(item.costoUnitario) || undefined,
         moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        estado_entrega: "pendiente",
       }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
@@ -511,7 +593,7 @@ const Index = () => {
         estado: nextStatus,
         mail_vendedor: nextSellerEmail,
       })
-      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
       .maybeSingle();
 
     if (error) {
@@ -535,11 +617,13 @@ const Index = () => {
         unidad: item.unidad.trim(),
         costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
         moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo),
+        estado_entrega: "pendiente",
       }));
       const { data: createdItems, error: itemsError } = await supabase
         .from("pedido_items")
         .insert(itemsToInsert)
-        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
 
       if (itemsError) {
         toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
@@ -562,7 +646,7 @@ const Index = () => {
     if (!selectedOrder) return;
 
     setIsSavingEdit(true);
-    const nextStatus = optionalValue(editForm.estado) || "pedido_cargado";
+    const derivedStatus = deriveStatusByOc(editForm.numeroOcQubigo, editForm.estado);
     const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
     const nextItems = editItemForms.map((item) => {
       const ordered = Number(item.cantidadPedida) || 0;
@@ -579,8 +663,10 @@ const Index = () => {
         costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
         moneda: optionalValue(item.moneda) || "ARS",
         cod_articulo: optionalValue(item.codArticulo) || undefined,
+        estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
+    const nextStatus = getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo) ? derivedStatus : getPedidoLifecycleStatus(nextItems, derivedStatus);
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === editForm.supplierId);
@@ -593,6 +679,8 @@ const Index = () => {
         ocNumber: editForm.numeroOcQubigo || "-",
         eta: nextEta || "",
         notes: editForm.observaciones || "Sin observaciones",
+        cliente: editForm.cliente.trim() || order.cliente,
+        vendedor: editForm.vendedor.trim() || order.vendedor,
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
@@ -619,7 +707,7 @@ const Index = () => {
         mail_vendedor: getSellerEmail(editForm.vendedor, editForm.mailVendedor),
       })
       .eq("id", selectedOrder.id)
-      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
       .maybeSingle();
 
     if (error) {
@@ -628,7 +716,7 @@ const Index = () => {
       return;
     }
 
-    for (const item of editItemForms) {
+    for (const item of editItemForms.filter((current) => !current.id.startsWith("new-"))) {
       const ordered = Number(item.cantidadPedida) || 0;
       const original = pedidoItems.find((current) => current.id === item.id);
       const received = original?.cantidad_recibida || 0;
@@ -642,6 +730,7 @@ const Index = () => {
           moneda: optionalValue(item.moneda) || "ARS",
           costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
+          estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : "pendiente",
         })
         .eq("id", item.id);
 
@@ -650,6 +739,32 @@ const Index = () => {
         setIsSavingEdit(false);
         return;
       }
+    }
+
+    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    if (newItems.length > 0) {
+      const { data: insertedItems, error: insertItemsError } = await supabase
+        .from("pedido_items")
+        .insert(newItems.map((item) => ({
+          pedido_id: selectedOrder.id,
+          descripcion: item.descripcion.trim(),
+          cantidad_pedida: Number(item.cantidadPedida),
+          cantidad_recibida: 0,
+          cantidad_pendiente: Number(item.cantidadPedida),
+          unidad: item.unidad.trim(),
+          moneda: optionalValue(item.moneda) || "ARS",
+          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          cod_articulo: optionalValue(item.codArticulo),
+          estado_entrega: "pendiente",
+        })))
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
+
+      if (insertItemsError) {
+        toast({ title: "Pedido actualizado, pero falló un ítem nuevo", description: insertItemsError.message, variant: "destructive" });
+        setIsSavingEdit(false);
+        return;
+      }
+      nextItems.splice(nextItems.length - newItems.length, newItems.length, ...((insertedItems || []) as PedidoItem[]));
     }
 
     if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
@@ -669,9 +784,13 @@ const Index = () => {
     setIsSavingReception(true);
     const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
     const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+    const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
+    const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
     if (isPreviewMode) {
-      setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+      setPedidoItems(updatedItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrderId)]: updatedItems }));
+      setOrders((current) => current.map((order) => order.id === selectedOrderId && order.rawStatus !== "anulado" ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
       setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
       setIsSavingReception(false);
       toast({ title: "Recepción cargada en preview", description: "Las cantidades se actualizaron localmente." });
@@ -695,7 +814,7 @@ const Index = () => {
 
     const { error: itemError } = await supabase
       .from("pedido_items")
-      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending })
+      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : "pendiente" })
       .eq("id", selectedItem.id);
 
     if (itemError) {
@@ -704,7 +823,11 @@ const Index = () => {
       return;
     }
 
-    setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+    if (selectedOrder?.rawStatus !== "anulado") {
+      await supabase.from("pedidos").update({ estado: nextOrderStatus }).eq("id", selectedOrderId);
+      setOrders((current) => current.map((order) => order.id === selectedOrderId ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
+    }
+    setPedidoItems(updatedItems);
     setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
     setIsSavingReception(false);
     toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
@@ -718,6 +841,43 @@ const Index = () => {
     const message = `Hola ${order.supplier}, consultamos por la OC ${order.ocNumber}.\nFecha estimada de entrega: ${formatDate(order.eta)}.\nÍtems pendientes:\n${pendingText}\nPor favor confirmar estado y fecha de entrega.`;
     const phone = normalizePhoneForWhatsApp(order.supplierPhone);
     window.open(`https://wa.me/${phone ? `${phone}?` : "?"}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const openSellerMessage = () => {
+    if (!selectedOrder) return;
+    const lines = pedidoItems.map((item, index) => `${index + 1}. ${item.descripcion} – COD ${item.cod_articulo || "F/STOCK"} – ${item.cantidad_pedida} ${item.unidad || ""}`);
+    const message = `Hola,
+
+Te compartimos el detalle completo desde Gestión OC:
+
+* Fecha carga: ${formatDate(selectedOrder.fecha)}
+
+* Proveedor: ${selectedOrder.supplier}
+
+* Cliente: ${selectedOrder.cliente || "-"}
+
+* N° OC QUBIGO: ${selectedOrder.ocNumber || "-"}
+
+* Estado: ENVIADO
+
+* Fecha estimada: ${formatDate(selectedOrder.eta)}
+
+Artículos asignados:
+
+${lines.join("\n") || "-"}
+
+MONTO TOTAL OC: ${totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${totalOcCurrency}
+
+Saludos,
+
+Equipo NORFER`;
+    setSellerMessage(message);
+    setIsSellerMessageOpen(true);
+  };
+
+  const copySellerMessage = async () => {
+    await navigator.clipboard.writeText(sellerMessage);
+    toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
   };
 
   return (
@@ -767,7 +927,7 @@ const Index = () => {
 
           <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
             <div className="space-y-6">
-              <section className="grid gap-4 md:grid-cols-3">
+              <section className="grid gap-4 md:grid-cols-4">
                 {metrics.map((metric, index) => (
                   <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
                     <div className="flex items-center justify-between">
@@ -792,6 +952,13 @@ const Index = () => {
                     <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pedido u OC" className="pl-9" />
                   </div>
                 </div>
+                <div className="grid gap-3 border-b p-5 md:grid-cols-5">
+                  <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
+                  <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
+                  <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
+                  <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
@@ -807,7 +974,7 @@ const Index = () => {
                       {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
                           <td className="px-5 py-4">{order.supplier}</td>
-                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
+                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                           <td className="px-5 py-4">
@@ -833,11 +1000,19 @@ const Index = () => {
                     <h3 className="text-lg font-semibold">Detalle de pedido</h3>
                     <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
                   </div>
-                  {isAdmin && selectedOrder && (
-                    <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
-                      <Pencil className="h-4 w-4" />
-                      Editar pedido
-                    </Button>
+                  {selectedOrder && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
+                        <MessageCircle className="h-4 w-4" />
+                        Mensaje vendedor
+                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
+                          <Pencil className="h-4 w-4" />
+                          Editar pedido
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="overflow-x-auto">
@@ -848,6 +1023,8 @@ const Index = () => {
                         <th className="px-5 py-3 font-semibold">cantidad_pedida</th>
                         <th className="px-5 py-3 font-semibold">cantidad_recibida</th>
                         <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
+                        {isAdmin && <th className="px-5 py-3 font-semibold">costo</th>}
+                        {isAdmin && <th className="px-5 py-3 font-semibold">subtotal</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -865,17 +1042,19 @@ const Index = () => {
                           <td className="px-5 py-4">{item.cantidad_pedida}</td>
                           <td className="px-5 py-4">{item.cantidad_recibida}</td>
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
+                          {isAdmin && <td className="px-5 py-4">{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</td>}
+                          {isAdmin && <td className="px-5 py-4 font-semibold">{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</td>}
                         </tr>
                         );
                       })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Este pedido no tiene ítems cargados.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>Este pedido no tiene ítems cargados.</td>
                         </tr>
                       )}
                       {!selectedOrder && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedido seleccionado.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
@@ -883,6 +1062,9 @@ const Index = () => {
                 </div>
                 {selectedOrder && (
                   <div className="border-t p-5">
+                    {isAdmin && pedidoItems.length > 0 && (
+                      <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
+                    )}
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h4 className="font-semibold">Alertas del pedido</h4>
                       <div className="flex items-center gap-2">
@@ -964,21 +1146,19 @@ const Index = () => {
                   </div>
 
                   <div className="space-y-3 border-t pt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="font-semibold">Paso 1 · Requeridos</h4>
-                      <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Ítem</Button>
-                    </div>
+                    <h4 className="font-semibold">Paso 1 · Requeridos</h4>
                     {itemForms.map((item, index) => (
                       <div key={index} className="space-y-3 rounded-md border bg-surface-subtle p-3">
                         <div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Ítem {index + 1}</p><Button type="button" size="icon" variant="ghost" onClick={() => removeItemForm(index)} disabled={itemForms.length === 1}><Trash2 className="h-4 w-4" /></Button></div>
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                          <div className="space-y-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>descripcion</Label><Input ref={(element) => { itemDescriptionRefs.current[`create-${index}`] = element; }} value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
                         </div>
                       </div>
                     ))}
+                    <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Agregar ítem</Button>
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
                       <div className="space-y-2"><Label htmlFor="cliente">cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
                       <div className="space-y-2"><Label htmlFor="vendedor">vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
@@ -994,7 +1174,7 @@ const Index = () => {
                       ))}
                       <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value, estado: event.target.value.trim() && form.estado === "pedido_cargado" ? "en_curso" : form.estado })} /></div>
                       <div className="space-y-2">
                         <Label htmlFor="estado">estado</Label>
                         <select id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
@@ -1048,7 +1228,7 @@ const Index = () => {
                 <div className="space-y-2"><Label htmlFor="edit-plazo-proveedor">plazo_entrega_proveedor</Label><Input id="edit-plazo-proveedor" value={editForm.plazoEntregaProveedor} onChange={(event) => setEditForm({ ...editForm, plazoEntregaProveedor: event.target.value })} /></div>
                 <div className="space-y-2"><Label htmlFor="edit-vendedor">vendedor</Label><Input id="edit-vendedor" value={editForm.vendedor} onChange={(event) => setEditForm({ ...editForm, vendedor: event.target.value })} /></div>
                 <div className="space-y-2"><Label htmlFor="edit-condiciones">condiciones_pago</Label><Input id="edit-condiciones" value={editForm.condicionesPago} onChange={(event) => setEditForm({ ...editForm, condicionesPago: event.target.value })} /></div>
-                <div className="space-y-2"><Label htmlFor="edit-oc-qubigo">numero_oc_qubigo</Label><Input id="edit-oc-qubigo" value={editForm.numeroOcQubigo} onChange={(event) => setEditForm({ ...editForm, numeroOcQubigo: event.target.value })} /></div>
+                <div className="space-y-2"><Label htmlFor="edit-oc-qubigo">numero_oc_qubigo</Label><Input id="edit-oc-qubigo" value={editForm.numeroOcQubigo} onChange={(event) => setEditForm({ ...editForm, numeroOcQubigo: event.target.value, estado: event.target.value.trim() && editForm.estado === "pedido_cargado" ? "en_curso" : editForm.estado })} /></div>
                 <div className="space-y-2"><Label htmlFor="edit-estado">estado</Label><select id="edit-estado" value={editForm.estado} onChange={(event) => setEditForm({ ...editForm, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select></div>
                 <div className="space-y-2"><Label htmlFor="edit-fecha-estimada">fecha_estimada_entrega</Label><Input id="edit-fecha-estimada" type="date" value={editForm.fechaEstimadaEntrega} onChange={(event) => setEditForm({ ...editForm, fechaEstimadaEntrega: event.target.value })} /></div>
                 <div className="space-y-2"><Label htmlFor="edit-mail">mail_vendedor</Label><Input id="edit-mail" type="email" value={editForm.mailVendedor} onChange={(event) => setEditForm({ ...editForm, mailVendedor: event.target.value })} /></div>
@@ -1059,7 +1239,7 @@ const Index = () => {
                 <h4 className="font-semibold">Ítems del pedido</h4>
                 {editItemForms.map((item, index) => (
                   <div key={item.id} className="grid gap-3 rounded-md border bg-surface-subtle p-3 md:grid-cols-3">
-                    <div className="space-y-2 md:col-span-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateEditItemForm(index, "descripcion", event.target.value)} /></div>
+                    <div className="space-y-2 md:col-span-2"><Label>descripcion</Label><Input ref={(element) => { itemDescriptionRefs.current[item.id] = element; }} value={item.descripcion} onChange={(event) => updateEditItemForm(index, "descripcion", event.target.value)} /></div>
                     <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateEditItemForm(index, "cantidadPedida", event.target.value)} /></div>
                     <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateEditItemForm(index, "unidad", event.target.value)} /></div>
                     <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateEditItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
@@ -1067,6 +1247,7 @@ const Index = () => {
                     <div className="space-y-2"><Label>cod_articulo</Label><Input value={item.codArticulo} onChange={(event) => updateEditItemForm(index, "codArticulo", event.target.value)} /></div>
                   </div>
                 ))}
+                <Button type="button" size="sm" variant="outline" onClick={addEditItemForm}><Plus className="h-4 w-4" />Agregar ítem</Button>
               </div>
 
               <div className="flex justify-end gap-3 border-t pt-4">
@@ -1075,6 +1256,18 @@ const Index = () => {
               </div>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isSellerMessageOpen} onOpenChange={setIsSellerMessageOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mensaje vendedor</DialogTitle>
+          </DialogHeader>
+          <Textarea value={sellerMessage} onChange={(event) => setSellerMessage(event.target.value)} className="min-h-[420px] font-mono text-sm" />
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setIsSellerMessageOpen(false)}>Cerrar</Button>
+            <Button type="button" variant="command" onClick={copySellerMessage}>Copiar mensaje</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </main>
