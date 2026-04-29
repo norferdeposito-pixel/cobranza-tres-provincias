@@ -206,7 +206,7 @@ const formatDate = (date?: string | null) => {
 };
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
-  if (status === "cerrado" || status === "entregado") return "Entregado";
+  if (status === "cerrado" || status === "entregado" || status === "terminado" || status === "recibido_total") return "Entregado";
   if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
