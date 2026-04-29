@@ -707,7 +707,7 @@ const Index = () => {
         mail_vendedor: getSellerEmail(editForm.vendedor, editForm.mailVendedor),
       })
       .eq("id", selectedOrder.id)
-      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
       .maybeSingle();
 
     if (error) {
