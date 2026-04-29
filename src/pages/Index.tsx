@@ -408,9 +408,20 @@ const Index = () => {
     loadPedidoItems();
   }, [selectedOrderId, isPreviewMode, previewItemsByOrderId]);
 
+  const sellerOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.vendedor).filter(Boolean))).sort(), [orders]);
+  const supplierOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.supplier).filter(Boolean))).sort(), [orders]);
   const filteredOrders = useMemo(
-    () => orders.filter((order) => `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status}`.toLowerCase().includes(query.toLowerCase())),
-    [orders, query],
+    () => orders.filter((order) => {
+      const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
+      const matchesSearch = `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status} ${order.vendedor}`.toLowerCase().includes(query.toLowerCase());
+      const matchesSeller = sellerFilter === "todos" || order.vendedor === sellerFilter;
+      const matchesStatus = statusFilter === "todos" || order.rawStatus === statusFilter;
+      const matchesSupplier = supplierFilter === "todos" || order.supplier === supplierFilter;
+      const matchesWithoutOc = !onlyWithoutOc || withoutOc;
+      const matchesMyActive = !onlyMyActiveOrders || (order.vendedor === currentSeller && ["en_curso", "recibido_parcial"].includes(order.rawStatus));
+      return matchesSearch && matchesSeller && matchesStatus && matchesSupplier && matchesWithoutOc && matchesMyActive;
+    }),
+    [orders, query, sellerFilter, statusFilter, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
@@ -422,10 +433,15 @@ const Index = () => {
 
   const nextDeliveries = orders.filter((order) => order.status !== "Entregado").slice(0, 3);
 
+  const ordersWithoutOcCount = orders.filter((order) => order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-")).length;
+  const totalOcAmount = pedidoItems.reduce((total, item) => total + getItemSubtotal(item), 0);
+  const totalOcCurrency = pedidoItems.find((item) => item.moneda)?.moneda || "ARS";
+
   const metrics = [
     { label: "Total pedidos en curso", value: orders.filter((order) => order.rawStatus !== "cerrado" && order.rawStatus !== "entregado").length, icon: PackageCheck },
     { label: "Pedidos atrasados", value: orders.filter((order) => order.status === "Atrasado").length, icon: AlertTriangle },
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
+    { label: "Pedidos sin OC", value: ordersWithoutOcCount, icon: AlertTriangle },
   ];
 
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
