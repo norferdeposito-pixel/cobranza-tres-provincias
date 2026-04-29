@@ -280,6 +280,8 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   ocNumber: order.numero_oc_qubigo || "-",
   eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
+  cliente: order.cliente || "-",
+  vendedor: order.vendedor || "-",
 });
 
 const Index = () => {
