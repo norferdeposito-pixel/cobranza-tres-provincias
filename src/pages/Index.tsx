@@ -544,7 +544,7 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    const validItems = itemForms.filter((item) => safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
     if (!form.supplierId || !form.cliente.trim() || !form.vendedor.trim() || !form.plazoEntregaCliente.trim() || validItems.length === 0) return;
 
     setIsSaving(true);
@@ -593,6 +593,12 @@ const Index = () => {
       return;
     }
 
+    if (!isValidUuid(form.supplierId)) {
+      toast({ title: "Proveedor inválido", description: "Seleccioná un proveedor válido antes de guardar.", variant: "destructive" });
+      setIsSaving(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
@@ -627,12 +633,12 @@ const Index = () => {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
       const itemsToInsert = validItems.map((item) => ({
         pedido_id: createdOrder.id,
-        descripcion: item.descripcion.trim(),
-        cantidad_pedida: Number(item.cantidadPedida),
+        descripcion: safeText(item.descripcion),
+        cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
-        cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad.trim(),
-        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+        cantidad_pendiente: safeNumber(item.cantidadPedida),
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
         moneda: optionalValue(item.moneda) || "ARS",
         cod_articulo: optionalValue(item.codArticulo),
         estado_entrega: "pendiente",
