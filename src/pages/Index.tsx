@@ -545,7 +545,7 @@ const Index = () => {
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const validItems = itemForms.filter((item) => safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
-    if (!form.supplierId || !form.cliente.trim() || !form.vendedor.trim() || !form.plazoEntregaCliente.trim() || validItems.length === 0) return;
+    if (!form.supplierId || !safeText(form.cliente) || !safeText(form.vendedor) || !safeText(form.plazoEntregaCliente) || validItems.length === 0) return;
 
     setIsSaving(true);
     const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
@@ -565,8 +565,8 @@ const Index = () => {
         ocNumber: form.numeroOcQubigo,
         eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
-        cliente: form.cliente.trim(),
-        vendedor: form.vendedor.trim(),
+        cliente: safeText(form.cliente),
+        vendedor: safeText(form.vendedor),
         fecha: form.fecha,
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
@@ -605,12 +605,12 @@ const Index = () => {
         fecha: optionalValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
-        cliente: form.cliente.trim(),
+        cliente: safeText(form.cliente),
         numero_oc_cliente: optionalValue(form.numeroOcCliente),
         numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
-        plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
+        plazo_entrega_cliente: safeText(form.plazoEntregaCliente),
         plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
-        vendedor: form.vendedor.trim(),
+        vendedor: safeText(form.vendedor),
         observaciones: optionalValue(form.observaciones),
         condiciones_pago: optionalValue(form.condicionesPago),
         estado: nextStatus,
