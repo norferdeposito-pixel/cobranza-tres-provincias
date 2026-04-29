@@ -561,6 +561,8 @@ const Index = () => {
         unidad: item.unidad.trim(),
         costo_unitario: Number(item.costoUnitario) || undefined,
         moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        estado_entrega: "pendiente",
       }));
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
@@ -591,7 +593,7 @@ const Index = () => {
         estado: nextStatus,
         mail_vendedor: nextSellerEmail,
       })
-      .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
       .maybeSingle();
 
     if (error) {
@@ -615,11 +617,13 @@ const Index = () => {
         unidad: item.unidad.trim(),
         costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
         moneda: optionalValue(item.moneda) || "ARS",
+        cod_articulo: optionalValue(item.codArticulo),
+        estado_entrega: "pendiente",
       }));
       const { data: createdItems, error: itemsError } = await supabase
         .from("pedido_items")
         .insert(itemsToInsert)
-        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo");
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
 
       if (itemsError) {
         toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
