@@ -646,7 +646,7 @@ const Index = () => {
     if (!selectedOrder) return;
 
     setIsSavingEdit(true);
-    const nextStatus = optionalValue(editForm.estado) || "pedido_cargado";
+    const derivedStatus = deriveStatusByOc(editForm.numeroOcQubigo, editForm.estado);
     const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
     const nextItems = editItemForms.map((item) => {
       const ordered = Number(item.cantidadPedida) || 0;
@@ -663,8 +663,10 @@ const Index = () => {
         costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
         moneda: optionalValue(item.moneda) || "ARS",
         cod_articulo: optionalValue(item.codArticulo) || undefined,
+        estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
+    const nextStatus = getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo) ? derivedStatus : getPedidoLifecycleStatus(nextItems, derivedStatus);
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === editForm.supplierId);
@@ -677,6 +679,8 @@ const Index = () => {
         ocNumber: editForm.numeroOcQubigo || "-",
         eta: nextEta || "",
         notes: editForm.observaciones || "Sin observaciones",
+        cliente: editForm.cliente.trim() || order.cliente,
+        vendedor: editForm.vendedor.trim() || order.vendedor,
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
@@ -712,7 +716,7 @@ const Index = () => {
       return;
     }
 
-    for (const item of editItemForms) {
+    for (const item of editItemForms.filter((current) => !current.id.startsWith("new-"))) {
       const ordered = Number(item.cantidadPedida) || 0;
       const original = pedidoItems.find((current) => current.id === item.id);
       const received = original?.cantidad_recibida || 0;
@@ -726,6 +730,7 @@ const Index = () => {
           moneda: optionalValue(item.moneda) || "ARS",
           costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
+          estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : "pendiente",
         })
         .eq("id", item.id);
 
@@ -734,6 +739,32 @@ const Index = () => {
         setIsSavingEdit(false);
         return;
       }
+    }
+
+    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    if (newItems.length > 0) {
+      const { data: insertedItems, error: insertItemsError } = await supabase
+        .from("pedido_items")
+        .insert(newItems.map((item) => ({
+          pedido_id: selectedOrder.id,
+          descripcion: item.descripcion.trim(),
+          cantidad_pedida: Number(item.cantidadPedida),
+          cantidad_recibida: 0,
+          cantidad_pendiente: Number(item.cantidadPedida),
+          unidad: item.unidad.trim(),
+          moneda: optionalValue(item.moneda) || "ARS",
+          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          cod_articulo: optionalValue(item.codArticulo),
+          estado_entrega: "pendiente",
+        })))
+        .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
+
+      if (insertItemsError) {
+        toast({ title: "Pedido actualizado, pero falló un ítem nuevo", description: insertItemsError.message, variant: "destructive" });
+        setIsSavingEdit(false);
+        return;
+      }
+      nextItems.splice(nextItems.length - newItems.length, newItems.length, ...((insertedItems || []) as PedidoItem[]));
     }
 
     if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
