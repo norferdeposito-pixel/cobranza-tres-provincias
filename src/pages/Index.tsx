@@ -449,9 +449,9 @@ const Index = () => {
   };
 
   const addItemForm = () => {
-    const key = `new-${Date.now()}`;
+    const nextIndex = itemForms.length;
     setItemForms((current) => [...current, createEmptyItemForm()]);
-    window.requestAnimationFrame(() => itemDescriptionRefs.current[key]?.focus());
+    window.requestAnimationFrame(() => itemDescriptionRefs.current[`create-${nextIndex}`]?.focus());
   };
 
   const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
