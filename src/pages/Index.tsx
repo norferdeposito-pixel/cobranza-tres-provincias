@@ -448,12 +448,22 @@ const Index = () => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
 
-  const addItemForm = () => setItemForms((current) => [...current, createEmptyItemForm()]);
+  const addItemForm = () => {
+    const key = `new-${Date.now()}`;
+    setItemForms((current) => [...current, createEmptyItemForm()]);
+    window.requestAnimationFrame(() => itemDescriptionRefs.current[key]?.focus());
+  };
 
   const removeItemForm = (index: number) => setItemForms((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
 
   const updateEditItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addEditItemForm = () => {
+    const id = `new-${Date.now()}`;
+    setEditItemForms((current) => [...current, { ...createEmptyItemForm(), id }]);
+    window.requestAnimationFrame(() => itemDescriptionRefs.current[id]?.focus());
   };
 
   const openEditOrder = async () => {
