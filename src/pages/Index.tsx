@@ -746,18 +746,18 @@ const Index = () => {
     }
 
     for (const item of editItemForms.filter((current) => !current.id.startsWith("new-"))) {
-      const ordered = Number(item.cantidadPedida) || 0;
+      const ordered = safeNumber(item.cantidadPedida);
       const original = pedidoItems.find((current) => current.id === item.id);
-      const received = original?.cantidad_recibida || 0;
+      const received = safeNumber(original?.cantidad_recibida);
       const { error: itemError } = await supabase
         .from("pedido_items")
         .update({
-          descripcion: item.descripcion.trim(),
+          descripcion: safeText(item.descripcion),
           cantidad_pedida: ordered,
           cantidad_pendiente: Math.max(ordered - received, 0),
-          unidad: item.unidad.trim(),
+          unidad: safeText(item.unidad),
           moneda: optionalValue(item.moneda) || "ARS",
-          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
           estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : "pendiente",
         })
@@ -770,19 +770,19 @@ const Index = () => {
       }
     }
 
-    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
     if (newItems.length > 0) {
       const { data: insertedItems, error: insertItemsError } = await supabase
         .from("pedido_items")
         .insert(newItems.map((item) => ({
           pedido_id: selectedOrder.id,
-          descripcion: item.descripcion.trim(),
-          cantidad_pedida: Number(item.cantidadPedida),
+          descripcion: safeText(item.descripcion),
+          cantidad_pedida: safeNumber(item.cantidadPedida),
           cantidad_recibida: 0,
-          cantidad_pendiente: Number(item.cantidadPedida),
-          unidad: item.unidad.trim(),
+          cantidad_pendiente: safeNumber(item.cantidadPedida),
+          unidad: safeText(item.unidad),
           moneda: optionalValue(item.moneda) || "ARS",
-          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
           estado_entrega: "pendiente",
         })))
