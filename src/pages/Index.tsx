@@ -784,9 +784,13 @@ const Index = () => {
     setIsSavingReception(true);
     const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
     const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+    const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
+    const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
     if (isPreviewMode) {
-      setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+      setPedidoItems(updatedItems);
+      setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrderId)]: updatedItems }));
+      setOrders((current) => current.map((order) => order.id === selectedOrderId && order.rawStatus !== "anulado" ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
       setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
       setIsSavingReception(false);
       toast({ title: "Recepción cargada en preview", description: "Las cantidades se actualizaron localmente." });
@@ -810,7 +814,7 @@ const Index = () => {
 
     const { error: itemError } = await supabase
       .from("pedido_items")
-      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending })
+      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : "pendiente" })
       .eq("id", selectedItem.id);
 
     if (itemError) {
@@ -819,7 +823,11 @@ const Index = () => {
       return;
     }
 
-    setPedidoItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending } : item));
+    if (selectedOrder?.rawStatus !== "anulado") {
+      await supabase.from("pedidos").update({ estado: nextOrderStatus }).eq("id", selectedOrderId);
+      setOrders((current) => current.map((order) => order.id === selectedOrderId ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
+    }
+    setPedidoItems(updatedItems);
     setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
     setIsSavingReception(false);
     toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
