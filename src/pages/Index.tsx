@@ -291,6 +291,11 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
+  const [sellerFilter, setSellerFilter] = useState("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [supplierFilter, setSupplierFilter] = useState("todos");
+  const [onlyWithoutOc, setOnlyWithoutOc] = useState(false);
+  const [onlyMyActiveOrders, setOnlyMyActiveOrders] = useState(false);
   const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [itemForms, setItemForms] = useState<PedidoItemForm[]>([createEmptyItemForm()]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
@@ -307,9 +312,13 @@ const Index = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [sellerMessage, setSellerMessage] = useState("");
+  const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
+  const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const isAdmin = true;
+  const currentSeller = "María";
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -317,7 +326,7 @@ const Index = () => {
         supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
-          .select("id, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones")
+          .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
           .order("fecha_estimada_entrega", { ascending: true }),
         supabase.from("alertas").select("id, fecha_aviso, estado"),
       ]);
@@ -371,7 +380,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
