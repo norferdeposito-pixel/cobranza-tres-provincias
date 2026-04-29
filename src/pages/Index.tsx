@@ -702,8 +702,8 @@ const Index = () => {
         ocNumber: editForm.numeroOcQubigo || "-",
         eta: nextEta || "",
         notes: editForm.observaciones || "Sin observaciones",
-        cliente: editForm.cliente.trim() || order.cliente,
-        vendedor: editForm.vendedor.trim() || order.vendedor,
+        cliente: safeText(editForm.cliente) || order.cliente,
+        vendedor: safeText(editForm.vendedor) || order.vendedor,
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
@@ -723,11 +723,11 @@ const Index = () => {
       .from("pedidos")
       .update({
         proveedor_id: editForm.supplierId,
-        cliente: editForm.cliente.trim(),
+        cliente: optionalValue(editForm.cliente),
         numero_oc_cliente: optionalValue(editForm.numeroOcCliente),
         plazo_entrega_cliente: optionalValue(editForm.plazoEntregaCliente),
         plazo_entrega_proveedor: optionalValue(editForm.plazoEntregaProveedor),
-        vendedor: editForm.vendedor.trim(),
+        vendedor: optionalValue(editForm.vendedor),
         observaciones: optionalValue(editForm.observaciones),
         condiciones_pago: optionalValue(editForm.condicionesPago),
         numero_oc_qubigo: optionalValue(editForm.numeroOcQubigo),
@@ -806,13 +806,13 @@ const Index = () => {
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
-    const receivedQuantity = Number(receptionForm.quantity);
+    const receivedQuantity = safeNumber(receptionForm.quantity);
 
     if (!selectedOrderId || !selectedItem || !receivedQuantity || receivedQuantity <= 0) return;
 
     setIsSavingReception(true);
-    const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
-    const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+    const nextReceived = safeNumber(selectedItem.cantidad_recibida) + receivedQuantity;
+    const nextPending = Math.max(safeNumber(selectedItem.cantidad_pedida) - nextReceived, 0);
     const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
     const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
