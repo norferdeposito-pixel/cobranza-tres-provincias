@@ -125,10 +125,10 @@ const isUpcomingDueDate = (date: string) => {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "atrasado", ocNumber: "OC-77834", eta: "2026-04-22", notes: "Pendiente respuesta proveedor" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "entregado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central", cliente: "Producción", vendedor: "María" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "terminado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades", cliente: "Calidad", vendedor: "Sofía" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
@@ -167,6 +167,38 @@ const statusClasses: Record<OrderStatus, string> = {
   Confirmado: "bg-warning/20 text-warning-foreground border-warning/30",
   Entregado: "bg-success/10 text-success border-success/20",
 };
+
+const rawStatusClasses: Record<string, string> = {
+  en_curso: "bg-success/10 text-success border-success/30",
+  pedido_cargado: "bg-primary/10 text-primary border-primary/25",
+  anulado: "bg-foreground/10 text-foreground border-foreground/25",
+  pendiente: "bg-warning/20 text-warning-foreground border-warning/40",
+  sin_oc: "bg-warning/20 text-warning-foreground border-warning/40",
+  terminado: "bg-muted text-muted-foreground border-border",
+  recibido_total: "bg-success/10 text-success border-success/20",
+  recibido_parcial: "bg-success/10 text-success border-success/30",
+};
+
+const getStatusBadgeClass = (rawStatus: string, ocNumber?: string | null) => {
+  if (rawStatus === "pedido_cargado" && (!ocNumber || ocNumber === "-")) return rawStatusClasses.sin_oc;
+  return rawStatusClasses[rawStatus] || "bg-secondary text-secondary-foreground border-border";
+};
+
+const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
+  const currentStatus = optionalValue(estado || "") || "pedido_cargado";
+  const protectedStatuses = ["terminado", "anulado", "recibido_total", "recibido_parcial"];
+  if (optionalValue(numeroOcQubigo) && currentStatus === "pedido_cargado" && !protectedStatuses.includes(currentStatus)) return "en_curso";
+  return currentStatus;
+};
+
+const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
+  if (currentStatus === "anulado") return "anulado";
+  if (items.length > 0 && items.every((item) => Number(item.cantidad_pendiente) <= 0)) return "terminado";
+  if (items.some((item) => Number(item.cantidad_recibida) > 0)) return "recibido_parcial";
+  return "en_curso";
+};
+
+const getItemSubtotal = (item: PedidoItem) => Number(item.cantidad_pedida || 0) * Number(item.costo_unitario || 0);
 
 const formatDate = (date?: string | null) => {
   if (!isValidDateValue(date)) return "-";
