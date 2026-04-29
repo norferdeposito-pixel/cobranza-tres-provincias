@@ -110,16 +110,36 @@ const pedidoEstados = [
   "anulado",
 ];
 
-const isValidDateValue = (date?: string | null) => {
-  if (!date) return false;
-  const parsedDate = new Date(`${date}T12:00:00`);
-  return !Number.isNaN(parsedDate.getTime());
+const safeText = (value?: string | number | null) => String(value ?? "").trim();
+
+const optionalValue = (value?: string | number | null) => {
+  const trimmed = safeText(value);
+  return trimmed ? trimmed : null;
 };
 
+const safeNumber = (value?: string | number | null) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isValidUuid = (value?: string | null) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeText(value));
+
+const isValidDateValue = (date?: string | null) => {
+  const value = safeText(date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const daysInMonth = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1];
+};
+
+const safeDateForDisplay = (date?: string | null) => isValidDateValue(date) ? safeText(date) : null;
+
 const isUpcomingDueDate = (date: string) => {
-  if (!isValidDateValue(date)) return false;
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return false;
   const current = new Date(`${today()}T00:00:00`);
-  const dueDate = new Date(`${date}T00:00:00`);
+  const dueDate = new Date(`${safeDate}T00:00:00`);
   const sevenDaysFromNow = new Date(current);
   sevenDaysFromNow.setDate(current.getDate() + 7);
 
@@ -195,21 +215,23 @@ const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
 
 const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
   if (currentStatus === "anulado") return "anulado";
-  if (items.length > 0 && items.every((item) => Number(item.cantidad_pendiente) <= 0)) return "terminado";
-  if (items.some((item) => Number(item.cantidad_recibida) > 0)) return "recibido_parcial";
+  if (items.length > 0 && items.every((item) => safeNumber(item.cantidad_pendiente) <= 0)) return "terminado";
+  if (items.some((item) => safeNumber(item.cantidad_recibida) > 0)) return "recibido_parcial";
   return "en_curso";
 };
 
-const getItemSubtotal = (item: PedidoItem) => Number(item.cantidad_pedida || 0) * Number(item.costo_unitario || 0);
+const getItemSubtotal = (item: PedidoItem) => safeNumber(item.cantidad_pedida) * safeNumber(item.costo_unitario);
 
 const formatDate = (date?: string | null) => {
-  if (!isValidDateValue(date)) return "-";
-  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return "-";
+  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${safeDate}T12:00:00`));
 };
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
   if (status === "cerrado" || status === "entregado" || status === "terminado" || status === "recibido_total") return "Entregado";
-  if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  const safeEta = safeDateForDisplay(eta);
+  if (safeEta && new Date(`${safeEta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
 };
@@ -245,19 +267,14 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   codArticulo: "",
 });
 
-const optionalValue = (value: string) => {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const optionalDateValue = (value: string) => isValidDateValue(value) ? value : null;
+const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
 const generateOrderNumber = () => `PED-${Date.now()}`;
 
 const getSellerEmail = (seller: string, explicitEmail: string) => {
-  const trimmedEmail = explicitEmail.trim();
+  const trimmedEmail = safeText(explicitEmail);
   if (trimmedEmail) return trimmedEmail;
-  const trimmedSeller = seller.trim();
+  const trimmedSeller = safeText(seller);
   return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
 };
 
@@ -276,9 +293,9 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   orderNumber: order.numero_pedido,
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierPhone: Array.isArray(order.proveedores) ? order.proveedores[0]?.telefono || "" : order.proveedores?.telefono || "",
-  supplierId: order.proveedor_id,
-  status: normalizeStatus(order.estado, order.fecha_estimada_entrega || ""),
-  rawStatus: order.estado,
+  supplierId: order.proveedor_id || "",
+  status: normalizeStatus(order.estado || "pedido_cargado", order.fecha_estimada_entrega || ""),
+  rawStatus: order.estado || "pedido_cargado",
   ocNumber: order.numero_oc_qubigo || "-",
   eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
@@ -527,8 +544,8 @@ const Index = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validItems = itemForms.filter((item) => item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
-    if (!form.supplierId || !form.cliente.trim() || !form.vendedor.trim() || !form.plazoEntregaCliente.trim() || validItems.length === 0) return;
+    const validItems = itemForms.filter((item) => safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
+    if (!form.supplierId || !safeText(form.cliente) || !safeText(form.vendedor) || !safeText(form.plazoEntregaCliente) || validItems.length === 0) return;
 
     setIsSaving(true);
     const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
@@ -548,20 +565,20 @@ const Index = () => {
         ocNumber: form.numeroOcQubigo,
         eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
-        cliente: form.cliente.trim(),
-        vendedor: form.vendedor.trim(),
+        cliente: safeText(form.cliente),
+        vendedor: safeText(form.vendedor),
         fecha: form.fecha,
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
-        descripcion: item.descripcion,
-        cantidad_pedida: Number(item.cantidadPedida),
+        descripcion: safeText(item.descripcion),
+        cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
-        cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad.trim(),
-        costo_unitario: Number(item.costoUnitario) || undefined,
+        cantidad_pendiente: safeNumber(item.cantidadPedida),
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
         moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        cod_articulo: optionalValue(item.codArticulo) || "",
         estado_entrega: "pendiente",
       }));
       setOrders((current) => [createdOrder, ...current]);
@@ -576,18 +593,24 @@ const Index = () => {
       return;
     }
 
+    if (!isValidUuid(form.supplierId)) {
+      toast({ title: "Proveedor inválido", description: "Seleccioná un proveedor válido antes de guardar.", variant: "destructive" });
+      setIsSaving(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
-        fecha: optionalValue(form.fecha),
+        fecha: optionalDateValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
-        cliente: form.cliente.trim(),
+        cliente: safeText(form.cliente),
         numero_oc_cliente: optionalValue(form.numeroOcCliente),
         numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
-        plazo_entrega_cliente: form.plazoEntregaCliente.trim(),
+        plazo_entrega_cliente: safeText(form.plazoEntregaCliente),
         plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
-        vendedor: form.vendedor.trim(),
+        vendedor: safeText(form.vendedor),
         observaciones: optionalValue(form.observaciones),
         condiciones_pago: optionalValue(form.condicionesPago),
         estado: nextStatus,
@@ -598,7 +621,7 @@ const Index = () => {
 
     if (error) {
       toast({
-        title: "No se pudo guardar el pedido",
+        title: "Error al guardar pedido",
         description: error.message,
         variant: "destructive",
       });
@@ -610,12 +633,12 @@ const Index = () => {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
       const itemsToInsert = validItems.map((item) => ({
         pedido_id: createdOrder.id,
-        descripcion: item.descripcion.trim(),
-        cantidad_pedida: Number(item.cantidadPedida),
+        descripcion: safeText(item.descripcion),
+        cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
-        cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad.trim(),
-        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+        cantidad_pendiente: safeNumber(item.cantidadPedida),
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
         moneda: optionalValue(item.moneda) || "ARS",
         cod_articulo: optionalValue(item.codArticulo),
         estado_entrega: "pendiente",
@@ -626,7 +649,7 @@ const Index = () => {
         .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
 
       if (itemsError) {
-        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
+      toast({ title: "Error al guardar ítems", description: itemsError.message, variant: "destructive" });
         setIsSaving(false);
         return;
       }
@@ -649,20 +672,20 @@ const Index = () => {
     const derivedStatus = deriveStatusByOc(editForm.numeroOcQubigo, editForm.estado);
     const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
     const nextItems = editItemForms.map((item) => {
-      const ordered = Number(item.cantidadPedida) || 0;
+      const ordered = safeNumber(item.cantidadPedida);
       const original = pedidoItems.find((current) => current.id === item.id);
-      const received = original?.cantidad_recibida || 0;
+      const received = safeNumber(original?.cantidad_recibida);
       return {
         ...original,
         id: item.id,
-        descripcion: item.descripcion.trim(),
+        descripcion: safeText(item.descripcion),
         cantidad_pedida: ordered,
         cantidad_recibida: received,
         cantidad_pendiente: Math.max(ordered - received, 0),
-        unidad: item.unidad.trim(),
-        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
         moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        cod_articulo: optionalValue(item.codArticulo) || "",
         estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
@@ -679,8 +702,8 @@ const Index = () => {
         ocNumber: editForm.numeroOcQubigo || "-",
         eta: nextEta || "",
         notes: editForm.observaciones || "Sin observaciones",
-        cliente: editForm.cliente.trim() || order.cliente,
-        vendedor: editForm.vendedor.trim() || order.vendedor,
+        cliente: safeText(editForm.cliente) || order.cliente,
+        vendedor: safeText(editForm.vendedor) || order.vendedor,
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
@@ -690,15 +713,21 @@ const Index = () => {
       return;
     }
 
+    if (!isValidUuid(editForm.supplierId)) {
+      toast({ title: "Proveedor inválido", description: "Seleccioná un proveedor válido antes de guardar.", variant: "destructive" });
+      setIsSavingEdit(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("pedidos")
       .update({
         proveedor_id: editForm.supplierId,
-        cliente: editForm.cliente.trim(),
+        cliente: optionalValue(editForm.cliente),
         numero_oc_cliente: optionalValue(editForm.numeroOcCliente),
         plazo_entrega_cliente: optionalValue(editForm.plazoEntregaCliente),
         plazo_entrega_proveedor: optionalValue(editForm.plazoEntregaProveedor),
-        vendedor: editForm.vendedor.trim(),
+        vendedor: optionalValue(editForm.vendedor),
         observaciones: optionalValue(editForm.observaciones),
         condiciones_pago: optionalValue(editForm.condicionesPago),
         numero_oc_qubigo: optionalValue(editForm.numeroOcQubigo),
@@ -717,18 +746,18 @@ const Index = () => {
     }
 
     for (const item of editItemForms.filter((current) => !current.id.startsWith("new-"))) {
-      const ordered = Number(item.cantidadPedida) || 0;
+      const ordered = safeNumber(item.cantidadPedida);
       const original = pedidoItems.find((current) => current.id === item.id);
-      const received = original?.cantidad_recibida || 0;
+      const received = safeNumber(original?.cantidad_recibida);
       const { error: itemError } = await supabase
         .from("pedido_items")
         .update({
-          descripcion: item.descripcion.trim(),
+          descripcion: safeText(item.descripcion),
           cantidad_pedida: ordered,
           cantidad_pendiente: Math.max(ordered - received, 0),
-          unidad: item.unidad.trim(),
+          unidad: safeText(item.unidad),
           moneda: optionalValue(item.moneda) || "ARS",
-          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
           estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : "pendiente",
         })
@@ -741,19 +770,19 @@ const Index = () => {
       }
     }
 
-    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && item.descripcion.trim() && Number(item.cantidadPedida) > 0 && item.unidad.trim());
+    const newItems = editItemForms.filter((item) => item.id.startsWith("new-") && safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
     if (newItems.length > 0) {
       const { data: insertedItems, error: insertItemsError } = await supabase
         .from("pedido_items")
         .insert(newItems.map((item) => ({
           pedido_id: selectedOrder.id,
-          descripcion: item.descripcion.trim(),
-          cantidad_pedida: Number(item.cantidadPedida),
+          descripcion: safeText(item.descripcion),
+          cantidad_pedida: safeNumber(item.cantidadPedida),
           cantidad_recibida: 0,
-          cantidad_pendiente: Number(item.cantidadPedida),
-          unidad: item.unidad.trim(),
+          cantidad_pendiente: safeNumber(item.cantidadPedida),
+          unidad: safeText(item.unidad),
           moneda: optionalValue(item.moneda) || "ARS",
-          costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : null,
+          costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
           cod_articulo: optionalValue(item.codArticulo),
           estado_entrega: "pendiente",
         })))
@@ -777,13 +806,13 @@ const Index = () => {
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
-    const receivedQuantity = Number(receptionForm.quantity);
+    const receivedQuantity = safeNumber(receptionForm.quantity);
 
     if (!selectedOrderId || !selectedItem || !receivedQuantity || receivedQuantity <= 0) return;
 
     setIsSavingReception(true);
-    const nextReceived = selectedItem.cantidad_recibida + receivedQuantity;
-    const nextPending = Math.max(selectedItem.cantidad_pedida - nextReceived, 0);
+    const nextReceived = safeNumber(selectedItem.cantidad_recibida) + receivedQuantity;
+    const nextPending = Math.max(safeNumber(selectedItem.cantidad_pedida) - nextReceived, 0);
     const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
     const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
@@ -800,14 +829,14 @@ const Index = () => {
     const { error: receptionError } = await supabase.from("recepciones").insert({
       pedido_id: selectedOrderId,
       item_id: selectedItem.id,
-      fecha_recepcion: receptionForm.date,
+      fecha_recepcion: optionalDateValue(receptionForm.date) || today(),
       cantidad_recibida: receivedQuantity,
-      nueva_fecha_entrega: receptionForm.newEta || null,
-      observaciones: receptionForm.notes || "Recepción cargada desde OC Control",
+      nueva_fecha_entrega: optionalDateValue(receptionForm.newEta),
+      observaciones: optionalValue(receptionForm.notes) || "Recepción cargada desde OC Control",
     });
 
     if (receptionError) {
-      toast({ title: "No se pudo guardar la recepción", description: "Revisá los permisos de inserción de recepciones.", variant: "destructive" });
+      toast({ title: "Error al guardar recepción", description: receptionError.message, variant: "destructive" });
       setIsSavingReception(false);
       return;
     }
@@ -818,7 +847,7 @@ const Index = () => {
       .eq("id", selectedItem.id);
 
     if (itemError) {
-      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: "Revisá los permisos de actualización de pedido_items.", variant: "destructive" });
+      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: itemError.message, variant: "destructive" });
       setIsSavingReception(false);
       return;
     }
