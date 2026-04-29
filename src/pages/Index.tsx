@@ -1146,21 +1146,19 @@ Equipo NORFER`;
                   </div>
 
                   <div className="space-y-3 border-t pt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="font-semibold">Paso 1 · Requeridos</h4>
-                      <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Ítem</Button>
-                    </div>
+                    <h4 className="font-semibold">Paso 1 · Requeridos</h4>
                     {itemForms.map((item, index) => (
                       <div key={index} className="space-y-3 rounded-md border bg-surface-subtle p-3">
                         <div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Ítem {index + 1}</p><Button type="button" size="icon" variant="ghost" onClick={() => removeItemForm(index)} disabled={itemForms.length === 1}><Trash2 className="h-4 w-4" /></Button></div>
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                          <div className="space-y-2"><Label>descripcion</Label><Input value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
+                          <div className="space-y-2"><Label>descripcion</Label><Input ref={(element) => { itemDescriptionRefs.current[`create-${index}`] = element; }} value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
                           <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
                         </div>
                       </div>
                     ))}
+                    <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Agregar ítem</Button>
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
                       <div className="space-y-2"><Label htmlFor="cliente">cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
                       <div className="space-y-2"><Label htmlFor="vendedor">vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
@@ -1176,7 +1174,7 @@ Equipo NORFER`;
                       ))}
                       <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
                       <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value, estado: event.target.value.trim() && form.estado === "pedido_cargado" ? "en_curso" : form.estado })} /></div>
                       <div className="space-y-2">
                         <Label htmlFor="estado">estado</Label>
                         <select id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
