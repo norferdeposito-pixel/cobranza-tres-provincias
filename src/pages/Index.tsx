@@ -927,7 +927,7 @@ Equipo NORFER`;
 
           <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
             <div className="space-y-6">
-              <section className="grid gap-4 md:grid-cols-3">
+              <section className="grid gap-4 md:grid-cols-4">
                 {metrics.map((metric, index) => (
                   <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
                     <div className="flex items-center justify-between">
@@ -952,6 +952,13 @@ Equipo NORFER`;
                     <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pedido u OC" className="pl-9" />
                   </div>
                 </div>
+                <div className="grid gap-3 border-b p-5 md:grid-cols-5">
+                  <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
+                  <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
+                  <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
+                  <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
@@ -967,7 +974,7 @@ Equipo NORFER`;
                       {!isLoading && filteredOrders.map((order) => (
                         <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
                           <td className="px-5 py-4">{order.supplier}</td>
-                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses[order.status]}`}>{order.rawStatus}</span></td>
+                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
                           <td className="px-5 py-4">
