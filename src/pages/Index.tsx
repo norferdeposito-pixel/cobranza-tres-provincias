@@ -23,6 +23,7 @@ type PurchaseOrder = {
   notes: string;
   cliente: string;
   vendedor: string;
+  fecha: string;
 };
 
 type PurchaseOrderRow = {
@@ -36,6 +37,7 @@ type PurchaseOrderRow = {
   observaciones: string | null;
   cliente: string | null;
   vendedor: string | null;
+  fecha: string | null;
 };
 
 type Supplier = {
@@ -125,10 +127,10 @@ const isUpcomingDueDate = (date: string) => {
 };
 
 const initialOrders: PurchaseOrder[] = [
-  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María" },
-  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan" },
-  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central", cliente: "Producción", vendedor: "María" },
-  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "terminado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades", cliente: "Calidad", vendedor: "Sofía" },
+  { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
+  { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
+  { id: 3, orderNumber: "PED-1050", supplier: "Insumos Delta", supplierId: "", supplierPhone: "", status: "Confirmado", rawStatus: "confirmado", ocNumber: "OC-77859", eta: "2026-05-08", notes: "Entrega en planta central", cliente: "Producción", vendedor: "María", fecha: "2026-04-21" },
+  { id: 4, orderNumber: "PED-1051", supplier: "Tecno Industrial", supplierId: "", supplierPhone: "", status: "Entregado", rawStatus: "terminado", ocNumber: "OC-77866", eta: "2026-04-25", notes: "Recepción sin novedades", cliente: "Calidad", vendedor: "Sofía", fecha: "2026-04-16" },
 ];
 
 const fallbackSuppliers: Supplier[] = [
