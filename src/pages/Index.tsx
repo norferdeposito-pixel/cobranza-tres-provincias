@@ -284,6 +284,7 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   notes: order.observaciones || "Sin observaciones",
   cliente: order.cliente || "-",
   vendedor: order.vendedor || "-",
+  fecha: order.fecha || "",
 });
 
 const Index = () => {
