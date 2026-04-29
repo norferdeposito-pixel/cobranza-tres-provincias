@@ -272,9 +272,9 @@ const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 const generateOrderNumber = () => `PED-${Date.now()}`;
 
 const getSellerEmail = (seller: string, explicitEmail: string) => {
-  const trimmedEmail = explicitEmail.trim();
+  const trimmedEmail = safeText(explicitEmail);
   if (trimmedEmail) return trimmedEmail;
-  const trimmedSeller = seller.trim();
+  const trimmedSeller = safeText(seller);
   return /\S+@\S+\.\S+/.test(trimmedSeller) ? trimmedSeller : null;
 };
 
@@ -293,9 +293,9 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   orderNumber: order.numero_pedido,
   supplier: Array.isArray(order.proveedores) ? order.proveedores[0]?.nombre || "Sin proveedor" : order.proveedores?.nombre || "Sin proveedor",
   supplierPhone: Array.isArray(order.proveedores) ? order.proveedores[0]?.telefono || "" : order.proveedores?.telefono || "",
-  supplierId: order.proveedor_id,
-  status: normalizeStatus(order.estado, order.fecha_estimada_entrega || ""),
-  rawStatus: order.estado,
+  supplierId: order.proveedor_id || "",
+  status: normalizeStatus(order.estado || "pedido_cargado", order.fecha_estimada_entrega || ""),
+  rawStatus: order.estado || "pedido_cargado",
   ocNumber: order.numero_oc_qubigo || "-",
   eta: order.fecha_estimada_entrega || "",
   notes: order.observaciones || "Sin observaciones",
