@@ -843,6 +843,43 @@ const Index = () => {
     window.open(`https://wa.me/${phone ? `${phone}?` : "?"}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
+  const openSellerMessage = () => {
+    if (!selectedOrder) return;
+    const lines = pedidoItems.map((item, index) => `${index + 1}. ${item.descripcion} – COD ${item.cod_articulo || "F/STOCK"} – ${item.cantidad_pedida} ${item.unidad || ""}`);
+    const message = `Hola,
+
+Te compartimos el detalle completo desde Gestión OC:
+
+* Fecha carga: ${formatDate(selectedOrder.fecha)}
+
+* Proveedor: ${selectedOrder.supplier}
+
+* Cliente: ${selectedOrder.cliente || "-"}
+
+* N° OC QUBIGO: ${selectedOrder.ocNumber || "-"}
+
+* Estado: ENVIADO
+
+* Fecha estimada: ${formatDate(selectedOrder.eta)}
+
+Artículos asignados:
+
+${lines.join("\n") || "-"}
+
+MONTO TOTAL OC: ${totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${totalOcCurrency}
+
+Saludos,
+
+Equipo NORFER`;
+    setSellerMessage(message);
+    setIsSellerMessageOpen(true);
+  };
+
+  const copySellerMessage = async () => {
+    await navigator.clipboard.writeText(sellerMessage);
+    toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
