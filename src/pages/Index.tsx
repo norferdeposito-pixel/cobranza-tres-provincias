@@ -1000,11 +1000,19 @@ Equipo NORFER`;
                     <h3 className="text-lg font-semibold">Detalle de pedido</h3>
                     <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
                   </div>
-                  {isAdmin && selectedOrder && (
-                    <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
-                      <Pencil className="h-4 w-4" />
-                      Editar pedido
-                    </Button>
+                  {selectedOrder && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
+                        <MessageCircle className="h-4 w-4" />
+                        Mensaje vendedor
+                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
+                          <Pencil className="h-4 w-4" />
+                          Editar pedido
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="overflow-x-auto">
@@ -1015,6 +1023,8 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">cantidad_pedida</th>
                         <th className="px-5 py-3 font-semibold">cantidad_recibida</th>
                         <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
+                        {isAdmin && <th className="px-5 py-3 font-semibold">costo</th>}
+                        {isAdmin && <th className="px-5 py-3 font-semibold">subtotal</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -1032,17 +1042,19 @@ Equipo NORFER`;
                           <td className="px-5 py-4">{item.cantidad_pedida}</td>
                           <td className="px-5 py-4">{item.cantidad_recibida}</td>
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
+                          {isAdmin && <td className="px-5 py-4">{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</td>}
+                          {isAdmin && <td className="px-5 py-4 font-semibold">{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</td>}
                         </tr>
                         );
                       })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Este pedido no tiene ítems cargados.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>Este pedido no tiene ítems cargados.</td>
                         </tr>
                       )}
                       {!selectedOrder && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>No hay pedido seleccionado.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1050,6 +1062,9 @@ Equipo NORFER`;
                 </div>
                 {selectedOrder && (
                   <div className="border-t p-5">
+                    {isAdmin && pedidoItems.length > 0 && (
+                      <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
+                    )}
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h4 className="font-semibold">Alertas del pedido</h4>
                       <div className="flex items-center gap-2">
