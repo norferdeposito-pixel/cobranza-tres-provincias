@@ -571,14 +571,14 @@ const Index = () => {
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
-        descripcion: item.descripcion,
-        cantidad_pedida: Number(item.cantidadPedida),
+        descripcion: safeText(item.descripcion),
+        cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
-        cantidad_pendiente: Number(item.cantidadPedida),
-        unidad: item.unidad.trim(),
-        costo_unitario: Number(item.costoUnitario) || undefined,
+        cantidad_pendiente: safeNumber(item.cantidadPedida),
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
         moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        cod_articulo: optionalValue(item.codArticulo) || "",
         estado_entrega: "pendiente",
       }));
       setOrders((current) => [createdOrder, ...current]);
@@ -672,20 +672,20 @@ const Index = () => {
     const derivedStatus = deriveStatusByOc(editForm.numeroOcQubigo, editForm.estado);
     const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
     const nextItems = editItemForms.map((item) => {
-      const ordered = Number(item.cantidadPedida) || 0;
+      const ordered = safeNumber(item.cantidadPedida);
       const original = pedidoItems.find((current) => current.id === item.id);
-      const received = original?.cantidad_recibida || 0;
+      const received = safeNumber(original?.cantidad_recibida);
       return {
         ...original,
         id: item.id,
-        descripcion: item.descripcion.trim(),
+        descripcion: safeText(item.descripcion),
         cantidad_pedida: ordered,
         cantidad_recibida: received,
         cantidad_pendiente: Math.max(ordered - received, 0),
-        unidad: item.unidad.trim(),
-        costo_unitario: item.costoUnitario.trim() ? Number(item.costoUnitario) : undefined,
+        unidad: safeText(item.unidad),
+        costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
         moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || undefined,
+        cod_articulo: optionalValue(item.codArticulo) || "",
         estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
@@ -710,6 +710,12 @@ const Index = () => {
       setIsSavingEdit(false);
       setIsEditOpen(false);
       toast({ title: "Pedido actualizado en preview", description: "Los cambios se aplicaron localmente." });
+      return;
+    }
+
+    if (!isValidUuid(editForm.supplierId)) {
+      toast({ title: "Proveedor inválido", description: "Seleccioná un proveedor válido antes de guardar.", variant: "destructive" });
+      setIsSavingEdit(false);
       return;
     }
 
