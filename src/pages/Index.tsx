@@ -1258,6 +1258,18 @@ Equipo NORFER`;
           )}
         </DialogContent>
       </Dialog>
+      <Dialog open={isSellerMessageOpen} onOpenChange={setIsSellerMessageOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mensaje vendedor</DialogTitle>
+          </DialogHeader>
+          <Textarea value={sellerMessage} onChange={(event) => setSellerMessage(event.target.value)} className="min-h-[420px] font-mono text-sm" />
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setIsSellerMessageOpen(false)}>Cerrar</Button>
+            <Button type="button" variant="command" onClick={copySellerMessage}>Copiar mensaje</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 };
