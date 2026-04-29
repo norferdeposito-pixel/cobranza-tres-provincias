@@ -494,7 +494,7 @@ const Index = () => {
 
     setIsSaving(true);
     const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
-    const nextStatus = optionalValue(form.estado) || "pedido_cargado";
+    const nextStatus = deriveStatusByOc(form.numeroOcQubigo, form.estado);
     const nextSellerEmail = getSellerEmail(form.vendedor, form.mailVendedor);
 
     if (isPreviewMode) {
@@ -510,6 +510,8 @@ const Index = () => {
         ocNumber: form.numeroOcQubigo,
         eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
+        cliente: form.cliente.trim(),
+        vendedor: form.vendedor.trim(),
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
