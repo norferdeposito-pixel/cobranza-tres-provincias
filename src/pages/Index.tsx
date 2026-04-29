@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ type PurchaseOrder = {
   ocNumber: string;
   eta: string;
   notes: string;
+  cliente: string;
+  vendedor: string;
 };
 
 type PurchaseOrderRow = {
@@ -32,6 +34,8 @@ type PurchaseOrderRow = {
   numero_oc_qubigo: string | null;
   fecha_estimada_entrega: string | null;
   observaciones: string | null;
+  cliente: string | null;
+  vendedor: string | null;
 };
 
 type Supplier = {
@@ -50,6 +54,7 @@ type PedidoItem = {
   costo_unitario?: number;
   moneda?: string;
   cod_articulo?: string;
+  estado_entrega?: string;
 };
 
 type PedidoForm = {
