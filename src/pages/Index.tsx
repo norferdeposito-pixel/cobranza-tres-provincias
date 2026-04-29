@@ -602,7 +602,7 @@ const Index = () => {
     const { data, error } = await supabase
       .from("pedidos")
       .insert({
-        fecha: optionalValue(form.fecha),
+        fecha: optionalDateValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: form.supplierId,
         cliente: safeText(form.cliente),
@@ -621,7 +621,7 @@ const Index = () => {
 
     if (error) {
       toast({
-        title: "No se pudo guardar el pedido",
+        title: "Error al guardar pedido",
         description: error.message,
         variant: "destructive",
       });
@@ -649,7 +649,7 @@ const Index = () => {
         .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
 
       if (itemsError) {
-        toast({ title: "Pedido guardado, pero no se guardaron los ítems", description: itemsError.message, variant: "destructive" });
+      toast({ title: "Error al guardar ítems", description: itemsError.message, variant: "destructive" });
         setIsSaving(false);
         return;
       }
@@ -829,14 +829,14 @@ const Index = () => {
     const { error: receptionError } = await supabase.from("recepciones").insert({
       pedido_id: selectedOrderId,
       item_id: selectedItem.id,
-      fecha_recepcion: receptionForm.date,
+      fecha_recepcion: optionalDateValue(receptionForm.date) || today(),
       cantidad_recibida: receivedQuantity,
-      nueva_fecha_entrega: receptionForm.newEta || null,
-      observaciones: receptionForm.notes || "Recepción cargada desde OC Control",
+      nueva_fecha_entrega: optionalDateValue(receptionForm.newEta),
+      observaciones: optionalValue(receptionForm.notes) || "Recepción cargada desde OC Control",
     });
 
     if (receptionError) {
-      toast({ title: "No se pudo guardar la recepción", description: "Revisá los permisos de inserción de recepciones.", variant: "destructive" });
+      toast({ title: "Error al guardar recepción", description: receptionError.message, variant: "destructive" });
       setIsSavingReception(false);
       return;
     }
@@ -847,7 +847,7 @@ const Index = () => {
       .eq("id", selectedItem.id);
 
     if (itemError) {
-      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: "Revisá los permisos de actualización de pedido_items.", variant: "destructive" });
+      toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: itemError.message, variant: "destructive" });
       setIsSavingReception(false);
       return;
     }
