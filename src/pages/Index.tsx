@@ -515,6 +515,7 @@ const Index = () => {
         notes: form.observaciones || "Sin observaciones",
         cliente: form.cliente.trim(),
         vendedor: form.vendedor.trim(),
+        fecha: form.fecha,
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
