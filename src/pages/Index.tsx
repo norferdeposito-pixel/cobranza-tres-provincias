@@ -110,16 +110,36 @@ const pedidoEstados = [
   "anulado",
 ];
 
-const isValidDateValue = (date?: string | null) => {
-  if (!date) return false;
-  const parsedDate = new Date(`${date}T12:00:00`);
-  return !Number.isNaN(parsedDate.getTime());
+const safeText = (value?: string | number | null) => String(value ?? "").trim();
+
+const optionalValue = (value?: string | number | null) => {
+  const trimmed = safeText(value);
+  return trimmed ? trimmed : null;
 };
 
+const safeNumber = (value?: string | number | null) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isValidUuid = (value?: string | null) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeText(value));
+
+const isValidDateValue = (date?: string | null) => {
+  const value = safeText(date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const daysInMonth = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1];
+};
+
+const safeDateForDisplay = (date?: string | null) => isValidDateValue(date) ? safeText(date) : null;
+
 const isUpcomingDueDate = (date: string) => {
-  if (!isValidDateValue(date)) return false;
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return false;
   const current = new Date(`${today()}T00:00:00`);
-  const dueDate = new Date(`${date}T00:00:00`);
+  const dueDate = new Date(`${safeDate}T00:00:00`);
   const sevenDaysFromNow = new Date(current);
   sevenDaysFromNow.setDate(current.getDate() + 7);
 
@@ -195,21 +215,23 @@ const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
 
 const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
   if (currentStatus === "anulado") return "anulado";
-  if (items.length > 0 && items.every((item) => Number(item.cantidad_pendiente) <= 0)) return "terminado";
-  if (items.some((item) => Number(item.cantidad_recibida) > 0)) return "recibido_parcial";
+  if (items.length > 0 && items.every((item) => safeNumber(item.cantidad_pendiente) <= 0)) return "terminado";
+  if (items.some((item) => safeNumber(item.cantidad_recibida) > 0)) return "recibido_parcial";
   return "en_curso";
 };
 
-const getItemSubtotal = (item: PedidoItem) => Number(item.cantidad_pedida || 0) * Number(item.costo_unitario || 0);
+const getItemSubtotal = (item: PedidoItem) => safeNumber(item.cantidad_pedida) * safeNumber(item.costo_unitario);
 
 const formatDate = (date?: string | null) => {
-  if (!isValidDateValue(date)) return "-";
-  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return "-";
+  return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${safeDate}T12:00:00`));
 };
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
   if (status === "cerrado" || status === "entregado" || status === "terminado" || status === "recibido_total") return "Entregado";
-  if (isValidDateValue(eta) && new Date(`${eta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
+  const safeEta = safeDateForDisplay(eta);
+  if (safeEta && new Date(`${safeEta}T12:00:00`) < new Date() && status !== "cerrado") return "Atrasado";
   if (status === "oc_generada" || status === "confirmado") return "Confirmado";
   return "En curso";
 };
@@ -245,12 +267,7 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   codArticulo: "",
 });
 
-const optionalValue = (value: string) => {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const optionalDateValue = (value: string) => isValidDateValue(value) ? value : null;
+const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
 const generateOrderNumber = () => `PED-${Date.now()}`;
 
