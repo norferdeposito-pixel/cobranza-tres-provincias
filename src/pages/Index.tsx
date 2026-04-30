@@ -1153,23 +1153,31 @@ Equipo NORFER`;
             </div>
           </header>
 
-          <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
+          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) ? "xl:grid-cols-[1fr_360px]" : ""}`}>
             <div id="panel-operativo" className="space-y-6">
-              <section className="grid gap-4 md:grid-cols-4">
-                {metrics.map((metric, index) => (
-                  <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
-                    <div className="flex items-center justify-between">
-                      <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
-                        <metric.icon className="h-5 w-5" />
-                      </div>
-                      <span className="text-3xl font-semibold">{metric.value}</span>
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
-                  </article>
-                ))}
-              </section>
+              {activeSection === "Dashboard" && (
+                <>
+                  <section className="grid gap-4 md:grid-cols-4">
+                    {metrics.map((metric, index) => (
+                      <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
+                        <div className="flex items-center justify-between">
+                          <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
+                            <metric.icon className="h-5 w-5" />
+                          </div>
+                          <span className="text-3xl font-semibold">{metric.value}</span>
+                        </div>
+                        <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
+                      </article>
+                    ))}
+                  </section>
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5"><h3 className="text-lg font-semibold">Pedidos recientes</h3><p className="text-sm text-muted-foreground">Últimos pedidos cargados y su estado actual.</p></div>
+                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Pedido</th><th className="px-5 py-3 font-semibold">Proveedor</th><th className="px-5 py-3 font-semibold">Cliente</th><th className="px-5 py-3 font-semibold">Estado</th><th className="px-5 py-3 font-semibold">OC Qubigo</th></tr></thead><tbody className="divide-y">{recentOrders.map((order) => (<tr key={order.id} className="cursor-pointer transition hover:bg-surface-subtle/70" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}><td className="px-5 py-4 font-medium">{order.orderNumber}</td><td className="px-5 py-4">{order.supplier}</td><td className="px-5 py-4">{order.cliente}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus}</span></td><td className="px-5 py-4 text-primary">{order.ocNumber}</td></tr>))}</tbody></table></div>
+                  </section>
+                </>
+              )}
 
-              <section id="alertas" className="rounded-md border bg-card shadow-command">
+              {activeSection === "Alertas" && <section id="alertas" className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Alertas</h3>
@@ -1202,9 +1210,9 @@ Equipo NORFER`;
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </section>}
 
-              <section className="rounded-md border bg-card shadow-command">
+              {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
@@ -1255,9 +1263,9 @@ Equipo NORFER`;
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </section>}
 
-              <section className="rounded-md border bg-card shadow-command">
+              {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Detalle de pedido</h3>
@@ -1386,10 +1394,10 @@ Equipo NORFER`;
                     </div>
                   </form>
                 )}
-              </section>
+              </section>}
             </div>
 
-            <aside className="space-y-6">
+            {["Dashboard", "Pedidos"].includes(activeSection) && <aside className="space-y-6">
               <section id="crear-pedido" className="rounded-md border bg-card p-5 shadow-command">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
@@ -1470,7 +1478,7 @@ Equipo NORFER`;
                   ))}
                 </div>
               </section>
-            </aside>
+            </aside>}
           </div>
         </section>
       </div>
