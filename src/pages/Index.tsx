@@ -43,7 +43,24 @@ type PurchaseOrderRow = {
 type Supplier = {
   id: string;
   nombre: string;
+  email?: string | null;
   telefono?: string | null;
+  condicion_pago?: string | null;
+  plazo_promedio_dias?: number | null;
+};
+
+type SupplierForm = {
+  nombre: string;
+  email: string;
+  telefono: string;
+  condicionPago: string;
+  plazoPromedioDias: string;
+};
+
+type PurchaseTotalBySupplier = {
+  proveedor: string;
+  total: number;
+  moneda: string;
 };
 
 type PedidoItem = {
@@ -203,11 +220,11 @@ const initialOrders: PurchaseOrder[] = [
 ];
 
 const fallbackSuppliers: Supplier[] = [
-  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", telefono: "+54 9 11 5555-1001" },
-  { id: "demo-global-parts", nombre: "Global Parts", telefono: "+54 9 11 5555-1002" },
-  { id: "demo-insumos-delta", nombre: "Insumos Delta", telefono: "+54 9 11 5555-1003" },
-  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", telefono: "+54 9 11 5555-1004" },
-  { id: "demo-logistica-andina", nombre: "Logística Andina", telefono: "+54 9 11 5555-1005" },
+  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", email: "compras@metalnorte.com", telefono: "+54 9 11 5555-1001", condicion_pago: "30 días", plazo_promedio_dias: 12 },
+  { id: "demo-global-parts", nombre: "Global Parts", email: "ventas@globalparts.com", telefono: "+54 9 11 5555-1002", condicion_pago: "Contado", plazo_promedio_dias: 7 },
+  { id: "demo-insumos-delta", nombre: "Insumos Delta", email: "oc@insumosdelta.com", telefono: "+54 9 11 5555-1003", condicion_pago: "15 días", plazo_promedio_dias: 10 },
+  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", email: "pedidos@tecnoindustrial.com", telefono: "+54 9 11 5555-1004", condicion_pago: "45 días", plazo_promedio_dias: 18 },
+  { id: "demo-logistica-andina", nombre: "Logística Andina", email: "admin@andina.com", telefono: "+54 9 11 5555-1005", condicion_pago: "30 días", plazo_promedio_dias: 5 },
 ];
 
 const demoItemsByOrderId: Record<string, PedidoItem[]> = {
@@ -317,6 +334,8 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   codArticulo: "",
 });
 
+const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
+
 const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
 const generateOrderNumber = () => `PED-${Date.now()}`;
@@ -406,6 +425,10 @@ const Index = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [supplierForm, setSupplierForm] = useState<SupplierForm>(() => createEmptySupplierForm());
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+  const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -416,8 +439,8 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }] = await Promise.all([
-        supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }, { data: totalsData, error: totalsError }] = await Promise.all([
+        supabase.from("proveedores").select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
           .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
@@ -427,6 +450,10 @@ const Index = () => {
           .from("alertas")
           .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
           .order("fecha_aviso", { ascending: true }),
+        supabase
+          .from("pedido_items")
+          .select("cantidad_pedida, costo_unitario, moneda, pedidos(proveedores(nombre))")
+          .not("costo_unitario", "is", null),
       ]);
 
       if (suppliersError || error || alertasError || alertasListError) {
@@ -442,6 +469,7 @@ const Index = () => {
           const order = initialOrders.find((item) => item.id === alerta.pedido_id);
           return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
         }));
+        setPurchaseTotalsBySupplier([]);
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
         setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
@@ -454,6 +482,18 @@ const Index = () => {
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
       setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
+      const totalsMap = new Map<string, PurchaseTotalBySupplier>();
+      (totalsError ? [] : totalsData || []).forEach((row: any) => {
+        const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
+        const proveedor = Array.isArray(pedido?.proveedores) ? pedido?.proveedores[0]?.nombre : pedido?.proveedores?.nombre;
+        const name = proveedor || "Sin proveedor";
+        const moneda = optionalValue(row.moneda) || "ARS";
+        const key = `${name}-${moneda}`;
+        const current = totalsMap.get(key) || { proveedor: name, total: 0, moneda };
+        current.total += safeNumber(row.cantidad_pedida) * safeNumber(row.costo_unitario);
+        totalsMap.set(key, current);
+      });
+      setPurchaseTotalsBySupplier(Array.from(totalsMap.values()).sort((a, b) => b.total - a.total));
       setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
@@ -562,6 +602,10 @@ const Index = () => {
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
     { label: "Pedidos sin OC", value: ordersWithoutOcCount, icon: AlertTriangle },
   ];
+
+  const ordersByStatus = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: orders.filter((order) => order.rawStatus === estado).length })).filter((item) => item.count > 0), [orders]);
+  const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
+  const recentOrders = orders.slice(0, 6);
 
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
@@ -1011,6 +1055,59 @@ Equipo NORFER`;
     toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
   };
 
+  const startEditSupplier = (supplier: Supplier) => {
+    setEditingSupplierId(supplier.id);
+    setSupplierForm({
+      nombre: supplier.nombre || "",
+      email: supplier.email || "",
+      telefono: supplier.telefono || "",
+      condicionPago: supplier.condicion_pago || "",
+      plazoPromedioDias: supplier.plazo_promedio_dias == null ? "" : String(supplier.plazo_promedio_dias),
+    });
+  };
+
+  const resetSupplierForm = () => {
+    setEditingSupplierId(null);
+    setSupplierForm(createEmptySupplierForm());
+  };
+
+  const saveSupplier = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!safeText(supplierForm.nombre)) return;
+    setIsSavingSupplier(true);
+    const payload = {
+      nombre: safeText(supplierForm.nombre),
+      email: optionalValue(supplierForm.email),
+      telefono: optionalValue(supplierForm.telefono),
+      condicion_pago: optionalValue(supplierForm.condicionPago),
+      plazo_promedio_dias: optionalValue(supplierForm.plazoPromedioDias) ? safeNumber(supplierForm.plazoPromedioDias) : null,
+      activo: true,
+    };
+
+    if (isPreviewMode) {
+      const nextSupplier = { id: editingSupplierId || `demo-${Date.now()}`, ...payload } as Supplier;
+      setSuppliers((current) => editingSupplierId ? current.map((supplier) => supplier.id === editingSupplierId ? nextSupplier : supplier) : [...current, nextSupplier]);
+      resetSupplierForm();
+      setIsSavingSupplier(false);
+      toast({ title: editingSupplierId ? "Proveedor actualizado" : "Proveedor creado", description: "Cambio aplicado en preview." });
+      return;
+    }
+
+    const request = editingSupplierId
+      ? supabase.from("proveedores").update(payload).eq("id", editingSupplierId).select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").maybeSingle()
+      : supabase.from("proveedores").insert(payload).select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").maybeSingle();
+    const { data, error } = await request;
+    if (error) {
+      toast({ title: "Error al guardar proveedor", description: error.message, variant: "destructive" });
+      setIsSavingSupplier(false);
+      return;
+    }
+    if (data) setSuppliers((current) => editingSupplierId ? current.map((supplier) => supplier.id === editingSupplierId ? data as Supplier : supplier) : [...current, data as Supplier].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    resetSupplierForm();
+    setIsSavingSupplier(false);
+    toast({ title: editingSupplierId ? "Proveedor actualizado" : "Proveedor creado", description: "Los datos quedaron guardados." });
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
@@ -1028,7 +1125,7 @@ Equipo NORFER`;
           </div>
           <nav className="space-y-2 p-4">
             {navItems.map((item, index) => (
-              <button key={item.label} onClick={() => { setActiveSection(item.label); document.getElementById(item.label === "Alertas" ? "alertas" : "panel-operativo")?.scrollIntoView({ behavior: "smooth" }); }} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
+              <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
               </button>
@@ -1047,32 +1144,40 @@ Equipo NORFER`;
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
-                <h2 className="mt-1 text-2xl font-semibold md:text-3xl">Panel operativo de pedidos</h2>
+                <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              <Button variant="command" onClick={() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })}>
+              <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
                 <FilePlus2 className="h-4 w-4" />
                 Nuevo pedido
               </Button>
             </div>
           </header>
 
-          <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
+          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) ? "xl:grid-cols-[1fr_360px]" : ""}`}>
             <div id="panel-operativo" className="space-y-6">
-              <section className="grid gap-4 md:grid-cols-4">
-                {metrics.map((metric, index) => (
-                  <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
-                    <div className="flex items-center justify-between">
-                      <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
-                        <metric.icon className="h-5 w-5" />
-                      </div>
-                      <span className="text-3xl font-semibold">{metric.value}</span>
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
-                  </article>
-                ))}
-              </section>
+              {activeSection === "Dashboard" && (
+                <>
+                  <section className="grid gap-4 md:grid-cols-4">
+                    {metrics.map((metric, index) => (
+                      <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
+                        <div className="flex items-center justify-between">
+                          <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
+                            <metric.icon className="h-5 w-5" />
+                          </div>
+                          <span className="text-3xl font-semibold">{metric.value}</span>
+                        </div>
+                        <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
+                      </article>
+                    ))}
+                  </section>
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5"><h3 className="text-lg font-semibold">Pedidos recientes</h3><p className="text-sm text-muted-foreground">Últimos pedidos cargados y su estado actual.</p></div>
+                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Pedido</th><th className="px-5 py-3 font-semibold">Proveedor</th><th className="px-5 py-3 font-semibold">Cliente</th><th className="px-5 py-3 font-semibold">Estado</th><th className="px-5 py-3 font-semibold">OC Qubigo</th></tr></thead><tbody className="divide-y">{recentOrders.map((order) => (<tr key={order.id} className="cursor-pointer transition hover:bg-surface-subtle/70" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}><td className="px-5 py-4 font-medium">{order.orderNumber}</td><td className="px-5 py-4">{order.supplier}</td><td className="px-5 py-4">{order.cliente}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus}</span></td><td className="px-5 py-4 text-primary">{order.ocNumber}</td></tr>))}</tbody></table></div>
+                  </section>
+                </>
+              )}
 
-              <section id="alertas" className="rounded-md border bg-card shadow-command">
+              {activeSection === "Alertas" && <section id="alertas" className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Alertas</h3>
@@ -1105,9 +1210,9 @@ Equipo NORFER`;
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </section>}
 
-              <section className="rounded-md border bg-card shadow-command">
+              {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Listado de pedidos</h3>
@@ -1158,9 +1263,9 @@ Equipo NORFER`;
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </section>}
 
-              <section className="rounded-md border bg-card shadow-command">
+              {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Detalle de pedido</h3>
@@ -1289,10 +1394,10 @@ Equipo NORFER`;
                     </div>
                   </form>
                 )}
-              </section>
+              </section>}
             </div>
 
-            <aside className="space-y-6">
+            {["Dashboard", "Pedidos"].includes(activeSection) && <aside className="space-y-6">
               <section id="crear-pedido" className="rounded-md border bg-card p-5 shadow-command">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
@@ -1373,7 +1478,34 @@ Equipo NORFER`;
                   ))}
                 </div>
               </section>
-            </aside>
+            </aside>}
+            {activeSection === "Proveedores" && (
+              <section className="space-y-6">
+                <div className="rounded-md border bg-card shadow-command">
+                  <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between"><div><h3 className="text-lg font-semibold">Proveedores</h3><p className="text-sm text-muted-foreground">Datos cargados desde la tabla proveedores.</p></div><span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{suppliers.length}</span></div>
+                  <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">nombre</th><th className="px-5 py-3 font-semibold">email</th><th className="px-5 py-3 font-semibold">telefono</th><th className="px-5 py-3 font-semibold">condicion_pago</th><th className="px-5 py-3 font-semibold">plazo_promedio_dias</th><th className="px-5 py-3 font-semibold">acciones</th></tr></thead><tbody className="divide-y">{suppliers.map((supplier) => (<tr key={supplier.id || supplier.nombre} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4 font-medium">{supplier.nombre || "-"}</td><td className="px-5 py-4">{supplier.email || "-"}</td><td className="px-5 py-4">{supplier.telefono || "-"}</td><td className="px-5 py-4">{supplier.condicion_pago || "-"}</td><td className="px-5 py-4">{supplier.plazo_promedio_dias ?? "-"}</td><td className="px-5 py-4"><Button type="button" size="sm" variant="outline" onClick={() => startEditSupplier(supplier)}><Pencil className="h-4 w-4" />Editar</Button></td></tr>))}</tbody></table></div>
+                </div>
+                <section className="rounded-md border bg-card p-5 shadow-command">
+                  <h3 className="font-semibold">{editingSupplierId ? "Editar proveedor" : "Crear proveedor"}</h3>
+                  <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={saveSupplier}>
+                    <div className="space-y-2"><Label htmlFor="supplier-name">nombre</Label><Input id="supplier-name" value={supplierForm.nombre} onChange={(event) => setSupplierForm({ ...supplierForm, nombre: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-email">email</Label><Input id="supplier-email" type="email" value={supplierForm.email} onChange={(event) => setSupplierForm({ ...supplierForm, email: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-phone">telefono</Label><Input id="supplier-phone" value={supplierForm.telefono} onChange={(event) => setSupplierForm({ ...supplierForm, telefono: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-payment">condicion_pago</Label><Input id="supplier-payment" value={supplierForm.condicionPago} onChange={(event) => setSupplierForm({ ...supplierForm, condicionPago: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-days">plazo_promedio_dias</Label><Input id="supplier-days" type="number" min="0" step="1" value={supplierForm.plazoPromedioDias} onChange={(event) => setSupplierForm({ ...supplierForm, plazoPromedioDias: event.target.value })} /></div>
+                    <div className="flex items-end gap-3"><Button type="submit" variant="command" disabled={isSavingSupplier}>{isSavingSupplier ? "Guardando..." : editingSupplierId ? "Guardar cambios" : "Crear proveedor"}</Button>{editingSupplierId && <Button type="button" variant="outline" onClick={resetSupplierForm}>Cancelar</Button>}</div>
+                  </form>
+                </section>
+              </section>
+            )}
+            {activeSection === "Reportes" && (
+              <section className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatus.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatus.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos.</p>}</div></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcCount}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo.</p></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasCount}</p><p className="mt-1 text-sm text-muted-foreground">Alertas no cerradas ni resueltas.</p></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplier.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplier.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados.</p>}</div></div>
+              </section>
+            )}
           </div>
         </section>
       </div>
