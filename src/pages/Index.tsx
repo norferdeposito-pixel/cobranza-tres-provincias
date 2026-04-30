@@ -513,6 +513,22 @@ const Index = () => {
 
   const sellerOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.vendedor).filter(Boolean))).sort(), [orders]);
   const supplierOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.supplier).filter(Boolean))).sort(), [orders]);
+  const alertaEstadoOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.estado).filter(Boolean))).sort(), [alertas]);
+  const alertaTipoOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.tipo).filter(Boolean))).sort(), [alertas]);
+  const alertaProveedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.proveedor).filter(Boolean))).sort(), [alertas]);
+  const alertaVendedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.vendedor).filter(Boolean))).sort(), [alertas]);
+  const filteredAlertas = useMemo(
+    () => alertas.filter((alerta) => {
+      const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
+      const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
+      const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
+      const matchesVendedor = alertaVendedorFilter === "todos" || alerta.vendedor === alertaVendedorFilter;
+      const matchesExpired = !onlyExpiredAlertas || (alerta.daysRemaining !== null && alerta.daysRemaining < 0 && !isClosedAlerta(alerta.estado));
+      const matchesUpcoming = !onlyUpcomingAlertas || (alerta.daysRemaining !== null && alerta.daysRemaining >= 0 && alerta.daysRemaining <= 3 && !isClosedAlerta(alerta.estado));
+      return matchesEstado && matchesTipo && matchesProveedor && matchesVendedor && matchesExpired && matchesUpcoming;
+    }),
+    [alertas, alertaEstadoFilter, alertaTipoFilter, alertaProveedorFilter, alertaVendedorFilter, onlyExpiredAlertas, onlyUpcomingAlertas],
+  );
   const filteredOrders = useMemo(
     () => orders.filter((order) => {
       const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
