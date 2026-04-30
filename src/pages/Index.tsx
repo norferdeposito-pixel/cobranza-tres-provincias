@@ -425,6 +425,10 @@ const Index = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [supplierForm, setSupplierForm] = useState<SupplierForm>(() => createEmptySupplierForm());
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+  const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -435,8 +439,8 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }] = await Promise.all([
-        supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }, { data: totalsData, error: totalsError }] = await Promise.all([
+        supabase.from("proveedores").select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
           .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
@@ -446,9 +450,13 @@ const Index = () => {
           .from("alertas")
           .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
           .order("fecha_aviso", { ascending: true }),
+        supabase
+          .from("pedido_items")
+          .select("cantidad_pedida, costo_unitario, moneda, pedidos(proveedores(nombre))")
+          .not("costo_unitario", "is", null),
       ]);
 
-      if (suppliersError || error || alertasError || alertasListError) {
+      if (suppliersError || error || alertasError || alertasListError || totalsError) {
         toast({
           title: "Preview interactivo activado",
           description: "No se pudo conectar con la base remota, se usan datos demo editables.",
@@ -461,6 +469,7 @@ const Index = () => {
           const order = initialOrders.find((item) => item.id === alerta.pedido_id);
           return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
         }));
+        setPurchaseTotalsBySupplier([]);
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
         setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
@@ -473,6 +482,18 @@ const Index = () => {
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
       setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
+      const totalsMap = new Map<string, PurchaseTotalBySupplier>();
+      (totalsData || []).forEach((row: any) => {
+        const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
+        const proveedor = Array.isArray(pedido?.proveedores) ? pedido?.proveedores[0]?.nombre : pedido?.proveedores?.nombre;
+        const name = proveedor || "Sin proveedor";
+        const moneda = optionalValue(row.moneda) || "ARS";
+        const key = `${name}-${moneda}`;
+        const current = totalsMap.get(key) || { proveedor: name, total: 0, moneda };
+        current.total += safeNumber(row.cantidad_pedida) * safeNumber(row.costo_unitario);
+        totalsMap.set(key, current);
+      });
+      setPurchaseTotalsBySupplier(Array.from(totalsMap.values()).sort((a, b) => b.total - a.total));
       setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
