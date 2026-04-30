@@ -97,6 +97,30 @@ type PedidoAlerta = {
   estado: string;
 };
 
+type AlertaRow = PedidoAlerta & {
+  pedidos?: {
+    cliente: string | null;
+    numero_pedido: string | null;
+    numero_oc_qubigo: string | null;
+    vendedor: string | null;
+    proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
+  } | null;
+};
+
+type AlertaListItem = {
+  id: string;
+  proveedor: string;
+  cliente: string;
+  numeroPedido: string;
+  numeroOcQubigo: string;
+  tipo: string;
+  fechaEstimada: string | null;
+  fechaAviso: string | null;
+  estado: string;
+  vendedor: string;
+  daysRemaining: number | null;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const pedidoEstados = [
@@ -146,6 +170,25 @@ const isUpcomingDueDate = (date: string) => {
   return dueDate >= current && dueDate <= sevenDaysFromNow;
 };
 
+const getDaysRemaining = (date?: string | null) => {
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return null;
+  const current = new Date(`${today()}T00:00:00`);
+  const dueDate = new Date(`${safeDate}T00:00:00`);
+  return Math.round((dueDate.getTime() - current.getTime()) / 86400000);
+};
+
+const isClosedAlerta = (estado?: string | null) => ["resuelta", "cerrada", "terminada", "terminado", "anulada", "anulado"].includes(safeText(estado).toLowerCase());
+
+const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRemaining"> | PedidoAlerta) => {
+  const days = "daysRemaining" in alerta ? alerta.daysRemaining : getDaysRemaining(alerta.fecha_aviso);
+  if (isClosedAlerta(alerta.estado)) return "bg-muted text-muted-foreground border-border";
+  if (days === null) return "bg-secondary text-secondary-foreground border-border";
+  if (days < 0) return "bg-destructive/10 text-destructive border-destructive/30";
+  if (days <= 3) return "bg-warning/20 text-warning-foreground border-warning/40";
+  return "bg-primary/10 text-primary border-primary/25";
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
@@ -178,6 +221,7 @@ const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Alertas", icon: CalendarClock },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Proveedores", icon: Factory },
   { label: "Reportes", icon: BarChart3 },
