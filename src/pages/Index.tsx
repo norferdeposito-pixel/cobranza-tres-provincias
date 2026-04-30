@@ -97,6 +97,36 @@ type PedidoAlerta = {
   estado: string;
 };
 
+type AlertaRow = PedidoAlerta & {
+  pedidos?: {
+    cliente: string | null;
+    numero_pedido: string | null;
+    numero_oc_qubigo: string | null;
+    vendedor: string | null;
+    proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
+  } | {
+    cliente: string | null;
+    numero_pedido: string | null;
+    numero_oc_qubigo: string | null;
+    vendedor: string | null;
+    proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
+  }[] | null;
+};
+
+type AlertaListItem = {
+  id: string;
+  proveedor: string;
+  cliente: string;
+  numeroPedido: string;
+  numeroOcQubigo: string;
+  tipo: string;
+  fechaEstimada: string | null;
+  fechaAviso: string | null;
+  estado: string;
+  vendedor: string;
+  daysRemaining: number | null;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const pedidoEstados = [
@@ -146,6 +176,25 @@ const isUpcomingDueDate = (date: string) => {
   return dueDate >= current && dueDate <= sevenDaysFromNow;
 };
 
+const getDaysRemaining = (date?: string | null) => {
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return null;
+  const current = new Date(`${today()}T00:00:00`);
+  const dueDate = new Date(`${safeDate}T00:00:00`);
+  return Math.round((dueDate.getTime() - current.getTime()) / 86400000);
+};
+
+const isClosedAlerta = (estado?: string | null) => ["resuelta", "cerrada", "terminada", "terminado", "anulada", "anulado"].includes(safeText(estado).toLowerCase());
+
+const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRemaining"> | PedidoAlerta) => {
+  const days = "daysRemaining" in alerta ? alerta.daysRemaining : getDaysRemaining(alerta.fecha_aviso);
+  if (isClosedAlerta(alerta.estado)) return "bg-muted text-muted-foreground border-border";
+  if (days === null) return "bg-secondary text-secondary-foreground border-border";
+  if (days < 0) return "bg-destructive/10 text-destructive border-destructive/30";
+  if (days <= 3) return "bg-warning/20 text-warning-foreground border-warning/40";
+  return "bg-primary/10 text-primary border-primary/25";
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
@@ -178,6 +227,7 @@ const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Alertas", icon: CalendarClock },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Proveedores", icon: Factory },
   { label: "Reportes", icon: BarChart3 },
@@ -304,13 +354,40 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   fecha: order.fecha || "",
 });
 
+const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
+  const pedido = Array.isArray(alerta.pedidos) ? alerta.pedidos[0] : alerta.pedidos;
+  const proveedor = Array.isArray(pedido?.proveedores) ? pedido?.proveedores[0]?.nombre : pedido?.proveedores?.nombre;
+  const fechaAviso = safeDateForDisplay(alerta.fecha_aviso);
+  return {
+    id: alerta.id,
+    proveedor: proveedor || "Sin proveedor",
+    cliente: pedido?.cliente || "-",
+    numeroPedido: pedido?.numero_pedido || "-",
+    numeroOcQubigo: pedido?.numero_oc_qubigo || "-",
+    tipo: alerta.tipo || "-",
+    fechaEstimada: safeDateForDisplay(alerta.fecha_estimada),
+    fechaAviso,
+    estado: alerta.estado || "-",
+    vendedor: pedido?.vendedor || "-",
+    daysRemaining: getDaysRemaining(fechaAviso),
+  };
+};
+
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
+  const [activeSection, setActiveSection] = useState("Dashboard");
+  const [alertas, setAlertas] = useState<AlertaListItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [sellerFilter, setSellerFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [supplierFilter, setSupplierFilter] = useState("todos");
+  const [alertaEstadoFilter, setAlertaEstadoFilter] = useState("todos");
+  const [alertaTipoFilter, setAlertaTipoFilter] = useState("todos");
+  const [alertaProveedorFilter, setAlertaProveedorFilter] = useState("todos");
+  const [alertaVendedorFilter, setAlertaVendedorFilter] = useState("todos");
+  const [onlyExpiredAlertas, setOnlyExpiredAlertas] = useState(false);
+  const [onlyUpcomingAlertas, setOnlyUpcomingAlertas] = useState(false);
   const [onlyWithoutOc, setOnlyWithoutOc] = useState(false);
   const [onlyMyActiveOrders, setOnlyMyActiveOrders] = useState(false);
   const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -339,16 +416,20 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }] = await Promise.all([
         supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
           .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
           .order("fecha_estimada_entrega", { ascending: true }),
         supabase.from("alertas").select("id, fecha_aviso, estado"),
+        supabase
+          .from("alertas")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
+          .order("fecha_aviso", { ascending: true }),
       ]);
 
-      if (suppliersError || error || alertasError) {
+      if (suppliersError || error || alertasError || alertasListError) {
         toast({
           title: "Preview interactivo activado",
           description: "No se pudo conectar con la base remota, se usan datos demo editables.",
@@ -357,6 +438,10 @@ const Index = () => {
         setSuppliers(fallbackSuppliers);
         setForm((current) => ({ ...current, supplierId: fallbackSuppliers[0]?.id || "" }));
         setOrders(initialOrders);
+        setAlertas(Object.values(demoAlertasByOrderId).flat().map((alerta) => {
+          const order = initialOrders.find((item) => item.id === alerta.pedido_id);
+          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
+        }));
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
         setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
@@ -368,6 +453,7 @@ const Index = () => {
       setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
+      setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
       setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
@@ -427,6 +513,22 @@ const Index = () => {
 
   const sellerOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.vendedor).filter(Boolean))).sort(), [orders]);
   const supplierOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.supplier).filter(Boolean))).sort(), [orders]);
+  const alertaEstadoOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.estado).filter(Boolean))).sort(), [alertas]);
+  const alertaTipoOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.tipo).filter(Boolean))).sort(), [alertas]);
+  const alertaProveedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.proveedor).filter(Boolean))).sort(), [alertas]);
+  const alertaVendedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.vendedor).filter(Boolean))).sort(), [alertas]);
+  const filteredAlertas = useMemo(
+    () => alertas.filter((alerta) => {
+      const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
+      const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
+      const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
+      const matchesVendedor = alertaVendedorFilter === "todos" || alerta.vendedor === alertaVendedorFilter;
+      const matchesExpired = !onlyExpiredAlertas || (alerta.daysRemaining !== null && alerta.daysRemaining < 0 && !isClosedAlerta(alerta.estado));
+      const matchesUpcoming = !onlyUpcomingAlertas || (alerta.daysRemaining !== null && alerta.daysRemaining >= 0 && alerta.daysRemaining <= 3 && !isClosedAlerta(alerta.estado));
+      return matchesEstado && matchesTipo && matchesProveedor && matchesVendedor && matchesExpired && matchesUpcoming;
+    }),
+    [alertas, alertaEstadoFilter, alertaTipoFilter, alertaProveedorFilter, alertaVendedorFilter, onlyExpiredAlertas, onlyUpcomingAlertas],
+  );
   const filteredOrders = useMemo(
     () => orders.filter((order) => {
       const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
@@ -926,7 +1028,7 @@ Equipo NORFER`;
           </div>
           <nav className="space-y-2 p-4">
             {navItems.map((item, index) => (
-              <button key={item.label} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${index === 0 ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
+              <button key={item.label} onClick={() => { setActiveSection(item.label); document.getElementById(item.label === "Alertas" ? "alertas" : "panel-operativo")?.scrollIntoView({ behavior: "smooth" }); }} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
               </button>
@@ -955,7 +1057,7 @@ Equipo NORFER`;
           </header>
 
           <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
-            <div className="space-y-6">
+            <div id="panel-operativo" className="space-y-6">
               <section className="grid gap-4 md:grid-cols-4">
                 {metrics.map((metric, index) => (
                   <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
@@ -968,6 +1070,41 @@ Equipo NORFER`;
                     <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
                   </article>
                 ))}
+              </section>
+
+              <section id="alertas" className="rounded-md border bg-card shadow-command">
+                <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Alertas</h3>
+                    <p className="text-sm text-muted-foreground">Alertas vinculadas a pedidos y proveedores.</p>
+                  </div>
+                  <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{filteredAlertas.length}</span>
+                </div>
+                <div className="grid gap-3 border-b p-5 md:grid-cols-6">
+                  <select value={alertaEstadoFilter} onChange={(event) => setAlertaEstadoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{alertaEstadoOptions.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
+                  <select value={alertaTipoFilter} onChange={(event) => setAlertaTipoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los tipos</option>{alertaTipoOptions.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select>
+                  <select value={alertaProveedorFilter} onChange={(event) => setAlertaProveedorFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{alertaProveedorOptions.map((proveedor) => <option key={proveedor} value={proveedor}>{proveedor}</option>)}</select>
+                  <select value={alertaVendedorFilter} onChange={(event) => setAlertaVendedorFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{alertaVendedorOptions.map((vendedor) => <option key={vendedor} value={vendedor}>{vendedor}</option>)}</select>
+                  <Button type="button" variant={onlyExpiredAlertas ? "command" : "outline"} onClick={() => setOnlyExpiredAlertas((current) => !current)}>Vencidas</Button>
+                  <Button type="button" variant={onlyUpcomingAlertas ? "command" : "outline"} onClick={() => setOnlyUpcomingAlertas((current) => !current)}>Próximas</Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-left text-sm">
+                    <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">days_remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {!isLoading && filteredAlertas.map((alerta) => (
+                        <tr key={alerta.id} className="transition hover:bg-surface-subtle/70">
+                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
+                        </tr>
+                      ))}
+                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={9}>No hay alertas para mostrar.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
               </section>
 
               <section className="rounded-md border bg-card shadow-command">
@@ -1106,16 +1243,16 @@ Equipo NORFER`;
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       {pedidoAlertas.map((alerta) => (
-                        <div key={alerta.id} className={`rounded-md border p-3 ${alerta.fecha_aviso >= today() && alerta.estado !== "resuelta" ? "bg-warning/20 border-warning/30" : "bg-surface-subtle"}`}>
+                        <div key={alerta.id} className={`rounded-md border p-3 ${getAlertaPriorityClass(alerta)}`}>
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-medium">{alerta.tipo}</p>
                             <span className="rounded-md border px-2 py-0.5 text-xs font-semibold">{alerta.estado}</span>
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">Aviso: {formatDate(alerta.fecha_aviso)}{alerta.fecha_estimada ? ` · Estimada: ${formatDate(alerta.fecha_estimada)}` : ""}</p>
+                          <p className="mt-1 text-sm">fecha_estimada: {formatDate(alerta.fecha_estimada)} · fecha_aviso: {formatDate(alerta.fecha_aviso)}</p>
                         </div>
                       ))}
                       {!isLoadingItems && pedidoAlertas.length === 0 && (
-                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Este pedido no tiene alertas.</div>
+                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Sin alertas</div>
                       )}
                     </div>
                   </div>
