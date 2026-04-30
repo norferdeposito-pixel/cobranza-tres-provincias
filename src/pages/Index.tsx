@@ -43,7 +43,24 @@ type PurchaseOrderRow = {
 type Supplier = {
   id: string;
   nombre: string;
+  email?: string | null;
   telefono?: string | null;
+  condicion_pago?: string | null;
+  plazo_promedio_dias?: number | null;
+};
+
+type SupplierForm = {
+  nombre: string;
+  email: string;
+  telefono: string;
+  condicionPago: string;
+  plazoPromedioDias: string;
+};
+
+type PurchaseTotalBySupplier = {
+  proveedor: string;
+  total: number;
+  moneda: string;
 };
 
 type PedidoItem = {
@@ -203,11 +220,11 @@ const initialOrders: PurchaseOrder[] = [
 ];
 
 const fallbackSuppliers: Supplier[] = [
-  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", telefono: "+54 9 11 5555-1001" },
-  { id: "demo-global-parts", nombre: "Global Parts", telefono: "+54 9 11 5555-1002" },
-  { id: "demo-insumos-delta", nombre: "Insumos Delta", telefono: "+54 9 11 5555-1003" },
-  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", telefono: "+54 9 11 5555-1004" },
-  { id: "demo-logistica-andina", nombre: "Logística Andina", telefono: "+54 9 11 5555-1005" },
+  { id: "demo-metalurgica-norte", nombre: "Metalúrgica Norte", email: "compras@metalnorte.com", telefono: "+54 9 11 5555-1001", condicion_pago: "30 días", plazo_promedio_dias: 12 },
+  { id: "demo-global-parts", nombre: "Global Parts", email: "ventas@globalparts.com", telefono: "+54 9 11 5555-1002", condicion_pago: "Contado", plazo_promedio_dias: 7 },
+  { id: "demo-insumos-delta", nombre: "Insumos Delta", email: "oc@insumosdelta.com", telefono: "+54 9 11 5555-1003", condicion_pago: "15 días", plazo_promedio_dias: 10 },
+  { id: "demo-tecno-industrial", nombre: "Tecno Industrial", email: "pedidos@tecnoindustrial.com", telefono: "+54 9 11 5555-1004", condicion_pago: "45 días", plazo_promedio_dias: 18 },
+  { id: "demo-logistica-andina", nombre: "Logística Andina", email: "admin@andina.com", telefono: "+54 9 11 5555-1005", condicion_pago: "30 días", plazo_promedio_dias: 5 },
 ];
 
 const demoItemsByOrderId: Record<string, PedidoItem[]> = {
@@ -316,6 +333,8 @@ const createEmptyItemForm = (): PedidoItemForm => ({
   moneda: "ARS",
   codArticulo: "",
 });
+
+const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
 
 const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
