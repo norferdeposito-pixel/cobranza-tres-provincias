@@ -1125,7 +1125,7 @@ Equipo NORFER`;
           </div>
           <nav className="space-y-2 p-4">
             {navItems.map((item, index) => (
-              <button key={item.label} onClick={() => { setActiveSection(item.label); document.getElementById(item.label === "Alertas" ? "alertas" : "panel-operativo")?.scrollIntoView({ behavior: "smooth" }); }} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
+              <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
               </button>
@@ -1144,9 +1144,9 @@ Equipo NORFER`;
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
-                <h2 className="mt-1 text-2xl font-semibold md:text-3xl">Panel operativo de pedidos</h2>
+                <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              <Button variant="command" onClick={() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })}>
+              <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
                 <FilePlus2 className="h-4 w-4" />
                 Nuevo pedido
               </Button>
