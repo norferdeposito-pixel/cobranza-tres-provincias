@@ -1479,6 +1479,33 @@ Equipo NORFER`;
                 </div>
               </section>
             </aside>}
+            {activeSection === "Proveedores" && (
+              <section className="space-y-6">
+                <div className="rounded-md border bg-card shadow-command">
+                  <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between"><div><h3 className="text-lg font-semibold">Proveedores</h3><p className="text-sm text-muted-foreground">Datos cargados desde la tabla proveedores.</p></div><span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{suppliers.length}</span></div>
+                  <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">nombre</th><th className="px-5 py-3 font-semibold">email</th><th className="px-5 py-3 font-semibold">telefono</th><th className="px-5 py-3 font-semibold">condicion_pago</th><th className="px-5 py-3 font-semibold">plazo_promedio_dias</th><th className="px-5 py-3 font-semibold">acciones</th></tr></thead><tbody className="divide-y">{suppliers.map((supplier) => (<tr key={supplier.id || supplier.nombre} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4 font-medium">{supplier.nombre || "-"}</td><td className="px-5 py-4">{supplier.email || "-"}</td><td className="px-5 py-4">{supplier.telefono || "-"}</td><td className="px-5 py-4">{supplier.condicion_pago || "-"}</td><td className="px-5 py-4">{supplier.plazo_promedio_dias ?? "-"}</td><td className="px-5 py-4"><Button type="button" size="sm" variant="outline" onClick={() => startEditSupplier(supplier)}><Pencil className="h-4 w-4" />Editar</Button></td></tr>))}</tbody></table></div>
+                </div>
+                <section className="rounded-md border bg-card p-5 shadow-command">
+                  <h3 className="font-semibold">{editingSupplierId ? "Editar proveedor" : "Crear proveedor"}</h3>
+                  <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={saveSupplier}>
+                    <div className="space-y-2"><Label htmlFor="supplier-name">nombre</Label><Input id="supplier-name" value={supplierForm.nombre} onChange={(event) => setSupplierForm({ ...supplierForm, nombre: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-email">email</Label><Input id="supplier-email" type="email" value={supplierForm.email} onChange={(event) => setSupplierForm({ ...supplierForm, email: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-phone">telefono</Label><Input id="supplier-phone" value={supplierForm.telefono} onChange={(event) => setSupplierForm({ ...supplierForm, telefono: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-payment">condicion_pago</Label><Input id="supplier-payment" value={supplierForm.condicionPago} onChange={(event) => setSupplierForm({ ...supplierForm, condicionPago: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="supplier-days">plazo_promedio_dias</Label><Input id="supplier-days" type="number" min="0" step="1" value={supplierForm.plazoPromedioDias} onChange={(event) => setSupplierForm({ ...supplierForm, plazoPromedioDias: event.target.value })} /></div>
+                    <div className="flex items-end gap-3"><Button type="submit" variant="command" disabled={isSavingSupplier}>{isSavingSupplier ? "Guardando..." : editingSupplierId ? "Guardar cambios" : "Crear proveedor"}</Button>{editingSupplierId && <Button type="button" variant="outline" onClick={resetSupplierForm}>Cancelar</Button>}</div>
+                  </form>
+                </section>
+              </section>
+            )}
+            {activeSection === "Reportes" && (
+              <section className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatus.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatus.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos.</p>}</div></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcCount}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo.</p></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasCount}</p><p className="mt-1 text-sm text-muted-foreground">Alertas no cerradas ni resueltas.</p></div>
+                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplier.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplier.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados.</p>}</div></div>
+              </section>
+            )}
           </div>
         </section>
       </div>
