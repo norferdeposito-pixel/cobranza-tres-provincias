@@ -104,7 +104,13 @@ type AlertaRow = PedidoAlerta & {
     numero_oc_qubigo: string | null;
     vendedor: string | null;
     proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
-  } | null;
+  } | {
+    cliente: string | null;
+    numero_pedido: string | null;
+    numero_oc_qubigo: string | null;
+    vendedor: string | null;
+    proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
+  }[] | null;
 };
 
 type AlertaListItem = {
@@ -349,19 +355,20 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
 });
 
 const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
-  const proveedor = Array.isArray(alerta.pedidos?.proveedores) ? alerta.pedidos?.proveedores[0]?.nombre : alerta.pedidos?.proveedores?.nombre;
+  const pedido = Array.isArray(alerta.pedidos) ? alerta.pedidos[0] : alerta.pedidos;
+  const proveedor = Array.isArray(pedido?.proveedores) ? pedido?.proveedores[0]?.nombre : pedido?.proveedores?.nombre;
   const fechaAviso = safeDateForDisplay(alerta.fecha_aviso);
   return {
     id: alerta.id,
     proveedor: proveedor || "Sin proveedor",
-    cliente: alerta.pedidos?.cliente || "-",
-    numeroPedido: alerta.pedidos?.numero_pedido || "-",
-    numeroOcQubigo: alerta.pedidos?.numero_oc_qubigo || "-",
+    cliente: pedido?.cliente || "-",
+    numeroPedido: pedido?.numero_pedido || "-",
+    numeroOcQubigo: pedido?.numero_oc_qubigo || "-",
     tipo: alerta.tipo || "-",
     fechaEstimada: safeDateForDisplay(alerta.fecha_estimada),
     fechaAviso,
     estado: alerta.estado || "-",
-    vendedor: alerta.pedidos?.vendedor || "-",
+    vendedor: pedido?.vendedor || "-",
     daysRemaining: getDaysRemaining(fechaAviso),
   };
 };
