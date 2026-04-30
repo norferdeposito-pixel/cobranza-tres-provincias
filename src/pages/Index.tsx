@@ -456,7 +456,7 @@ const Index = () => {
           .not("costo_unitario", "is", null),
       ]);
 
-      if (suppliersError || error || alertasError || alertasListError || totalsError) {
+      if (suppliersError || error || alertasError || alertasListError) {
         toast({
           title: "Preview interactivo activado",
           description: "No se pudo conectar con la base remota, se usan datos demo editables.",
@@ -483,7 +483,7 @@ const Index = () => {
       setOrders(mappedOrders);
       setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
       const totalsMap = new Map<string, PurchaseTotalBySupplier>();
-      (totalsData || []).forEach((row: any) => {
+      (totalsError ? [] : totalsData || []).forEach((row: any) => {
         const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
         const proveedor = Array.isArray(pedido?.proveedores) ? pedido?.proveedores[0]?.nombre : pedido?.proveedores?.nombre;
         const name = proveedor || "Sin proveedor";
