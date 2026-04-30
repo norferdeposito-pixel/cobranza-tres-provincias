@@ -1243,16 +1243,16 @@ Equipo NORFER`;
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       {pedidoAlertas.map((alerta) => (
-                        <div key={alerta.id} className={`rounded-md border p-3 ${alerta.fecha_aviso >= today() && alerta.estado !== "resuelta" ? "bg-warning/20 border-warning/30" : "bg-surface-subtle"}`}>
+                        <div key={alerta.id} className={`rounded-md border p-3 ${getAlertaPriorityClass(alerta)}`}>
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-medium">{alerta.tipo}</p>
                             <span className="rounded-md border px-2 py-0.5 text-xs font-semibold">{alerta.estado}</span>
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">Aviso: {formatDate(alerta.fecha_aviso)}{alerta.fecha_estimada ? ` · Estimada: ${formatDate(alerta.fecha_estimada)}` : ""}</p>
+                          <p className="mt-1 text-sm">fecha_estimada: {formatDate(alerta.fecha_estimada)} · fecha_aviso: {formatDate(alerta.fecha_aviso)}</p>
                         </div>
                       ))}
                       {!isLoadingItems && pedidoAlertas.length === 0 && (
-                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Este pedido no tiene alertas.</div>
+                        <div className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground md:col-span-2">Sin alertas</div>
                       )}
                     </div>
                   </div>
