@@ -348,13 +348,39 @@ const mapOrderFromSupabase = (order: PurchaseOrderRow): PurchaseOrder => ({
   fecha: order.fecha || "",
 });
 
+const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
+  const proveedor = Array.isArray(alerta.pedidos?.proveedores) ? alerta.pedidos?.proveedores[0]?.nombre : alerta.pedidos?.proveedores?.nombre;
+  const fechaAviso = safeDateForDisplay(alerta.fecha_aviso);
+  return {
+    id: alerta.id,
+    proveedor: proveedor || "Sin proveedor",
+    cliente: alerta.pedidos?.cliente || "-",
+    numeroPedido: alerta.pedidos?.numero_pedido || "-",
+    numeroOcQubigo: alerta.pedidos?.numero_oc_qubigo || "-",
+    tipo: alerta.tipo || "-",
+    fechaEstimada: safeDateForDisplay(alerta.fecha_estimada),
+    fechaAviso,
+    estado: alerta.estado || "-",
+    vendedor: alerta.pedidos?.vendedor || "-",
+    daysRemaining: getDaysRemaining(fechaAviso),
+  };
+};
+
 const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
+  const [activeSection, setActiveSection] = useState("Dashboard");
+  const [alertas, setAlertas] = useState<AlertaListItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [sellerFilter, setSellerFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [supplierFilter, setSupplierFilter] = useState("todos");
+  const [alertaEstadoFilter, setAlertaEstadoFilter] = useState("todos");
+  const [alertaTipoFilter, setAlertaTipoFilter] = useState("todos");
+  const [alertaProveedorFilter, setAlertaProveedorFilter] = useState("todos");
+  const [alertaVendedorFilter, setAlertaVendedorFilter] = useState("todos");
+  const [onlyExpiredAlertas, setOnlyExpiredAlertas] = useState(false);
+  const [onlyUpcomingAlertas, setOnlyUpcomingAlertas] = useState(false);
   const [onlyWithoutOc, setOnlyWithoutOc] = useState(false);
   const [onlyMyActiveOrders, setOnlyMyActiveOrders] = useState(false);
   const [form, setForm] = useState<PedidoForm>(() => createEmptyOrderForm());
