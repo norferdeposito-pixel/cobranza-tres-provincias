@@ -409,16 +409,20 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }] = await Promise.all([
         supabase.from("proveedores").select("id, nombre, telefono").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
           .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
           .order("fecha_estimada_entrega", { ascending: true }),
         supabase.from("alertas").select("id, fecha_aviso, estado"),
+        supabase
+          .from("alertas")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
+          .order("fecha_aviso", { ascending: true }),
       ]);
 
-      if (suppliersError || error || alertasError) {
+      if (suppliersError || error || alertasError || alertasListError) {
         toast({
           title: "Preview interactivo activado",
           description: "No se pudo conectar con la base remota, se usan datos demo editables.",
@@ -427,6 +431,10 @@ const Index = () => {
         setSuppliers(fallbackSuppliers);
         setForm((current) => ({ ...current, supplierId: fallbackSuppliers[0]?.id || "" }));
         setOrders(initialOrders);
+        setAlertas(Object.values(demoAlertasByOrderId).flat().map((alerta) => {
+          const order = initialOrders.find((item) => item.id === alerta.pedido_id);
+          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
+        }));
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
         setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
@@ -438,6 +446,7 @@ const Index = () => {
       setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
+      setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
       setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
