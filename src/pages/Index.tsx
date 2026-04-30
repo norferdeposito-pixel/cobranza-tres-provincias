@@ -603,6 +603,10 @@ const Index = () => {
     { label: "Pedidos sin OC", value: ordersWithoutOcCount, icon: AlertTriangle },
   ];
 
+  const ordersByStatus = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: orders.filter((order) => order.rawStatus === estado).length })).filter((item) => item.count > 0), [orders]);
+  const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
+  const recentOrders = orders.slice(0, 6);
+
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
@@ -1049,6 +1053,59 @@ Equipo NORFER`;
   const copySellerMessage = async () => {
     await navigator.clipboard.writeText(sellerMessage);
     toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
+  };
+
+  const startEditSupplier = (supplier: Supplier) => {
+    setEditingSupplierId(supplier.id);
+    setSupplierForm({
+      nombre: supplier.nombre || "",
+      email: supplier.email || "",
+      telefono: supplier.telefono || "",
+      condicionPago: supplier.condicion_pago || "",
+      plazoPromedioDias: supplier.plazo_promedio_dias == null ? "" : String(supplier.plazo_promedio_dias),
+    });
+  };
+
+  const resetSupplierForm = () => {
+    setEditingSupplierId(null);
+    setSupplierForm(createEmptySupplierForm());
+  };
+
+  const saveSupplier = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!safeText(supplierForm.nombre)) return;
+    setIsSavingSupplier(true);
+    const payload = {
+      nombre: safeText(supplierForm.nombre),
+      email: optionalValue(supplierForm.email),
+      telefono: optionalValue(supplierForm.telefono),
+      condicion_pago: optionalValue(supplierForm.condicionPago),
+      plazo_promedio_dias: optionalValue(supplierForm.plazoPromedioDias) ? safeNumber(supplierForm.plazoPromedioDias) : null,
+      activo: true,
+    };
+
+    if (isPreviewMode) {
+      const nextSupplier = { id: editingSupplierId || `demo-${Date.now()}`, ...payload } as Supplier;
+      setSuppliers((current) => editingSupplierId ? current.map((supplier) => supplier.id === editingSupplierId ? nextSupplier : supplier) : [...current, nextSupplier]);
+      resetSupplierForm();
+      setIsSavingSupplier(false);
+      toast({ title: editingSupplierId ? "Proveedor actualizado" : "Proveedor creado", description: "Cambio aplicado en preview." });
+      return;
+    }
+
+    const request = editingSupplierId
+      ? supabase.from("proveedores").update(payload).eq("id", editingSupplierId).select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").maybeSingle()
+      : supabase.from("proveedores").insert(payload).select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").maybeSingle();
+    const { data, error } = await request;
+    if (error) {
+      toast({ title: "Error al guardar proveedor", description: error.message, variant: "destructive" });
+      setIsSavingSupplier(false);
+      return;
+    }
+    if (data) setSuppliers((current) => editingSupplierId ? current.map((supplier) => supplier.id === editingSupplierId ? data as Supplier : supplier) : [...current, data as Supplier].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    resetSupplierForm();
+    setIsSavingSupplier(false);
+    toast({ title: editingSupplierId ? "Proveedor actualizado" : "Proveedor creado", description: "Los datos quedaron guardados." });
   };
 
   return (
