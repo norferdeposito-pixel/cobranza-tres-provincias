@@ -1028,7 +1028,7 @@ Equipo NORFER`;
           </div>
           <nav className="space-y-2 p-4">
             {navItems.map((item, index) => (
-              <button key={item.label} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${index === 0 ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
+              <button key={item.label} onClick={() => { setActiveSection(item.label); document.getElementById(item.label === "Alertas" ? "alertas" : "panel-operativo")?.scrollIntoView({ behavior: "smooth" }); }} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
               </button>
@@ -1057,7 +1057,7 @@ Equipo NORFER`;
           </header>
 
           <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_360px]">
-            <div className="space-y-6">
+            <div id="panel-operativo" className="space-y-6">
               <section className="grid gap-4 md:grid-cols-4">
                 {metrics.map((metric, index) => (
                   <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
@@ -1070,6 +1070,41 @@ Equipo NORFER`;
                     <p className="mt-4 text-sm font-medium text-muted-foreground">{metric.label}</p>
                   </article>
                 ))}
+              </section>
+
+              <section id="alertas" className="rounded-md border bg-card shadow-command">
+                <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Alertas</h3>
+                    <p className="text-sm text-muted-foreground">Alertas vinculadas a pedidos y proveedores.</p>
+                  </div>
+                  <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{filteredAlertas.length}</span>
+                </div>
+                <div className="grid gap-3 border-b p-5 md:grid-cols-6">
+                  <select value={alertaEstadoFilter} onChange={(event) => setAlertaEstadoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{alertaEstadoOptions.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
+                  <select value={alertaTipoFilter} onChange={(event) => setAlertaTipoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los tipos</option>{alertaTipoOptions.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select>
+                  <select value={alertaProveedorFilter} onChange={(event) => setAlertaProveedorFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{alertaProveedorOptions.map((proveedor) => <option key={proveedor} value={proveedor}>{proveedor}</option>)}</select>
+                  <select value={alertaVendedorFilter} onChange={(event) => setAlertaVendedorFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{alertaVendedorOptions.map((vendedor) => <option key={vendedor} value={vendedor}>{vendedor}</option>)}</select>
+                  <Button type="button" variant={onlyExpiredAlertas ? "command" : "outline"} onClick={() => setOnlyExpiredAlertas((current) => !current)}>Vencidas</Button>
+                  <Button type="button" variant={onlyUpcomingAlertas ? "command" : "outline"} onClick={() => setOnlyUpcomingAlertas((current) => !current)}>Próximas</Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-left text-sm">
+                    <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">days_remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {!isLoading && filteredAlertas.map((alerta) => (
+                        <tr key={alerta.id} className="transition hover:bg-surface-subtle/70">
+                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
+                        </tr>
+                      ))}
+                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={9}>No hay alertas para mostrar.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
               </section>
 
               <section className="rounded-md border bg-card shadow-command">
