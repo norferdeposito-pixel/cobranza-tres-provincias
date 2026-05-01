@@ -623,6 +623,39 @@ const Index = () => {
   const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
   const recentOrders = orders.slice(0, 6);
 
+  // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
+  const isInReportMonth = (fecha: string | null | undefined) => {
+    if (!fecha || typeof fecha !== "string") return false;
+    const parts = fecha.split("-");
+    if (parts.length < 2) return false;
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    if (!Number.isFinite(y) || !Number.isFinite(m)) return false;
+    return y === reportYear && m === reportMonth;
+  };
+  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportMonth(o.fecha)), [orders, reportMonth, reportYear]);
+  const ordersByStatusReport = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: ordersInReportMonth.filter((o) => o.rawStatus === estado).length })).filter((item) => item.count > 0), [ordersInReportMonth]);
+  const ordersWithoutOcReport = ordersInReportMonth.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")).length;
+  const activeAlertasReport = useMemo(() => {
+    const orderIdsInMonth = new Set(ordersInReportMonth.map((o) => String(o.id)));
+    // alertas don't carry pedido fecha directly; match by numero_pedido
+    const numerosInMonth = new Set(ordersInReportMonth.map((o) => o.orderNumber));
+    return alertas.filter((a) => !isClosedAlerta(a.estado) && numerosInMonth.has(a.numeroPedido)).length;
+  }, [alertas, ordersInReportMonth]);
+  const purchaseTotalsBySupplierReport = useMemo(() => {
+    // Filter purchase totals by supplier name appearing in this month's orders
+    const allowedSuppliers = new Set(ordersInReportMonth.map((o) => o.supplier));
+    return purchaseTotalsBySupplier.filter((p) => allowedSuppliers.has(p.proveedor));
+  }, [purchaseTotalsBySupplier, ordersInReportMonth]);
+
+  // Cliente lookup for selected pedido
+  const selectedClienteContact = useMemo(() => {
+    const order = orders.find((o) => o.id === selectedOrderId);
+    if (!order || !order.cliente) return null;
+    const match = clientes.find((c) => (c.nombre || "").trim().toLowerCase() === (order.cliente || "").trim().toLowerCase());
+    return match || null;
+  }, [orders, selectedOrderId, clientes]);
+
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
