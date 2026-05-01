@@ -429,6 +429,10 @@ const Index = () => {
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
+  const [clientes, setClientes] = useState<Array<{ id: string; nombre: string; email: string | null; telefono: string | null }>>([]);
+  const now = new Date();
+  const [reportMonth, setReportMonth] = useState<number>(now.getMonth() + 1);
+  const [reportYear, setReportYear] = useState<number>(now.getFullYear());
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -499,7 +503,19 @@ const Index = () => {
       setIsLoading(false);
     };
 
+    const loadClientes = async () => {
+      try {
+        const { data, error } = await supabase.from("clientes" as any).select("id, nombre, email, telefono");
+        if (!error && Array.isArray(data)) {
+          setClientes(data as any);
+        }
+      } catch {
+        // table may not exist yet — safe no-op
+      }
+    };
+
     loadOrders();
+    loadClientes();
   }, []);
 
   useEffect(() => {
@@ -606,6 +622,39 @@ const Index = () => {
   const ordersByStatus = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: orders.filter((order) => order.rawStatus === estado).length })).filter((item) => item.count > 0), [orders]);
   const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
   const recentOrders = orders.slice(0, 6);
+
+  // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
+  const isInReportMonth = (fecha: string | null | undefined) => {
+    if (!fecha || typeof fecha !== "string") return false;
+    const parts = fecha.split("-");
+    if (parts.length < 2) return false;
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    if (!Number.isFinite(y) || !Number.isFinite(m)) return false;
+    return y === reportYear && m === reportMonth;
+  };
+  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportMonth(o.fecha)), [orders, reportMonth, reportYear]);
+  const ordersByStatusReport = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: ordersInReportMonth.filter((o) => o.rawStatus === estado).length })).filter((item) => item.count > 0), [ordersInReportMonth]);
+  const ordersWithoutOcReport = ordersInReportMonth.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")).length;
+  const activeAlertasReport = useMemo(() => {
+    const orderIdsInMonth = new Set(ordersInReportMonth.map((o) => String(o.id)));
+    // alertas don't carry pedido fecha directly; match by numero_pedido
+    const numerosInMonth = new Set(ordersInReportMonth.map((o) => o.orderNumber));
+    return alertas.filter((a) => !isClosedAlerta(a.estado) && numerosInMonth.has(a.numeroPedido)).length;
+  }, [alertas, ordersInReportMonth]);
+  const purchaseTotalsBySupplierReport = useMemo(() => {
+    // Filter purchase totals by supplier name appearing in this month's orders
+    const allowedSuppliers = new Set(ordersInReportMonth.map((o) => o.supplier));
+    return purchaseTotalsBySupplier.filter((p) => allowedSuppliers.has(p.proveedor));
+  }, [purchaseTotalsBySupplier, ordersInReportMonth]);
+
+  // Cliente lookup for selected pedido
+  const selectedClienteContact = useMemo(() => {
+    const order = orders.find((o) => o.id === selectedOrderId);
+    if (!order || !order.cliente) return null;
+    const match = clientes.find((c) => (c.nombre || "").trim().toLowerCase() === (order.cliente || "").trim().toLowerCase());
+    return match || null;
+  }, [orders, selectedOrderId, clientes]);
 
   const updateItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
@@ -1286,6 +1335,30 @@ Equipo NORFER`;
                     </div>
                   )}
                 </div>
+                {selectedOrder && (
+                  <div className="border-b bg-surface-subtle/40 p-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h4 className="font-semibold">Contacto del cliente</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedOrder.cliente || "-"}
+                          {selectedClienteContact?.email ? ` · ${selectedClienteContact.email}` : ""}
+                          {selectedClienteContact?.telefono ? ` · ${selectedClienteContact.telefono}` : ""}
+                          {!selectedClienteContact && selectedOrder.cliente ? " · sin datos de contacto" : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" type="button" disabled={!selectedClienteContact?.email} onClick={() => selectedClienteContact?.email && window.open(`mailto:${selectedClienteContact.email}`, "_blank", "noopener,noreferrer")}>
+                          Enviar mail
+                        </Button>
+                        <Button size="sm" variant="outline" type="button" disabled={!selectedClienteContact?.telefono} onClick={() => { const phone = (selectedClienteContact?.telefono || "").replace(/\D/g, ""); if (phone) window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer"); }}>
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
@@ -1499,11 +1572,37 @@ Equipo NORFER`;
               </section>
             )}
             {activeSection === "Reportes" && (
-              <section className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatus.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatus.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos.</p>}</div></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcCount}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo.</p></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasCount}</p><p className="mt-1 text-sm text-muted-foreground">Alertas no cerradas ni resueltas.</p></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplier.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplier.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados.</p>}</div></div>
+              <section className="space-y-6">
+                <div className="rounded-md border bg-card p-5 shadow-command">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="font-semibold">Filtro mensual</h3>
+                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del mes y año seleccionados.</p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="report-month">Mes</Label>
+                        <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          {[
+                            "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+                          ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="report-year">Año</Label>
+                        <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcReport}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo (período seleccionado).</p></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasReport}</p><p className="mt-1 text-sm text-muted-foreground">Alertas activas asociadas a pedidos del período.</p></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplierReport.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplierReport.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados para el período.</p>}</div></div>
+                </div>
               </section>
             )}
           </div>
