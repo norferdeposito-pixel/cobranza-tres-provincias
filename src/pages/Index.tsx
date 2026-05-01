@@ -503,7 +503,19 @@ const Index = () => {
       setIsLoading(false);
     };
 
+    const loadClientes = async () => {
+      try {
+        const { data, error } = await supabase.from("clientes" as any).select("id, nombre, email, telefono");
+        if (!error && Array.isArray(data)) {
+          setClientes(data as any);
+        }
+      } catch {
+        // table may not exist yet — safe no-op
+      }
+    };
+
     loadOrders();
+    loadClientes();
   }, []);
 
   useEffect(() => {
