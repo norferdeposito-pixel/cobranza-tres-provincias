@@ -1335,6 +1335,30 @@ Equipo NORFER`;
                     </div>
                   )}
                 </div>
+                {selectedOrder && (
+                  <div className="border-b bg-surface-subtle/40 p-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h4 className="font-semibold">Contacto del cliente</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedOrder.cliente || "-"}
+                          {selectedClienteContact?.email ? ` · ${selectedClienteContact.email}` : ""}
+                          {selectedClienteContact?.telefono ? ` · ${selectedClienteContact.telefono}` : ""}
+                          {!selectedClienteContact && selectedOrder.cliente ? " · sin datos de contacto" : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" type="button" disabled={!selectedClienteContact?.email} onClick={() => selectedClienteContact?.email && window.open(`mailto:${selectedClienteContact.email}`, "_blank", "noopener,noreferrer")}>
+                          Enviar mail
+                        </Button>
+                        <Button size="sm" variant="outline" type="button" disabled={!selectedClienteContact?.telefono} onClick={() => { const phone = (selectedClienteContact?.telefono || "").replace(/\D/g, ""); if (phone) window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer"); }}>
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
