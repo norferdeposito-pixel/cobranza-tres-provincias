@@ -429,6 +429,10 @@ const Index = () => {
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
+  const [clientes, setClientes] = useState<Array<{ id: string; nombre: string; email: string | null; telefono: string | null }>>([]);
+  const now = new Date();
+  const [reportMonth, setReportMonth] = useState<number>(now.getMonth() + 1);
+  const [reportYear, setReportYear] = useState<number>(now.getFullYear());
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
