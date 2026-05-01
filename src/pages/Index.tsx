@@ -1572,11 +1572,37 @@ Equipo NORFER`;
               </section>
             )}
             {activeSection === "Reportes" && (
-              <section className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatus.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatus.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos.</p>}</div></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcCount}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo.</p></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasCount}</p><p className="mt-1 text-sm text-muted-foreground">Alertas no cerradas ni resueltas.</p></div>
-                <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplier.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplier.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados.</p>}</div></div>
+              <section className="space-y-6">
+                <div className="rounded-md border bg-card p-5 shadow-command">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="font-semibold">Filtro mensual</h3>
+                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del mes y año seleccionados.</p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="report-month">Mes</Label>
+                        <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          {[
+                            "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+                          ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="report-year">Año</Label>
+                        <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcReport}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo (período seleccionado).</p></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Active alertas</h3><p className="mt-4 text-4xl font-semibold">{activeAlertasReport}</p><p className="mt-1 text-sm text-muted-foreground">Alertas activas asociadas a pedidos del período.</p></div>
+                  <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Total purchase amount by proveedor</h3><div className="mt-4 space-y-3">{purchaseTotalsBySupplierReport.map((item) => (<div key={`${item.proveedor}-${item.moneda}`} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.proveedor}</span><strong>{item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></div>))}{purchaseTotalsBySupplierReport.length === 0 && <p className="text-sm text-muted-foreground">Sin costos unitarios cargados para el período.</p>}</div></div>
+                </div>
               </section>
             )}
           </div>
