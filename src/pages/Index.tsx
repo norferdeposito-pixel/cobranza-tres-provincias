@@ -476,7 +476,7 @@ const Index = () => {
         setOrders(initialOrders);
         setAlertas(Object.values(demoAlertasByOrderId).flat().map((alerta) => {
           const order = initialOrders.find((item) => item.id === alerta.pedido_id);
-          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
+          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", pedidoEstado: order?.rawStatus || "", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
         }));
         setPurchaseTotalsBySupplier([]);
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
