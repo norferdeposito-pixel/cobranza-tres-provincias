@@ -885,7 +885,13 @@ const Index = () => {
         estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
-    const nextStatus = getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo) ? derivedStatus : getPedidoLifecycleStatus(nextItems, derivedStatus);
+    const protectedStatuses = ["terminado", "anulado", "recibido_parcial", "recibido_total"];
+    const userPicked = optionalValue(editForm.estado) || "";
+    const nextStatus = protectedStatuses.includes(userPicked)
+      ? userPicked
+      : (getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo)
+          ? derivedStatus
+          : getPedidoLifecycleStatus(nextItems, derivedStatus));
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === editForm.supplierId);
