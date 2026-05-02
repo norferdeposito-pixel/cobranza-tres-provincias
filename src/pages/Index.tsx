@@ -274,10 +274,11 @@ const getStatusBadgeClass = (rawStatus: string, ocNumber?: string | null) => {
 };
 
 const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
-  const currentStatus = optionalValue(estado || "") || "pedido_cargado";
+  const currentStatus = optionalValue(estado || "") || "";
   const protectedStatuses = ["terminado", "anulado", "recibido_total", "recibido_parcial"];
-  if (optionalValue(numeroOcQubigo) && currentStatus === "pedido_cargado" && !protectedStatuses.includes(currentStatus)) return "en_curso";
-  return currentStatus;
+  if (protectedStatuses.includes(currentStatus)) return currentStatus;
+  if (optionalValue(numeroOcQubigo) && (currentStatus === "" || currentStatus === "pedido_cargado")) return "en_curso";
+  return currentStatus || "pedido_cargado";
 };
 
 const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
