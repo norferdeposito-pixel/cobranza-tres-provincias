@@ -581,6 +581,8 @@ const Index = () => {
   const alertaVendedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.vendedor).filter(Boolean))).sort(), [alertas]);
   const filteredAlertas = useMemo(
     () => alertas.filter((alerta) => {
+      const pedidoEstado = (alerta.pedidoEstado || "").toLowerCase();
+      if (pedidoEstado === "terminado" || pedidoEstado === "anulado") return false;
       const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
       const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
       const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
@@ -591,18 +593,31 @@ const Index = () => {
     }),
     [alertas, alertaEstadoFilter, alertaTipoFilter, alertaProveedorFilter, alertaVendedorFilter, onlyExpiredAlertas, onlyUpcomingAlertas],
   );
+  const sortedOrders = useMemo(() => {
+    const todayStr = today();
+    const withDate: PurchaseOrder[] = [];
+    const withoutDate: PurchaseOrder[] = [];
+    orders.forEach((o) => (safeDateForDisplay(o.eta) ? withDate : withoutDate).push(o));
+    withDate.sort((a, b) => {
+      const aOverdue = a.eta < todayStr ? 0 : 1;
+      const bOverdue = b.eta < todayStr ? 0 : 1;
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+      return a.eta.localeCompare(b.eta);
+    });
+    return [...withDate, ...withoutDate];
+  }, [orders]);
   const filteredOrders = useMemo(
-    () => orders.filter((order) => {
+    () => sortedOrders.filter((order) => {
       const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
       const matchesSearch = `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status} ${order.vendedor}`.toLowerCase().includes(query.toLowerCase());
       const matchesSeller = sellerFilter === "todos" || order.vendedor === sellerFilter;
-      const matchesStatus = statusFilter === "todos" || order.rawStatus === statusFilter;
+      const matchesStatus = statusFilters.length === 0 || statusFilters.includes(order.rawStatus);
       const matchesSupplier = supplierFilter === "todos" || order.supplier === supplierFilter;
       const matchesWithoutOc = !onlyWithoutOc || withoutOc;
       const matchesMyActive = !onlyMyActiveOrders || (order.vendedor === currentSeller && ["en_curso", "recibido_parcial"].includes(order.rawStatus));
       return matchesSearch && matchesSeller && matchesStatus && matchesSupplier && matchesWithoutOc && matchesMyActive;
     }),
-    [orders, query, sellerFilter, statusFilter, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
+    [sortedOrders, query, sellerFilter, statusFilters, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
