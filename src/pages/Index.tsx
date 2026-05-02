@@ -404,7 +404,8 @@ const Index = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [sellerFilter, setSellerFilter] = useState("todos");
-  const [statusFilter, setStatusFilter] = useState("todos");
+  const defaultStatusFilters = ["pedido_cargado", "en_curso", "recibido_parcial"];
+  const [statusFilters, setStatusFilters] = useState<string[]>(defaultStatusFilters);
   const [supplierFilter, setSupplierFilter] = useState("todos");
   const [alertaEstadoFilter, setAlertaEstadoFilter] = useState("todos");
   const [alertaTipoFilter, setAlertaTipoFilter] = useState("todos");
