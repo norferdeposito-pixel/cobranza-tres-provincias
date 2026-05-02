@@ -457,7 +457,7 @@ const Index = () => {
         supabase.from("alertas").select("id, fecha_aviso, estado"),
         supabase
           .from("alertas")
-          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, estado, proveedores(nombre))")
           .order("fecha_aviso", { ascending: true }),
         supabase
           .from("pedido_items")
