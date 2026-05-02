@@ -998,7 +998,14 @@ const Index = () => {
       nextItems.splice(nextItems.length - newItems.length, newItems.length, ...((insertedItems || []) as PedidoItem[]));
     }
 
-    if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
+    // Refetch pedido from Supabase to ensure UI matches DB (estado, etc.)
+    const { data: refetched } = await supabase
+      .from("pedidos")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
+      .eq("id", selectedOrder.id)
+      .maybeSingle();
+    const finalRow = (refetched || data) as PurchaseOrderRow | null;
+    if (finalRow) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(finalRow) : order));
     setPedidoItems(nextItems);
     setIsSavingEdit(false);
     setIsEditOpen(false);
