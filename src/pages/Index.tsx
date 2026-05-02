@@ -120,12 +120,14 @@ type AlertaRow = PedidoAlerta & {
     numero_pedido: string | null;
     numero_oc_qubigo: string | null;
     vendedor: string | null;
+    estado: string | null;
     proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
   } | {
     cliente: string | null;
     numero_pedido: string | null;
     numero_oc_qubigo: string | null;
     vendedor: string | null;
+    estado: string | null;
     proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
   }[] | null;
 };
@@ -140,6 +142,7 @@ type AlertaListItem = {
   fechaEstimada: string | null;
   fechaAviso: string | null;
   estado: string;
+  pedidoEstado: string;
   vendedor: string;
   daysRemaining: number | null;
 };
@@ -274,10 +277,11 @@ const getStatusBadgeClass = (rawStatus: string, ocNumber?: string | null) => {
 };
 
 const deriveStatusByOc = (numeroOcQubigo: string, estado: string | null) => {
-  const currentStatus = optionalValue(estado || "") || "pedido_cargado";
+  const currentStatus = optionalValue(estado || "") || "";
   const protectedStatuses = ["terminado", "anulado", "recibido_total", "recibido_parcial"];
-  if (optionalValue(numeroOcQubigo) && currentStatus === "pedido_cargado" && !protectedStatuses.includes(currentStatus)) return "en_curso";
-  return currentStatus;
+  if (protectedStatuses.includes(currentStatus)) return currentStatus;
+  if (optionalValue(numeroOcQubigo) && (currentStatus === "" || currentStatus === "pedido_cargado")) return "en_curso";
+  return currentStatus || "pedido_cargado";
 };
 
 const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) => {
@@ -387,6 +391,7 @@ const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
     fechaEstimada: safeDateForDisplay(alerta.fecha_estimada),
     fechaAviso,
     estado: alerta.estado || "-",
+    pedidoEstado: pedido?.estado || "",
     vendedor: pedido?.vendedor || "-",
     daysRemaining: getDaysRemaining(fechaAviso),
   };
@@ -399,7 +404,8 @@ const Index = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [sellerFilter, setSellerFilter] = useState("todos");
-  const [statusFilter, setStatusFilter] = useState("todos");
+  const defaultStatusFilters = ["pedido_cargado", "en_curso", "recibido_parcial"];
+  const [statusFilters, setStatusFilters] = useState<string[]>(defaultStatusFilters);
   const [supplierFilter, setSupplierFilter] = useState("todos");
   const [alertaEstadoFilter, setAlertaEstadoFilter] = useState("todos");
   const [alertaTipoFilter, setAlertaTipoFilter] = useState("todos");
@@ -452,7 +458,7 @@ const Index = () => {
         supabase.from("alertas").select("id, fecha_aviso, estado"),
         supabase
           .from("alertas")
-          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, proveedores(nombre))")
+          .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado, pedidos(cliente, numero_pedido, numero_oc_qubigo, vendedor, estado, proveedores(nombre))")
           .order("fecha_aviso", { ascending: true }),
         supabase
           .from("pedido_items")
@@ -471,7 +477,7 @@ const Index = () => {
         setOrders(initialOrders);
         setAlertas(Object.values(demoAlertasByOrderId).flat().map((alerta) => {
           const order = initialOrders.find((item) => item.id === alerta.pedido_id);
-          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
+          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", pedidoEstado: order?.rawStatus || "", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
         }));
         setPurchaseTotalsBySupplier([]);
         setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
@@ -575,6 +581,8 @@ const Index = () => {
   const alertaVendedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.vendedor).filter(Boolean))).sort(), [alertas]);
   const filteredAlertas = useMemo(
     () => alertas.filter((alerta) => {
+      const pedidoEstado = (alerta.pedidoEstado || "").toLowerCase();
+      if (pedidoEstado === "terminado" || pedidoEstado === "anulado") return false;
       const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
       const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
       const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
@@ -585,18 +593,31 @@ const Index = () => {
     }),
     [alertas, alertaEstadoFilter, alertaTipoFilter, alertaProveedorFilter, alertaVendedorFilter, onlyExpiredAlertas, onlyUpcomingAlertas],
   );
+  const sortedOrders = useMemo(() => {
+    const todayStr = today();
+    const withDate: PurchaseOrder[] = [];
+    const withoutDate: PurchaseOrder[] = [];
+    orders.forEach((o) => (safeDateForDisplay(o.eta) ? withDate : withoutDate).push(o));
+    withDate.sort((a, b) => {
+      const aOverdue = a.eta < todayStr ? 0 : 1;
+      const bOverdue = b.eta < todayStr ? 0 : 1;
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+      return a.eta.localeCompare(b.eta);
+    });
+    return [...withDate, ...withoutDate];
+  }, [orders]);
   const filteredOrders = useMemo(
-    () => orders.filter((order) => {
+    () => sortedOrders.filter((order) => {
       const withoutOc = order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-");
       const matchesSearch = `${order.orderNumber} ${order.supplier} ${order.ocNumber} ${order.status} ${order.vendedor}`.toLowerCase().includes(query.toLowerCase());
       const matchesSeller = sellerFilter === "todos" || order.vendedor === sellerFilter;
-      const matchesStatus = statusFilter === "todos" || order.rawStatus === statusFilter;
+      const matchesStatus = statusFilters.length === 0 || statusFilters.includes(order.rawStatus);
       const matchesSupplier = supplierFilter === "todos" || order.supplier === supplierFilter;
       const matchesWithoutOc = !onlyWithoutOc || withoutOc;
       const matchesMyActive = !onlyMyActiveOrders || (order.vendedor === currentSeller && ["en_curso", "recibido_parcial"].includes(order.rawStatus));
       return matchesSearch && matchesSeller && matchesStatus && matchesSupplier && matchesWithoutOc && matchesMyActive;
     }),
-    [orders, query, sellerFilter, statusFilter, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
+    [sortedOrders, query, sellerFilter, statusFilters, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
   );
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
@@ -884,7 +905,13 @@ const Index = () => {
         estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
-    const nextStatus = getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo) ? derivedStatus : getPedidoLifecycleStatus(nextItems, derivedStatus);
+    const protectedStatuses = ["terminado", "anulado", "recibido_parcial", "recibido_total"];
+    const userPicked = optionalValue(editForm.estado) || "";
+    const nextStatus = protectedStatuses.includes(userPicked)
+      ? userPicked
+      : (getPedidoLifecycleStatus(nextItems, derivedStatus) === "en_curso" && !optionalValue(editForm.numeroOcQubigo)
+          ? derivedStatus
+          : getPedidoLifecycleStatus(nextItems, derivedStatus));
 
     if (isPreviewMode) {
       const supplier = suppliers.find((item) => item.id === editForm.supplierId);
@@ -991,7 +1018,14 @@ const Index = () => {
       nextItems.splice(nextItems.length - newItems.length, newItems.length, ...((insertedItems || []) as PedidoItem[]));
     }
 
-    if (data) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(data as PurchaseOrderRow) : order));
+    // Refetch pedido from Supabase to ensure UI matches DB (estado, etc.)
+    const { data: refetched } = await supabase
+      .from("pedidos")
+      .select("id, fecha, numero_pedido, proveedor_id, proveedores(nombre, telefono), estado, numero_oc_qubigo, fecha_estimada_entrega, observaciones, cliente, vendedor")
+      .eq("id", selectedOrder.id)
+      .maybeSingle();
+    const finalRow = (refetched || data) as PurchaseOrderRow | null;
+    if (finalRow) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(finalRow) : order));
     setPedidoItems(nextItems);
     setIsSavingEdit(false);
     setIsEditOpen(false);
@@ -1272,12 +1306,24 @@ Equipo NORFER`;
                     <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pedido u OC" className="pl-9" />
                   </div>
                 </div>
-                <div className="grid gap-3 border-b p-5 md:grid-cols-5">
-                  <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
-                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
-                  <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
-                  <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
-                  <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                <div className="space-y-3 border-b p-5">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
+                    <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
+                    <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
+                    <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">Estado:</span>
+                    {["pedido_cargado", "en_curso", "recibido_parcial", "terminado", "anulado"].map((estado) => {
+                      const active = statusFilters.includes(estado);
+                      return (
+                        <Button key={estado} type="button" size="sm" variant={active ? "command" : "outline"} onClick={() => setStatusFilters((current) => current.includes(estado) ? current.filter((s) => s !== estado) : [...current, estado])}>{estado}</Button>
+                      );
+                    })}
+                    <Button type="button" size="sm" variant={statusFilters.length === 5 ? "command" : "outline"} onClick={() => setStatusFilters(["pedido_cargado", "en_curso", "recibido_parcial", "terminado", "anulado"])}>Ver todos</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setStatusFilters(defaultStatusFilters)}>Restablecer</Button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
