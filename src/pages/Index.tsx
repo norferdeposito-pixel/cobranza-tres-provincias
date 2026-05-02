@@ -391,6 +391,7 @@ const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
     fechaEstimada: safeDateForDisplay(alerta.fecha_estimada),
     fechaAviso,
     estado: alerta.estado || "-",
+    pedidoEstado: pedido?.estado || "",
     vendedor: pedido?.vendedor || "-",
     daysRemaining: getDaysRemaining(fechaAviso),
   };
