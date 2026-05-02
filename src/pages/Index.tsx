@@ -1306,12 +1306,24 @@ Equipo NORFER`;
                     <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pedido u OC" className="pl-9" />
                   </div>
                 </div>
-                <div className="grid gap-3 border-b p-5 md:grid-cols-5">
-                  <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
-                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los estados</option>{pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}</select>
-                  <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
-                  <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
-                  <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                <div className="space-y-3 border-b p-5">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los vendedores</option>{sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}</select>
+                    <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="todos">Todos los proveedores</option>{supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}</select>
+                    <Button type="button" variant={onlyWithoutOc ? "command" : "outline"} onClick={() => setOnlyWithoutOc((current) => !current)}>Sin OC</Button>
+                    <Button type="button" variant={onlyMyActiveOrders ? "command" : "outline"} onClick={() => setOnlyMyActiveOrders((current) => !current)}>Mis pedidos en curso</Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">Estado:</span>
+                    {["pedido_cargado", "en_curso", "recibido_parcial", "terminado", "anulado"].map((estado) => {
+                      const active = statusFilters.includes(estado);
+                      return (
+                        <Button key={estado} type="button" size="sm" variant={active ? "command" : "outline"} onClick={() => setStatusFilters((current) => current.includes(estado) ? current.filter((s) => s !== estado) : [...current, estado])}>{estado}</Button>
+                      );
+                    })}
+                    <Button type="button" size="sm" variant={statusFilters.length === 5 ? "command" : "outline"} onClick={() => setStatusFilters(["pedido_cargado", "en_curso", "recibido_parcial", "terminado", "anulado"])}>Ver todos</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setStatusFilters(defaultStatusFilters)}>Restablecer</Button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
