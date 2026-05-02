@@ -120,12 +120,14 @@ type AlertaRow = PedidoAlerta & {
     numero_pedido: string | null;
     numero_oc_qubigo: string | null;
     vendedor: string | null;
+    estado: string | null;
     proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
   } | {
     cliente: string | null;
     numero_pedido: string | null;
     numero_oc_qubigo: string | null;
     vendedor: string | null;
+    estado: string | null;
     proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
   }[] | null;
 };
@@ -140,6 +142,7 @@ type AlertaListItem = {
   fechaEstimada: string | null;
   fechaAviso: string | null;
   estado: string;
+  pedidoEstado: string;
   vendedor: string;
   daysRemaining: number | null;
 };
