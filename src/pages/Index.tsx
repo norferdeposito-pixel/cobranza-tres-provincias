@@ -1421,7 +1421,7 @@ Equipo NORFER`;
                     </thead>
                     <tbody className="divide-y">
                       {!isLoading && filteredAlertas.map((alerta) => {
-                        const urgency = getAlertaUrgency(alerta.fechaAviso);
+                        const urgency = getAlertaUrgency(alerta.fechaEstimada, alerta.fechaAviso);
                         return (
                         <tr key={alerta.id} className="transition hover:bg-surface-subtle/70">
                           <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${urgency.className}`}>{urgency.label}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
