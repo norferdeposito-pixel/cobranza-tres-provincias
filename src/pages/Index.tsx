@@ -1288,16 +1288,19 @@ Equipo NORFER`;
                   <table className="w-full min-w-[980px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
-                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">days_remaining</th>
+                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">urgencia</th><th className="px-5 py-3 font-semibold">days_remaining</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {!isLoading && filteredAlertas.map((alerta) => (
+                      {!isLoading && filteredAlertas.map((alerta) => {
+                        const urgency = getAlertaUrgency(alerta.fechaAviso);
+                        return (
                         <tr key={alerta.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
+                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${urgency.className}`}>{urgency.label}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
                         </tr>
-                      ))}
-                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={9}>No hay alertas para mostrar.</td></tr>}
+                        );
+                      })}
+                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={10}>No hay alertas para mostrar.</td></tr>}
                     </tbody>
                   </table>
                 </div>
