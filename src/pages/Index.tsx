@@ -1278,7 +1278,12 @@ Equipo NORFER`;
               {activeSection === "Dashboard" && (
                 <>
                   <section className="grid gap-4 md:grid-cols-4">
-                    {metrics.map((metric, index) => (
+                    {[
+                      { label: "Total pedidos en curso", value: totalEnCurso, icon: PackageCheck },
+                      { label: "Pedidos atrasados", value: totalAtrasados, icon: AlertTriangle },
+                      { label: "% Cumplimiento", value: `${cumplimientoPct}%`, icon: CheckCircle2 },
+                      { label: "Pedidos sin OC", value: ordersWithoutOc.length, icon: ClipboardList },
+                    ].map((metric, index) => (
                       <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
                         <div className="flex items-center justify-between">
                           <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
@@ -1290,9 +1295,95 @@ Equipo NORFER`;
                       </article>
                     ))}
                   </section>
+
                   <section className="rounded-md border bg-card shadow-command">
-                    <div className="border-b p-5"><h3 className="text-lg font-semibold">Pedidos recientes</h3><p className="text-sm text-muted-foreground">Últimos pedidos cargados y su estado actual.</p></div>
-                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Pedido</th><th className="px-5 py-3 font-semibold">Proveedor</th><th className="px-5 py-3 font-semibold">Cliente</th><th className="px-5 py-3 font-semibold">Estado</th><th className="px-5 py-3 font-semibold">OC Qubigo</th></tr></thead><tbody className="divide-y">{recentOrders.map((order) => (<tr key={order.id} className="cursor-pointer transition hover:bg-surface-subtle/70" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}><td className="px-5 py-4 font-medium">{order.orderNumber}</td><td className="px-5 py-4">{order.supplier}</td><td className="px-5 py-4">{order.cliente}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus}</span></td><td className="px-5 py-4 text-primary">{order.ocNumber}</td></tr>))}</tbody></table></div>
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">🚨 Pedidos atrasados</h3>
+                      <p className="text-sm text-muted-foreground">Top 5 con mayor cantidad de días de atraso.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                            <th className="px-5 py-3 font-semibold">Días de atraso</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {overdueOrders.map(({ order, diasAtraso }) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4 text-primary">{order.ocNumber || "-"}</td>
+                              <td className="px-5 py-4"><span className="inline-flex rounded-md border bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive border-destructive/30">{diasAtraso} días</span></td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Ver pedido</Button></td>
+                            </tr>
+                          ))}
+                          {overdueOrders.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Sin pedidos atrasados.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">⏳ Próximas entregas</h3>
+                      <p className="text-sm text-muted-foreground">Pedidos con entrega en los próximos 3 días.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">fecha_estimada</th>
+                            <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {upcomingDeliveries.map((order) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4">{formatDate(order.eta) || "-"}</td>
+                              <td className="px-5 py-4 text-primary">{order.ocNumber || "-"}</td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Ver pedido</Button></td>
+                            </tr>
+                          ))}
+                          {upcomingDeliveries.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Sin entregas en los próximos 3 días.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">⚠ Pedidos sin OC</h3>
+                      <p className="text-sm text-muted-foreground">Pedidos cargados sin número de OC asignado.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Pedido</th>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">Cliente</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {ordersWithoutOc.slice(0, 10).map((order) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4">{order.cliente || "-"}</td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Abrir</Button></td>
+                            </tr>
+                          ))}
+                          {ordersWithoutOc.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Todos los pedidos tienen OC.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
                   </section>
                 </>
               )}
