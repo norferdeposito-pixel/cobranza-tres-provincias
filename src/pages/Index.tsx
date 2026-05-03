@@ -582,7 +582,7 @@ const Index = () => {
   const filteredAlertas = useMemo(
     () => alertas.filter((alerta) => {
       const pedidoEstado = (alerta.pedidoEstado || "").toLowerCase();
-      if (pedidoEstado === "terminado" || pedidoEstado === "anulado") return false;
+      if (!["en_curso", "recibido_parcial"].includes(pedidoEstado)) return false;
       const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
       const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
       const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
