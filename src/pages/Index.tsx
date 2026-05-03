@@ -215,6 +215,14 @@ const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRem
   return "bg-primary/10 text-primary border-primary/25";
 };
 
+const getAlertaUrgency = (fechaAviso?: string | null): { label: string; className: string } => {
+  const days = getDaysRemaining(fechaAviso);
+  if (days === null) return { label: "-", className: "bg-secondary text-secondary-foreground border-border" };
+  if (days < 0) return { label: "Atrasado", className: "bg-destructive/10 text-destructive border-destructive/30" };
+  if (days <= 3) return { label: "Próxima", className: "bg-warning/20 text-warning-foreground border-warning/40" };
+  return { label: "Futura", className: "bg-secondary text-secondary-foreground border-border" };
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
