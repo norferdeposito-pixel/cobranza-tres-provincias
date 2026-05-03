@@ -215,12 +215,20 @@ const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRem
   return "bg-primary/10 text-primary border-primary/25";
 };
 
-const getAlertaUrgency = (fechaAviso?: string | null): { label: string; className: string } => {
-  const days = getDaysRemaining(fechaAviso);
-  if (days === null) return { label: "-", className: "bg-secondary text-secondary-foreground border-border" };
-  if (days < 0) return { label: "Atrasado", className: "bg-destructive/10 text-destructive border-destructive/30" };
-  if (days <= 3) return { label: "Próxima", className: "bg-warning/20 text-warning-foreground border-warning/40" };
-  return { label: "Futura", className: "bg-secondary text-secondary-foreground border-border" };
+const getAlertaUrgency = (fechaEstimada?: string | null, fechaAviso?: string | null): { label: string; className: string } => {
+  const todayStr = today();
+  const estimadaValid = isValidDateValue(fechaEstimada) ? (fechaEstimada as string) : null;
+  const avisoValid = isValidDateValue(fechaAviso) ? (fechaAviso as string) : null;
+  if (estimadaValid && estimadaValid < todayStr) {
+    return { label: "Atrasado", className: "bg-destructive/10 text-destructive border-destructive/30" };
+  }
+  if (avisoValid && avisoValid <= todayStr && (!estimadaValid || estimadaValid >= todayStr)) {
+    return { label: "Próxima", className: "bg-warning/20 text-warning-foreground border-warning/40" };
+  }
+  if (avisoValid && avisoValid > todayStr) {
+    return { label: "Futura", className: "bg-secondary text-secondary-foreground border-border" };
+  }
+  return { label: "-", className: "bg-secondary text-secondary-foreground border-border" };
 };
 
 const initialOrders: PurchaseOrder[] = [
