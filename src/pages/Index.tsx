@@ -652,6 +652,35 @@ const Index = () => {
   const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
   const recentOrders = orders.slice(0, 6);
 
+  // Operational dashboard data
+  const todayIsoStr = today();
+  const overdueOrders = useMemo(() => {
+    return orders
+      .filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus) && safeDateForDisplay(o.eta) && o.eta < todayIsoStr)
+      .map((o) => ({ order: o, diasAtraso: Math.abs(getDaysRemaining(o.eta) ?? 0) }))
+      .sort((a, b) => b.diasAtraso - a.diasAtraso)
+      .slice(0, 5);
+  }, [orders, todayIsoStr]);
+  const upcomingDeliveries = useMemo(() => {
+    return orders
+      .filter((o) => {
+        if (!["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus)) return false;
+        const days = getDaysRemaining(o.eta);
+        return days !== null && days >= 0 && days <= 3;
+      })
+      .sort((a, b) => a.eta.localeCompare(b.eta));
+  }, [orders, todayIsoStr]);
+  const ordersWithoutOc = useMemo(
+    () => orders.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")),
+    [orders],
+  );
+  const totalEnCurso = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus)).length;
+  const totalAtrasados = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus) && safeDateForDisplay(o.eta) && o.eta < todayIsoStr).length;
+  const finalizedOrders = orders.filter((o) => ["terminado", "recibido_total"].includes(o.rawStatus));
+  const onTimeFinalized = finalizedOrders.filter((o) => safeDateForDisplay(o.eta) && o.eta >= o.fecha).length;
+  const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
+
+
   // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
   const isInReportMonth = (fecha: string | null | undefined) => {
     if (!fecha || typeof fecha !== "string") return false;
