@@ -215,6 +215,14 @@ const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRem
   return "bg-primary/10 text-primary border-primary/25";
 };
 
+const getAlertaUrgency = (fechaAviso?: string | null): { label: string; className: string } => {
+  const days = getDaysRemaining(fechaAviso);
+  if (days === null) return { label: "-", className: "bg-secondary text-secondary-foreground border-border" };
+  if (days < 0) return { label: "Atrasado", className: "bg-destructive/10 text-destructive border-destructive/30" };
+  if (days <= 3) return { label: "Próxima", className: "bg-warning/20 text-warning-foreground border-warning/40" };
+  return { label: "Futura", className: "bg-secondary text-secondary-foreground border-border" };
+};
+
 const initialOrders: PurchaseOrder[] = [
   { id: 1, orderNumber: "PED-1048", supplier: "Metalúrgica Norte", supplierId: "", supplierPhone: "", status: "En curso", rawStatus: "en_curso", ocNumber: "OC-77821", eta: "2026-05-03", notes: "Despacho parcial confirmado", cliente: "Planta Norte", vendedor: "María", fecha: "2026-04-20" },
   { id: 2, orderNumber: "PED-1049", supplier: "Global Parts", supplierId: "", supplierPhone: "", status: "Atrasado", rawStatus: "pedido_cargado", ocNumber: "-", eta: "2026-04-22", notes: "Pendiente respuesta proveedor", cliente: "Mantenimiento", vendedor: "Juan", fecha: "2026-04-18" },
@@ -582,7 +590,7 @@ const Index = () => {
   const filteredAlertas = useMemo(
     () => alertas.filter((alerta) => {
       const pedidoEstado = (alerta.pedidoEstado || "").toLowerCase();
-      if (pedidoEstado === "terminado" || pedidoEstado === "anulado") return false;
+      if (!["en_curso", "recibido_parcial"].includes(pedidoEstado)) return false;
       const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
       const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
       const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
@@ -643,6 +651,35 @@ const Index = () => {
   const ordersByStatus = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: orders.filter((order) => order.rawStatus === estado).length })).filter((item) => item.count > 0), [orders]);
   const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
   const recentOrders = orders.slice(0, 6);
+
+  // Operational dashboard data
+  const todayIsoStr = today();
+  const overdueOrders = useMemo(() => {
+    return orders
+      .filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus) && safeDateForDisplay(o.eta) && o.eta < todayIsoStr)
+      .map((o) => ({ order: o, diasAtraso: Math.abs(getDaysRemaining(o.eta) ?? 0) }))
+      .sort((a, b) => b.diasAtraso - a.diasAtraso)
+      .slice(0, 5);
+  }, [orders, todayIsoStr]);
+  const upcomingDeliveries = useMemo(() => {
+    return orders
+      .filter((o) => {
+        if (!["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus)) return false;
+        const days = getDaysRemaining(o.eta);
+        return days !== null && days >= 0 && days <= 3;
+      })
+      .sort((a, b) => a.eta.localeCompare(b.eta));
+  }, [orders, todayIsoStr]);
+  const ordersWithoutOc = useMemo(
+    () => orders.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")),
+    [orders],
+  );
+  const totalEnCurso = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus)).length;
+  const totalAtrasados = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus) && safeDateForDisplay(o.eta) && o.eta < todayIsoStr).length;
+  const finalizedOrders = orders.filter((o) => ["terminado", "recibido_total"].includes(o.rawStatus));
+  const onTimeFinalized = finalizedOrders.filter((o) => safeDateForDisplay(o.eta) && o.eta >= o.fecha).length;
+  const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
+
 
   // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
   const isInReportMonth = (fecha: string | null | undefined) => {
@@ -1241,7 +1278,12 @@ Equipo NORFER`;
               {activeSection === "Dashboard" && (
                 <>
                   <section className="grid gap-4 md:grid-cols-4">
-                    {metrics.map((metric, index) => (
+                    {[
+                      { label: "Total pedidos en curso", value: totalEnCurso, icon: PackageCheck },
+                      { label: "Pedidos atrasados", value: totalAtrasados, icon: AlertTriangle },
+                      { label: "% Cumplimiento", value: `${cumplimientoPct}%`, icon: CheckCircle2 },
+                      { label: "Pedidos sin OC", value: ordersWithoutOc.length, icon: ClipboardList },
+                    ].map((metric, index) => (
                       <article key={metric.label} className="animate-rise-in rounded-md border bg-card p-5 shadow-command transition hover:-translate-y-1" style={{ animationDelay: `${index * 80}ms` }}>
                         <div className="flex items-center justify-between">
                           <div className="grid h-10 w-10 place-items-center rounded-md bg-secondary text-primary">
@@ -1253,9 +1295,95 @@ Equipo NORFER`;
                       </article>
                     ))}
                   </section>
+
                   <section className="rounded-md border bg-card shadow-command">
-                    <div className="border-b p-5"><h3 className="text-lg font-semibold">Pedidos recientes</h3><p className="text-sm text-muted-foreground">Últimos pedidos cargados y su estado actual.</p></div>
-                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Pedido</th><th className="px-5 py-3 font-semibold">Proveedor</th><th className="px-5 py-3 font-semibold">Cliente</th><th className="px-5 py-3 font-semibold">Estado</th><th className="px-5 py-3 font-semibold">OC Qubigo</th></tr></thead><tbody className="divide-y">{recentOrders.map((order) => (<tr key={order.id} className="cursor-pointer transition hover:bg-surface-subtle/70" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}><td className="px-5 py-4 font-medium">{order.orderNumber}</td><td className="px-5 py-4">{order.supplier}</td><td className="px-5 py-4">{order.cliente}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus}</span></td><td className="px-5 py-4 text-primary">{order.ocNumber}</td></tr>))}</tbody></table></div>
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">🚨 Pedidos atrasados</h3>
+                      <p className="text-sm text-muted-foreground">Top 5 con mayor cantidad de días de atraso.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                            <th className="px-5 py-3 font-semibold">Días de atraso</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {overdueOrders.map(({ order, diasAtraso }) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4 text-primary">{order.ocNumber || "-"}</td>
+                              <td className="px-5 py-4"><span className="inline-flex rounded-md border bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive border-destructive/30">{diasAtraso} días</span></td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Ver pedido</Button></td>
+                            </tr>
+                          ))}
+                          {overdueOrders.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Sin pedidos atrasados.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">⏳ Próximas entregas</h3>
+                      <p className="text-sm text-muted-foreground">Pedidos con entrega en los próximos 3 días.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">fecha_estimada</th>
+                            <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {upcomingDeliveries.map((order) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4">{formatDate(order.eta) || "-"}</td>
+                              <td className="px-5 py-4 text-primary">{order.ocNumber || "-"}</td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Ver pedido</Button></td>
+                            </tr>
+                          ))}
+                          {upcomingDeliveries.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Sin entregas en los próximos 3 días.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="rounded-md border bg-card shadow-command">
+                    <div className="border-b p-5">
+                      <h3 className="text-lg font-semibold">⚠ Pedidos sin OC</h3>
+                      <p className="text-sm text-muted-foreground">Pedidos cargados sin número de OC asignado.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">Pedido</th>
+                            <th className="px-5 py-3 font-semibold">Proveedor</th>
+                            <th className="px-5 py-3 font-semibold">Cliente</th>
+                            <th className="px-5 py-3 font-semibold">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {ordersWithoutOc.slice(0, 10).map((order) => (
+                            <tr key={order.id} className="transition hover:bg-surface-subtle/70">
+                              <td className="px-5 py-4 font-medium">{order.orderNumber}</td>
+                              <td className="px-5 py-4">{order.supplier || "-"}</td>
+                              <td className="px-5 py-4">{order.cliente || "-"}</td>
+                              <td className="px-5 py-4"><Button size="sm" variant="outline" type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>Abrir</Button></td>
+                            </tr>
+                          ))}
+                          {ordersWithoutOc.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={4}>Todos los pedidos tienen OC.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
                   </section>
                 </>
               )}
@@ -1280,16 +1408,19 @@ Equipo NORFER`;
                   <table className="w-full min-w-[980px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
-                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">days_remaining</th>
+                        <th className="px-5 py-3 font-semibold">proveedor</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">numero_pedido</th><th className="px-5 py-3 font-semibold">numero_oc_qubigo</th><th className="px-5 py-3 font-semibold">tipo</th><th className="px-5 py-3 font-semibold">fecha_estimada</th><th className="px-5 py-3 font-semibold">fecha_aviso</th><th className="px-5 py-3 font-semibold">estado</th><th className="px-5 py-3 font-semibold">urgencia</th><th className="px-5 py-3 font-semibold">days_remaining</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {!isLoading && filteredAlertas.map((alerta) => (
+                      {!isLoading && filteredAlertas.map((alerta) => {
+                        const urgency = getAlertaUrgency(alerta.fechaAviso);
+                        return (
                         <tr key={alerta.id} className="transition hover:bg-surface-subtle/70">
-                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
+                          <td className="px-5 py-4">{alerta.proveedor}</td><td className="px-5 py-4">{alerta.cliente}</td><td className="px-5 py-4 font-medium">{alerta.numeroPedido}</td><td className="px-5 py-4 text-primary">{alerta.numeroOcQubigo}</td><td className="px-5 py-4">{alerta.tipo}</td><td className="px-5 py-4">{formatDate(alerta.fechaEstimada)}</td><td className="px-5 py-4">{formatDate(alerta.fechaAviso)}</td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getAlertaPriorityClass(alerta)}`}>{alerta.estado}</span></td><td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${urgency.className}`}>{urgency.label}</span></td><td className="px-5 py-4 font-semibold">{alerta.daysRemaining ?? "-"}</td>
                         </tr>
-                      ))}
-                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={9}>No hay alertas para mostrar.</td></tr>}
+                        );
+                      })}
+                      {!isLoading && filteredAlertas.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={10}>No hay alertas para mostrar.</td></tr>}
                     </tbody>
                   </table>
                 </div>
