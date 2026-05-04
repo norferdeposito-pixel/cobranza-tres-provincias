@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/hooks/use-toast";
+import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 
 type OrderStatus = "En curso" | "Atrasado" | "Confirmado" | "Entregado";
 
