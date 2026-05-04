@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/hooks/use-toast";
+import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 
 type OrderStatus = "En curso" | "Atrasado" | "Confirmado" | "Entregado";
 
@@ -460,8 +461,20 @@ const Index = () => {
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const isAdmin = true;
-  const currentSeller = "María";
+  const { currentUserProfile } = useCurrentUserProfile();
+  const userRol = (currentUserProfile?.rol || "").toLowerCase();
+  const isAdminRole = userRol === "admin" || userRol === "compras";
+  const isVendedor = userRol === "vendedor";
+  const isDeposito = userRol === "deposito";
+  const isAdmin = isAdminRole || isVendedor; // controls cost columns visibility
+  const canViewCosts = isAdminRole || isVendedor;
+  const canEditPedido = isAdminRole;
+  const canAddRecepcion = isAdminRole || isDeposito;
+  const canSeeAlertas = isAdminRole;
+  const canSeeReportes = isAdminRole;
+  const canSeeProveedores = isAdminRole;
+  const canCreatePedido = isAdminRole || isVendedor;
+  const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -688,6 +701,11 @@ const Index = () => {
   const onTimeFinalized = finalizedOrders.filter((o) => safeDateForDisplay(o.eta) && o.eta >= o.fecha).length;
   const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
 
+  useEffect(() => {
+    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores")) {
+      setActiveSection("Pedidos");
+    }
+  }, [isAdminRole, activeSection]);
 
   // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
   const isInReportMonth = (fecha: string | null | undefined) => {
@@ -1252,7 +1270,13 @@ Equipo NORFER`;
             </div>
           </div>
           <nav className="space-y-2 p-4">
-            {navItems.map((item, index) => (
+            {navItems.filter((item) => {
+              if (item.label === "Alertas") return canSeeAlertas;
+              if (item.label === "Reportes") return canSeeReportes;
+              if (item.label === "Proveedores") return canSeeProveedores;
+              if (item.label === "Dashboard") return isAdminRole;
+              return true;
+            }).map((item, index) => (
               <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
@@ -1274,14 +1298,16 @@ Equipo NORFER`;
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
                 <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
-                <FilePlus2 className="h-4 w-4" />
-                Nuevo pedido
-              </Button>
+              {canCreatePedido && (
+                <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
+                  <FilePlus2 className="h-4 w-4" />
+                  Nuevo pedido
+                </Button>
+              )}
             </div>
           </header>
 
-          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) ? "xl:grid-cols-[1fr_360px]" : ""}`}>
+          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido ? "xl:grid-cols-[1fr_360px]" : ""}`}>
             <div id="panel-operativo" className="space-y-6">
               {activeSection === "Dashboard" && (
                 <>
@@ -1511,7 +1537,7 @@ Equipo NORFER`;
                         <MessageCircle className="h-4 w-4" />
                         Mensaje vendedor
                       </Button>
-                      {isAdmin && (
+                      {canEditPedido && (
                         <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
                           <Pencil className="h-4 w-4" />
                           Editar pedido
@@ -1599,7 +1625,7 @@ Equipo NORFER`;
                 </div>
                 {selectedOrder && (
                   <div className="border-t p-5">
-                    {isAdmin && pedidoItems.length > 0 && (
+                    {canAddRecepcion && pedidoItems.length > 0 && (
                       <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
                     )}
                     <div className="mb-4 flex items-center justify-between gap-3">
@@ -1628,7 +1654,7 @@ Equipo NORFER`;
                     </div>
                   </div>
                 )}
-                {selectedOrder && pedidoItems.length > 0 && (
+                {selectedOrder && pedidoItems.length > 0 && canAddRecepcion && (
                   <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
                     <div className="space-y-2 xl:col-span-2">
                       <Label htmlFor="reception-item">Ítem</Label>
@@ -1663,7 +1689,7 @@ Equipo NORFER`;
               </section>}
             </div>
 
-            {["Dashboard", "Pedidos"].includes(activeSection) && <aside className="space-y-6">
+            {["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido && <aside className="space-y-6">
               <section id="crear-pedido" className="rounded-md border bg-card p-5 shadow-command">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
