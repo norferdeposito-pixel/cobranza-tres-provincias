@@ -1302,7 +1302,7 @@ Equipo NORFER`;
             </div>
           </header>
 
-          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) ? "xl:grid-cols-[1fr_360px]" : ""}`}>
+          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido ? "xl:grid-cols-[1fr_360px]" : ""}`}>
             <div id="panel-operativo" className="space-y-6">
               {activeSection === "Dashboard" && (
                 <>
