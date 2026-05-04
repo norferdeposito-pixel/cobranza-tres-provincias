@@ -1265,7 +1265,13 @@ Equipo NORFER`;
             </div>
           </div>
           <nav className="space-y-2 p-4">
-            {navItems.map((item, index) => (
+            {navItems.filter((item) => {
+              if (item.label === "Alertas") return canSeeAlertas;
+              if (item.label === "Reportes") return canSeeReportes;
+              if (item.label === "Proveedores") return canSeeProveedores;
+              if (item.label === "Dashboard") return isAdminRole;
+              return true;
+            }).map((item, index) => (
               <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
