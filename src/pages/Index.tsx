@@ -1532,7 +1532,7 @@ Equipo NORFER`;
                         <MessageCircle className="h-4 w-4" />
                         Mensaje vendedor
                       </Button>
-                      {isAdmin && (
+                      {canEditPedido && (
                         <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
                           <Pencil className="h-4 w-4" />
                           Editar pedido
