@@ -1684,7 +1684,7 @@ Equipo NORFER`;
               </section>}
             </div>
 
-            {["Dashboard", "Pedidos"].includes(activeSection) && <aside className="space-y-6">
+            {["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido && <aside className="space-y-6">
               <section id="crear-pedido" className="rounded-md border bg-card p-5 shadow-command">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
