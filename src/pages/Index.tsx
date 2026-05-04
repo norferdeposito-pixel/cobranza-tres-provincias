@@ -1293,10 +1293,12 @@ Equipo NORFER`;
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
                 <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
-                <FilePlus2 className="h-4 w-4" />
-                Nuevo pedido
-              </Button>
+              {canCreatePedido && (
+                <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
+                  <FilePlus2 className="h-4 w-4" />
+                  Nuevo pedido
+                </Button>
+              )}
             </div>
           </header>
 
