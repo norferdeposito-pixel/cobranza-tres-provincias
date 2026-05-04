@@ -1647,7 +1647,7 @@ Equipo NORFER`;
                     </div>
                   </div>
                 )}
-                {selectedOrder && pedidoItems.length > 0 && (
+                {selectedOrder && pedidoItems.length > 0 && canAddRecepcion && (
                   <form className="grid gap-4 border-t p-5 md:grid-cols-2 xl:grid-cols-5" onSubmit={addReception}>
                     <div className="space-y-2 xl:col-span-2">
                       <Label htmlFor="reception-item">Ítem</Label>
