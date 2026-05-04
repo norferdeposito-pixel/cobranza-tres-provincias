@@ -701,6 +701,11 @@ const Index = () => {
   const onTimeFinalized = finalizedOrders.filter((o) => safeDateForDisplay(o.eta) && o.eta >= o.fecha).length;
   const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
 
+  useEffect(() => {
+    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores")) {
+      setActiveSection("Pedidos");
+    }
+  }, [isAdminRole, activeSection]);
 
   // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
   const isInReportMonth = (fecha: string | null | undefined) => {
