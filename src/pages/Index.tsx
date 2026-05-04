@@ -466,7 +466,7 @@ const Index = () => {
   const isAdminRole = userRol === "admin" || userRol === "compras";
   const isVendedor = userRol === "vendedor";
   const isDeposito = userRol === "deposito";
-  const isAdmin = isAdminRole; // shows costos/montos/edit; vendedor also sees costos
+  const isAdmin = isAdminRole || isVendedor; // controls cost columns visibility
   const canViewCosts = isAdminRole || isVendedor;
   const canEditPedido = isAdminRole;
   const canAddRecepcion = isAdminRole || isDeposito;
