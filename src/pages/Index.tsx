@@ -461,8 +461,20 @@ const Index = () => {
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const isAdmin = true;
-  const currentSeller = "María";
+  const { currentUserProfile } = useCurrentUserProfile();
+  const userRol = (currentUserProfile?.rol || "").toLowerCase();
+  const isAdminRole = userRol === "admin" || userRol === "compras";
+  const isVendedor = userRol === "vendedor";
+  const isDeposito = userRol === "deposito";
+  const isAdmin = isAdminRole; // shows costos/montos/edit; vendedor also sees costos
+  const canViewCosts = isAdminRole || isVendedor;
+  const canEditPedido = isAdminRole;
+  const canAddRecepcion = isAdminRole || isDeposito;
+  const canSeeAlertas = isAdminRole;
+  const canSeeReportes = isAdminRole;
+  const canSeeProveedores = isAdminRole;
+  const canCreatePedido = isAdminRole || isVendedor;
+  const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
     const loadOrders = async () => {
