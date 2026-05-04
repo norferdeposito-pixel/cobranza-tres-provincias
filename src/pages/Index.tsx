@@ -1618,7 +1618,7 @@ Equipo NORFER`;
                 </div>
                 {selectedOrder && (
                   <div className="border-t p-5">
-                    {isAdmin && pedidoItems.length > 0 && (
+                    {canAddRecepcion && pedidoItems.length > 0 && (
                       <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
                     )}
                     <div className="mb-4 flex items-center justify-between gap-3">
