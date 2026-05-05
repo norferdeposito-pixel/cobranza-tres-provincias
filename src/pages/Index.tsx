@@ -1532,7 +1532,7 @@ Equipo NORFER`;
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={canSendMessages ? 5 : 4}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
