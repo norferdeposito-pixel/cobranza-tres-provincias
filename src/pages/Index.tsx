@@ -1825,26 +1825,49 @@ Equipo NORFER`;
                 <div className="rounded-md border bg-card p-5 shadow-command">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h3 className="font-semibold">Filtro mensual</h3>
-                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del mes y año seleccionados.</p>
+                      <h3 className="font-semibold">Filtro de período</h3>
+                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del período seleccionado.</p>
                     </div>
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="space-y-1">
-                        <Label htmlFor="report-month">Mes</Label>
-                        <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                          {[
-                            "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
-                          ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                        <Label htmlFor="report-mode">Modo</Label>
+                        <select id="report-mode" value={reportFilterMode} onChange={(event) => setReportFilterMode(event.target.value as "mes" | "rango")} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          <option value="mes">Mes</option>
+                          <option value="rango">Rango personalizado</option>
                         </select>
                       </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="report-year">Año</Label>
-                        <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                          {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
-                        </select>
-                      </div>
+                      {reportFilterMode === "mes" ? (
+                        <>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-month">Mes</Label>
+                            <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              {[
+                                "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+                              ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-year">Año</Label>
+                            <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-desde">Desde</Label>
+                            <Input id="report-desde" type="date" value={reportFechaDesde} onChange={(event) => setReportFechaDesde(event.target.value)} className="w-44" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-hasta">Hasta</Label>
+                            <Input id="report-hasta" type="date" value={reportFechaHasta} onChange={(event) => setReportFechaHasta(event.target.value)} className="w-44" />
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
+                </div>
                 </div>
                 <div className="grid gap-6 lg:grid-cols-2">
                   <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
