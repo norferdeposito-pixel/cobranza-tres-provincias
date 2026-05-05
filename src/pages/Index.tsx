@@ -1511,7 +1511,7 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">Estado</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
-                        <th className="px-5 py-3 font-semibold">WhatsApp</th>
+                        {canSendMessages && <th className="px-5 py-3 font-semibold">WhatsApp</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
