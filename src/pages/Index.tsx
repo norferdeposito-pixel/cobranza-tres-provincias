@@ -1521,11 +1521,13 @@ Equipo NORFER`;
                           <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
-                          <td className="px-5 py-4">
-                            <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
-                              <MessageCircle className="h-4 w-4" />
-                            </Button>
-                          </td>
+                          {canSendMessages && (
+                            <td className="px-5 py-4">
+                              <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
+                                <MessageCircle className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
