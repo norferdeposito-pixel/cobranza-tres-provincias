@@ -456,6 +456,9 @@ const Index = () => {
   const now = new Date();
   const [reportMonth, setReportMonth] = useState<number>(now.getMonth() + 1);
   const [reportYear, setReportYear] = useState<number>(now.getFullYear());
+  const [reportFilterMode, setReportFilterMode] = useState<"mes" | "rango">("mes");
+  const [reportFechaDesde, setReportFechaDesde] = useState<string>("");
+  const [reportFechaHasta, setReportFechaHasta] = useState<string>("");
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
