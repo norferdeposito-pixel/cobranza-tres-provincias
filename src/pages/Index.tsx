@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -461,7 +461,7 @@ const Index = () => {
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const { currentUserProfile } = useCurrentUserProfile();
+  const { currentUserProfile, email: userEmail, signOut } = useCurrentUserProfile();
   const userRol = (currentUserProfile?.rol || "").toLowerCase();
   const isAdminRole = userRol === "admin" || userRol === "compras";
   const isVendedor = userRol === "vendedor";
@@ -1298,12 +1298,24 @@ Equipo NORFER`;
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
                 <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              {canCreatePedido && (
-                <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
-                  <FilePlus2 className="h-4 w-4" />
-                  Nuevo pedido
+              <div className="flex items-center gap-3">
+                {(currentUserProfile?.nombre || userEmail) && (
+                  <div className="hidden text-right text-xs text-muted-foreground md:block">
+                    <p className="font-medium text-foreground">{currentUserProfile?.nombre || userEmail}</p>
+                    {currentUserProfile?.rol && <p className="capitalize">{currentUserProfile.rol}</p>}
+                  </div>
+                )}
+                {canCreatePedido && (
+                  <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
+                    <FilePlus2 className="h-4 w-4" />
+                    Nuevo pedido
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => signOut()}>
+                  <LogOut className="h-4 w-4" />
+                  Cerrar sesión
                 </Button>
-              )}
+              </div>
             </div>
           </header>
 

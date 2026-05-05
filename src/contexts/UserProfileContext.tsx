@@ -10,12 +10,16 @@ type UserProfileContextValue = {
   currentUserProfile: CurrentUserProfile | null;
   email: string | null;
   loading: boolean;
+  isAuthenticated: boolean;
+  signOut: () => Promise<void>;
 };
 
 const UserProfileContext = createContext<UserProfileContextValue>({
   currentUserProfile: null,
   email: null,
   loading: true,
+  isAuthenticated: false,
+  signOut: async () => {},
 });
 
 export const useCurrentUserProfile = () => useContext(UserProfileContext);
@@ -24,9 +28,11 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
   const [currentUserProfile, setCurrentUserProfile] = useState<CurrentUserProfile | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const loadProfile = async (userEmail: string | null) => {
     setEmail(userEmail);
+    setIsAuthenticated(!!userEmail);
     if (!userEmail) {
       setCurrentUserProfile(null);
       setLoading(false);
@@ -51,6 +57,13 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentUserProfile(null);
+    setEmail(null);
+    setIsAuthenticated(false);
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -71,7 +84,7 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <UserProfileContext.Provider value={{ currentUserProfile, email, loading }}>
+    <UserProfileContext.Provider value={{ currentUserProfile, email, loading, isAuthenticated, signOut }}>
       {children}
     </UserProfileContext.Provider>
   );
