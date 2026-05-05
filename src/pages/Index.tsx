@@ -1548,10 +1548,12 @@ Equipo NORFER`;
                   </div>
                   {selectedOrder && (
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
-                        <MessageCircle className="h-4 w-4" />
-                        Mensaje vendedor
-                      </Button>
+                      {canSendMessages && (
+                        <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
+                          <MessageCircle className="h-4 w-4" />
+                          Mensaje vendedor
+                        </Button>
+                      )}
                       {canEditPedido && (
                         <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
                           <Pencil className="h-4 w-4" />
