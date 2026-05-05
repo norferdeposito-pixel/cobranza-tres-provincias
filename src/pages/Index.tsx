@@ -474,6 +474,7 @@ const Index = () => {
   const canSeeReportes = isAdminRole;
   const canSeeProveedores = isAdminRole;
   const canCreatePedido = isAdminRole || isVendedor;
+  const canSendMessages = isAdminRole;
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
@@ -1510,7 +1511,7 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">Estado</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
-                        <th className="px-5 py-3 font-semibold">WhatsApp</th>
+                        {canSendMessages && <th className="px-5 py-3 font-semibold">WhatsApp</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -1520,16 +1521,18 @@ Equipo NORFER`;
                           <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
                           <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                           <td className="px-5 py-4">{formatDate(order.eta)}</td>
-                          <td className="px-5 py-4">
-                            <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
-                              <MessageCircle className="h-4 w-4" />
-                            </Button>
-                          </td>
+                          {canSendMessages && (
+                            <td className="px-5 py-4">
+                              <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
+                                <MessageCircle className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={canSendMessages ? 5 : 4}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1545,10 +1548,12 @@ Equipo NORFER`;
                   </div>
                   {selectedOrder && (
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
-                        <MessageCircle className="h-4 w-4" />
-                        Mensaje vendedor
-                      </Button>
+                      {canSendMessages && (
+                        <Button size="sm" variant="outline" type="button" onClick={openSellerMessage}>
+                          <MessageCircle className="h-4 w-4" />
+                          Mensaje vendedor
+                        </Button>
+                      )}
                       {canEditPedido && (
                         <Button size="sm" variant="outline" type="button" onClick={openEditOrder}>
                           <Pencil className="h-4 w-4" />
@@ -1577,15 +1582,17 @@ Equipo NORFER`;
                             <p className="text-sm text-muted-foreground">Proveedor sin datos de contacto</p>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" type="button" disabled={!proveedor?.email} onClick={() => proveedor?.email && window.open(`mailto:${proveedor.email}`, "_blank", "noopener,noreferrer")}>
-                            Enviar mail
-                          </Button>
-                          <Button size="sm" variant="outline" type="button" disabled={!phone} onClick={() => phone && window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer")}>
-                            <MessageCircle className="h-4 w-4" />
-                            WhatsApp
-                          </Button>
-                        </div>
+                        {canSendMessages && (
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" type="button" disabled={!proveedor?.email} onClick={() => proveedor?.email && window.open(`mailto:${proveedor.email}`, "_blank", "noopener,noreferrer")}>
+                              Enviar mail
+                            </Button>
+                            <Button size="sm" variant="outline" type="button" disabled={!phone} onClick={() => phone && window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer")}>
+                              <MessageCircle className="h-4 w-4" />
+                              WhatsApp
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1644,10 +1651,12 @@ Equipo NORFER`;
                       <h4 className="font-semibold">Alertas del pedido</h4>
                       <div className="flex items-center gap-2">
                         <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoAlertas.length}</span>
-                        <Button size="sm" variant="outline" type="button" onClick={() => selectedOrder && openWhatsAppMessage(selectedOrder)}>
-                          <MessageCircle className="h-4 w-4" />
-                          WhatsApp
-                        </Button>
+                        {canSendMessages && (
+                          <Button size="sm" variant="outline" type="button" onClick={() => selectedOrder && openWhatsAppMessage(selectedOrder)}>
+                            <MessageCircle className="h-4 w-4" />
+                            WhatsApp
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
