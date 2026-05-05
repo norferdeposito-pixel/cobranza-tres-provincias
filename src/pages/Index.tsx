@@ -1582,15 +1582,17 @@ Equipo NORFER`;
                             <p className="text-sm text-muted-foreground">Proveedor sin datos de contacto</p>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" type="button" disabled={!proveedor?.email} onClick={() => proveedor?.email && window.open(`mailto:${proveedor.email}`, "_blank", "noopener,noreferrer")}>
-                            Enviar mail
-                          </Button>
-                          <Button size="sm" variant="outline" type="button" disabled={!phone} onClick={() => phone && window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer")}>
-                            <MessageCircle className="h-4 w-4" />
-                            WhatsApp
-                          </Button>
-                        </div>
+                        {canSendMessages && (
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" type="button" disabled={!proveedor?.email} onClick={() => proveedor?.email && window.open(`mailto:${proveedor.email}`, "_blank", "noopener,noreferrer")}>
+                              Enviar mail
+                            </Button>
+                            <Button size="sm" variant="outline" type="button" disabled={!phone} onClick={() => phone && window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer")}>
+                              <MessageCircle className="h-4 w-4" />
+                              WhatsApp
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
