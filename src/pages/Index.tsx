@@ -711,9 +711,15 @@ const Index = () => {
     }
   }, [isAdminRole, activeSection]);
 
-  // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
-  const isInReportMonth = (fecha: string | null | undefined) => {
+  // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
+  const isInReportPeriod = (fecha: string | null | undefined) => {
     if (!fecha || typeof fecha !== "string") return false;
+    if (reportFilterMode === "rango") {
+      if (!reportFechaDesde && !reportFechaHasta) return true;
+      if (reportFechaDesde && fecha < reportFechaDesde) return false;
+      if (reportFechaHasta && fecha > reportFechaHasta) return false;
+      return true;
+    }
     const parts = fecha.split("-");
     if (parts.length < 2) return false;
     const y = Number(parts[0]);
@@ -721,7 +727,7 @@ const Index = () => {
     if (!Number.isFinite(y) || !Number.isFinite(m)) return false;
     return y === reportYear && m === reportMonth;
   };
-  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportMonth(o.fecha)), [orders, reportMonth, reportYear]);
+  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportPeriod(o.fecha)), [orders, reportMonth, reportYear, reportFilterMode, reportFechaDesde, reportFechaHasta]);
   const ordersByStatusReport = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: ordersInReportMonth.filter((o) => o.rawStatus === estado).length })).filter((item) => item.count > 0), [ordersInReportMonth]);
   const ordersWithoutOcReport = ordersInReportMonth.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")).length;
   const activeAlertasReport = useMemo(() => {
