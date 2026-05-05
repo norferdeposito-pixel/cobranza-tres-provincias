@@ -461,7 +461,7 @@ const Index = () => {
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const { currentUserProfile } = useCurrentUserProfile();
+  const { currentUserProfile, email: userEmail, signOut } = useCurrentUserProfile();
   const userRol = (currentUserProfile?.rol || "").toLowerCase();
   const isAdminRole = userRol === "admin" || userRol === "compras";
   const isVendedor = userRol === "vendedor";
