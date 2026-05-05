@@ -1868,7 +1868,6 @@ Equipo NORFER`;
                     </div>
                   </div>
                 </div>
-                </div>
                 <div className="grid gap-6 lg:grid-cols-2">
                   <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
                   <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos without OC</h3><p className="mt-4 text-4xl font-semibold">{ordersWithoutOcReport}</p><p className="mt-1 text-sm text-muted-foreground">Pedidos en pedido_cargado sin numero_oc_qubigo (período seleccionado).</p></div>
