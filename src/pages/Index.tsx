@@ -456,6 +456,9 @@ const Index = () => {
   const now = new Date();
   const [reportMonth, setReportMonth] = useState<number>(now.getMonth() + 1);
   const [reportYear, setReportYear] = useState<number>(now.getFullYear());
+  const [reportFilterMode, setReportFilterMode] = useState<"mes" | "rango">("mes");
+  const [reportFechaDesde, setReportFechaDesde] = useState<string>("");
+  const [reportFechaHasta, setReportFechaHasta] = useState<string>("");
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -708,9 +711,15 @@ const Index = () => {
     }
   }, [isAdminRole, activeSection]);
 
-  // Monthly filter for Reportes — uses pedido.fecha (YYYY-MM-DD). Null/invalid fechas are excluded.
-  const isInReportMonth = (fecha: string | null | undefined) => {
+  // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
+  const isInReportPeriod = (fecha: string | null | undefined) => {
     if (!fecha || typeof fecha !== "string") return false;
+    if (reportFilterMode === "rango") {
+      if (!reportFechaDesde && !reportFechaHasta) return true;
+      if (reportFechaDesde && fecha < reportFechaDesde) return false;
+      if (reportFechaHasta && fecha > reportFechaHasta) return false;
+      return true;
+    }
     const parts = fecha.split("-");
     if (parts.length < 2) return false;
     const y = Number(parts[0]);
@@ -718,7 +727,7 @@ const Index = () => {
     if (!Number.isFinite(y) || !Number.isFinite(m)) return false;
     return y === reportYear && m === reportMonth;
   };
-  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportMonth(o.fecha)), [orders, reportMonth, reportYear]);
+  const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportPeriod(o.fecha)), [orders, reportMonth, reportYear, reportFilterMode, reportFechaDesde, reportFechaHasta]);
   const ordersByStatusReport = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: ordersInReportMonth.filter((o) => o.rawStatus === estado).length })).filter((item) => item.count > 0), [ordersInReportMonth]);
   const ordersWithoutOcReport = ordersInReportMonth.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")).length;
   const activeAlertasReport = useMemo(() => {
@@ -1816,24 +1825,46 @@ Equipo NORFER`;
                 <div className="rounded-md border bg-card p-5 shadow-command">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h3 className="font-semibold">Filtro mensual</h3>
-                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del mes y año seleccionados.</p>
+                      <h3 className="font-semibold">Filtro de período</h3>
+                      <p className="text-sm text-muted-foreground">Los reportes se calculan sobre pedidos.fecha del período seleccionado.</p>
                     </div>
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="space-y-1">
-                        <Label htmlFor="report-month">Mes</Label>
-                        <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                          {[
-                            "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
-                          ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                        <Label htmlFor="report-mode">Modo</Label>
+                        <select id="report-mode" value={reportFilterMode} onChange={(event) => setReportFilterMode(event.target.value as "mes" | "rango")} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          <option value="mes">Mes</option>
+                          <option value="rango">Rango personalizado</option>
                         </select>
                       </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="report-year">Año</Label>
-                        <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                          {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
-                        </select>
-                      </div>
+                      {reportFilterMode === "mes" ? (
+                        <>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-month">Mes</Label>
+                            <select id="report-month" value={reportMonth} onChange={(event) => setReportMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              {[
+                                "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+                              ].map((label, idx) => <option key={label} value={idx + 1}>{label}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-year">Año</Label>
+                            <select id="report-year" value={reportYear} onChange={(event) => setReportYear(Number(event.target.value))} className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((y) => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-desde">Desde</Label>
+                            <Input id="report-desde" type="date" value={reportFechaDesde} onChange={(event) => setReportFechaDesde(event.target.value)} className="w-44" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="report-hasta">Hasta</Label>
+                            <Input id="report-hasta" type="date" value={reportFechaHasta} onChange={(event) => setReportFechaHasta(event.target.value)} className="w-44" />
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
