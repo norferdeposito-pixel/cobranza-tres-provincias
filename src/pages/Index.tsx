@@ -266,6 +266,7 @@ const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Alertas", icon: CalendarClock },
+  { label: "Cotizaciones", icon: FileText },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Proveedores", icon: Factory },
   { label: "Reportes", icon: BarChart3 },
