@@ -1287,6 +1287,7 @@ Equipo NORFER`;
               if (item.label === "Alertas") return canSeeAlertas;
               if (item.label === "Reportes") return canSeeReportes;
               if (item.label === "Proveedores") return canSeeProveedores;
+              if (item.label === "Cotizaciones") return canSeeCotizaciones;
               if (item.label === "Dashboard") return isAdminRole;
               return true;
             }).map((item, index) => (
