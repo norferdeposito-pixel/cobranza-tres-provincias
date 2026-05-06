@@ -1486,6 +1486,8 @@ Equipo NORFER`;
                 </div>
               </section>}
 
+              {activeSection === "Cotizaciones" && canSeeCotizaciones && <Cotizaciones />}
+
               {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
