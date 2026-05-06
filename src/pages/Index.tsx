@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -265,6 +266,7 @@ const demoAlertasByOrderId: Record<string, PedidoAlerta[]> = {
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Alertas", icon: CalendarClock },
+  { label: "Cotizaciones", icon: FileText },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Proveedores", icon: Factory },
   { label: "Reportes", icon: BarChart3 },
@@ -478,6 +480,7 @@ const Index = () => {
   const canSeeProveedores = isAdminRole;
   const canCreatePedido = isAdminRole || isVendedor;
   const canSendMessages = isAdminRole;
+  const canSeeCotizaciones = isAdminRole || isVendedor;
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
@@ -1284,6 +1287,7 @@ Equipo NORFER`;
               if (item.label === "Alertas") return canSeeAlertas;
               if (item.label === "Reportes") return canSeeReportes;
               if (item.label === "Proveedores") return canSeeProveedores;
+              if (item.label === "Cotizaciones") return canSeeCotizaciones;
               if (item.label === "Dashboard") return isAdminRole;
               return true;
             }).map((item, index) => (
@@ -1481,6 +1485,8 @@ Equipo NORFER`;
                   </table>
                 </div>
               </section>}
+
+              {activeSection === "Cotizaciones" && canSeeCotizaciones && <Cotizaciones />}
 
               {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
