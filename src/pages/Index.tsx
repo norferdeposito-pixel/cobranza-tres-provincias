@@ -480,6 +480,7 @@ const Index = () => {
   const canSeeProveedores = isAdminRole;
   const canCreatePedido = isAdminRole || isVendedor;
   const canSendMessages = isAdminRole;
+  const canSeeCotizaciones = isAdminRole || isVendedor;
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
