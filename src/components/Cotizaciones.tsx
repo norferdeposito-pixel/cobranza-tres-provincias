@@ -35,6 +35,7 @@ type Cotizacion = {
   observaciones: string | null;
   fecha_cotizacion: string | null;
   elegida: boolean;
+  sugerida?: boolean;
   proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
 };
 
@@ -109,7 +110,7 @@ export const Cotizaciones = () => {
         .order("created_at", { ascending: false }),
       supabase
         .from("cotizaciones_items" as any)
-        .select("id, item_id, proveedor_id, costo_unitario, moneda, condicion_pago, plazo_entrega_dias, observaciones, fecha_cotizacion, elegida, proveedores(nombre)"),
+        .select("id, item_id, proveedor_id, costo_unitario, moneda, condicion_pago, plazo_entrega_dias, observaciones, fecha_cotizacion, elegida, sugerida, proveedores(nombre)"),
       supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre"),
     ]);
     if (itemsRes.error || cotsRes.error || suppRes.error) {
@@ -139,7 +140,10 @@ export const Cotizaciones = () => {
 
   const itemsToShow = useMemo(() => {
     return items.filter((it) => {
-      const estado = computeEstado(cotsByItem.get(it.id) || [], it.estado_cotizacion);
+      const cots = cotsByItem.get(it.id) || [];
+      // Solo mostrar items que fueron explícitamente enviados a cotizar
+      if (!it.estado_cotizacion && cots.length === 0) return false;
+      const estado = computeEstado(cots, it.estado_cotizacion);
       return estado !== "enviado_a_pedido" && estado !== "anulado";
     });
   }, [items, cotsByItem]);
@@ -372,8 +376,12 @@ export const Cotizaciones = () => {
                         <tr><td className="px-4 py-3 text-muted-foreground" colSpan={8}>Sin cotizaciones cargadas.</td></tr>
                       )}
                       {cots.map((cot) => (
-                        <tr key={cot.id} className={cot.elegida ? "bg-success/10" : ""}>
-                          <td className="px-4 py-2 font-medium">{getProveedorNombre(cot, suppliers)}{cot.elegida && <span className="ml-2 inline-flex items-center gap-1 text-success"><Check className="h-3 w-3" />elegida</span>}</td>
+                        <tr key={cot.id} className={cot.elegida ? "bg-success/10" : cot.sugerida ? "bg-warning/5" : ""}>
+                          <td className="px-4 py-2 font-medium">
+                            {getProveedorNombre(cot, suppliers)}
+                            {cot.sugerida && <span className="ml-2 inline-flex items-center rounded-md border border-warning/40 bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">Proveedor sugerido</span>}
+                            {cot.elegida && <span className="ml-2 inline-flex items-center gap-1 text-success"><Check className="h-3 w-3" />elegida</span>}
+                          </td>
                           <td className="px-4 py-2">{cot.costo_unitario ?? "-"}</td>
                           <td className="px-4 py-2">{cot.moneda || "-"}</td>
                           <td className="px-4 py-2">{cot.plazo_entrega_dias ?? "-"}</td>

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Send, Trash2 } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +76,7 @@ type PedidoItem = {
   moneda?: string;
   cod_articulo?: string;
   estado_entrega?: string;
+  estado_cotizacion?: string | null;
 };
 
 type PedidoForm = {
@@ -581,7 +582,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega, estado_cotizacion")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
@@ -1108,6 +1109,42 @@ const Index = () => {
     toast({ title: "Pedido actualizado", description: "Los cambios fueron guardados." });
   };
 
+  const enviarItemACotizar = async (item: PedidoItem) => {
+    if (!isAdminRole || !selectedOrder) return;
+    if (item.estado_cotizacion === "pendiente_cotizacion" || item.estado_cotizacion === "cotizado_parcialmente" || item.estado_cotizacion === "proveedor_elegido") {
+      toast({ title: "Ítem ya está en cotización" });
+      return;
+    }
+    const proveedorId = selectedOrder.supplierId || null;
+    const { error: e1 } = await supabase
+      .from("pedido_items")
+      .update({ estado_cotizacion: "pendiente_cotizacion" } as any)
+      .eq("id", item.id);
+    if (e1) {
+      toast({ title: "Error al enviar a cotizar", description: e1.message, variant: "destructive" });
+      return;
+    }
+    if (proveedorId) {
+      // Crear cotización inicial sugerida (no elegida)
+      const { error: e2 } = await supabase.from("cotizaciones_items" as any).insert({
+        item_id: item.id,
+        proveedor_id: proveedorId,
+        costo_unitario: item.costo_unitario ?? null,
+        moneda: item.moneda || "ARS",
+        plazo_entrega_dias: null,
+        observaciones: "Proveedor sugerido por el vendedor",
+        fecha_cotizacion: today(),
+        elegida: false,
+        sugerida: true,
+      });
+      if (e2) {
+        toast({ title: "Aviso", description: `Se envió a cotizar pero no se pudo crear la cotización sugerida: ${e2.message}`, variant: "destructive" });
+      }
+    }
+    setPedidoItems((prev) => prev.map((p) => p.id === item.id ? { ...p, estado_cotizacion: "pendiente_cotizacion" } : p));
+    toast({ title: "Ítem enviado a cotizar", description: proveedorId ? "Se cargó al proveedor sugerido en Cotizaciones." : "Disponible en el módulo Cotizaciones." });
+  };
+
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
@@ -1622,11 +1659,14 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
                         {isAdmin && <th className="px-5 py-3 font-semibold">costo</th>}
                         {isAdmin && <th className="px-5 py-3 font-semibold">subtotal</th>}
+                        {isAdminRole && <th className="px-5 py-3 font-semibold">cotización</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {!isLoadingItems && pedidoItems.map((item) => {
                         const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
+                        const cotEstado = item.estado_cotizacion || null;
+                        const cotEnCurso = cotEstado === "pendiente_cotizacion" || cotEstado === "cotizado_parcialmente" || cotEstado === "proveedor_elegido";
 
                         return (
                         <tr key={item.id} className={`transition hover:bg-surface-subtle/70 ${hasUpcomingAlert ? "bg-warning/20" : ""}`}>
@@ -1641,17 +1681,30 @@ Equipo NORFER`;
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
                           {isAdmin && <td className="px-5 py-4">{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</td>}
                           {isAdmin && <td className="px-5 py-4 font-semibold">{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</td>}
+                          {isAdminRole && (
+                            <td className="px-5 py-4">
+                              {cotEnCurso ? (
+                                <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">{cotEstado}</span>
+                              ) : cotEstado === "enviado_a_pedido" ? (
+                                <span className="inline-flex rounded-md border border-primary/30 bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">enviado_a_pedido</span>
+                              ) : (
+                                <Button size="sm" variant="outline" type="button" onClick={() => enviarItemACotizar(item)}>
+                                  <Send className="h-3 w-3" /> Enviar a cotizar
+                                </Button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                         );
                       })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>Este pedido no tiene ítems cargados.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>Este pedido no tiene ítems cargados.</td>
                         </tr>
                       )}
                       {!selectedOrder && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>No hay pedido seleccionado.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
