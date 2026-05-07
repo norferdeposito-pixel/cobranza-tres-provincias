@@ -35,6 +35,7 @@ type Cotizacion = {
   observaciones: string | null;
   fecha_cotizacion: string | null;
   elegida: boolean;
+  sugerida?: boolean;
   proveedores?: { nombre: string | null } | { nombre: string | null }[] | null;
 };
 
