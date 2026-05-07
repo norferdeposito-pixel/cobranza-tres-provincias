@@ -140,7 +140,10 @@ export const Cotizaciones = () => {
 
   const itemsToShow = useMemo(() => {
     return items.filter((it) => {
-      const estado = computeEstado(cotsByItem.get(it.id) || [], it.estado_cotizacion);
+      const cots = cotsByItem.get(it.id) || [];
+      // Solo mostrar items que fueron explícitamente enviados a cotizar
+      if (!it.estado_cotizacion && cots.length === 0) return false;
+      const estado = computeEstado(cots, it.estado_cotizacion);
       return estado !== "enviado_a_pedido" && estado !== "anulado";
     });
   }, [items, cotsByItem]);
