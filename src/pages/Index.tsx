@@ -582,7 +582,7 @@ const Index = () => {
       const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
         supabase
           .from("pedido_items")
-          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega")
+          .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega, estado_cotizacion")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: true }),
         supabase
