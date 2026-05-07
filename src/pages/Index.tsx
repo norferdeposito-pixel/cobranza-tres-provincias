@@ -1659,11 +1659,14 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
                         {isAdmin && <th className="px-5 py-3 font-semibold">costo</th>}
                         {isAdmin && <th className="px-5 py-3 font-semibold">subtotal</th>}
+                        {isAdminRole && <th className="px-5 py-3 font-semibold">cotización</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {!isLoadingItems && pedidoItems.map((item) => {
                         const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
+                        const cotEstado = item.estado_cotizacion || null;
+                        const cotEnCurso = cotEstado === "pendiente_cotizacion" || cotEstado === "cotizado_parcialmente" || cotEstado === "proveedor_elegido";
 
                         return (
                         <tr key={item.id} className={`transition hover:bg-surface-subtle/70 ${hasUpcomingAlert ? "bg-warning/20" : ""}`}>
@@ -1678,17 +1681,30 @@ Equipo NORFER`;
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
                           {isAdmin && <td className="px-5 py-4">{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</td>}
                           {isAdmin && <td className="px-5 py-4 font-semibold">{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</td>}
+                          {isAdminRole && (
+                            <td className="px-5 py-4">
+                              {cotEnCurso ? (
+                                <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">{cotEstado}</span>
+                              ) : cotEstado === "enviado_a_pedido" ? (
+                                <span className="inline-flex rounded-md border border-primary/30 bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">enviado_a_pedido</span>
+                              ) : (
+                                <Button size="sm" variant="outline" type="button" onClick={() => enviarItemACotizar(item)}>
+                                  <Send className="h-3 w-3" /> Enviar a cotizar
+                                </Button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                         );
                       })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>Este pedido no tiene ítems cargados.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>Este pedido no tiene ítems cargados.</td>
                         </tr>
                       )}
                       {!selectedOrder && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? 6 : 4}>No hay pedido seleccionado.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
