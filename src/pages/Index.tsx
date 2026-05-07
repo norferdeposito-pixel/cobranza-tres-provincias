@@ -76,6 +76,7 @@ type PedidoItem = {
   moneda?: string;
   cod_articulo?: string;
   estado_entrega?: string;
+  estado_cotizacion?: string | null;
 };
 
 type PedidoForm = {
