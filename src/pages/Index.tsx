@@ -1109,6 +1109,42 @@ const Index = () => {
     toast({ title: "Pedido actualizado", description: "Los cambios fueron guardados." });
   };
 
+  const enviarItemACotizar = async (item: PedidoItem) => {
+    if (!isAdminRole || !selectedOrder) return;
+    if (item.estado_cotizacion === "pendiente_cotizacion" || item.estado_cotizacion === "cotizado_parcialmente" || item.estado_cotizacion === "proveedor_elegido") {
+      toast({ title: "Ítem ya está en cotización" });
+      return;
+    }
+    const proveedorId = selectedOrder.supplierId || null;
+    const { error: e1 } = await supabase
+      .from("pedido_items")
+      .update({ estado_cotizacion: "pendiente_cotizacion" } as any)
+      .eq("id", item.id);
+    if (e1) {
+      toast({ title: "Error al enviar a cotizar", description: e1.message, variant: "destructive" });
+      return;
+    }
+    if (proveedorId) {
+      // Crear cotización inicial sugerida (no elegida)
+      const { error: e2 } = await supabase.from("cotizaciones_items" as any).insert({
+        item_id: item.id,
+        proveedor_id: proveedorId,
+        costo_unitario: item.costo_unitario ?? null,
+        moneda: item.moneda || "ARS",
+        plazo_entrega_dias: null,
+        observaciones: "Proveedor sugerido por el vendedor",
+        fecha_cotizacion: today(),
+        elegida: false,
+        sugerida: true,
+      });
+      if (e2) {
+        toast({ title: "Aviso", description: `Se envió a cotizar pero no se pudo crear la cotización sugerida: ${e2.message}`, variant: "destructive" });
+      }
+    }
+    setPedidoItems((prev) => prev.map((p) => p.id === item.id ? { ...p, estado_cotizacion: "pendiente_cotizacion" } : p));
+    toast({ title: "Ítem enviado a cotizar", description: proveedorId ? "Se cargó al proveedor sugerido en Cotizaciones." : "Disponible en el módulo Cotizaciones." });
+  };
+
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
