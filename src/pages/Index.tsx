@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Send, Trash2 } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
