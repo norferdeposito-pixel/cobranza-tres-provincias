@@ -110,7 +110,7 @@ export const Cotizaciones = () => {
         .order("created_at", { ascending: false }),
       supabase
         .from("cotizaciones_items" as any)
-        .select("id, item_id, proveedor_id, costo_unitario, moneda, condicion_pago, plazo_entrega_dias, observaciones, fecha_cotizacion, elegida, proveedores(nombre)"),
+        .select("id, item_id, proveedor_id, costo_unitario, moneda, condicion_pago, plazo_entrega_dias, observaciones, fecha_cotizacion, elegida, sugerida, proveedores(nombre)"),
       supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre"),
     ]);
     if (itemsRes.error || cotsRes.error || suppRes.error) {
