@@ -21,12 +21,16 @@ export const LoginScreen = () => {
   };
 
   return (
-    <main className="grid min-h-screen place-items-center bg-background text-foreground p-4">
+    <main className="grid min-h-screen place-items-center bg-background p-4 text-foreground">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
+        className="w-full max-w-md space-y-5 rounded-md border border-border bg-card p-7 shadow-command"
       >
-        <div>
+        <div className="space-y-5">
+          <img src="/norfer-logo.svg" alt="NORFER - Industrias en movimiento" className="mx-auto h-auto w-full max-w-[300px]" />
+          <div className="h-px bg-border" />
+        </div>
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold">Ingresar</h1>
           <p className="text-sm text-muted-foreground">Iniciá sesión para continuar</p>
         </div>

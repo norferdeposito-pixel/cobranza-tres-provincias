@@ -100,6 +100,10 @@ export const Cotizaciones = () => {
   const [editing, setEditing] = useState<{ itemId: string; cotId: string | null } | null>(null);
   const [form, setForm] = useState<CotizacionForm>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1);
+  const [filterYear, setFilterYear] = useState<number>(now.getFullYear());
+  const [statusFilter, setStatusFilter] = useState("todos");
 
   const loadAll = async () => {
     setLoading(true);
@@ -144,9 +148,17 @@ export const Cotizaciones = () => {
       // Solo mostrar items que fueron explícitamente enviados a cotizar
       if (!it.estado_cotizacion && cots.length === 0) return false;
       const estado = computeEstado(cots, it.estado_cotizacion);
-      return estado !== "enviado_a_pedido" && estado !== "anulado";
+      if (estado === "anulado") return false;
+      if (statusFilter !== "todos" && estado !== statusFilter) return false;
+      if (cots.length === 0) return filterMonth === 0;
+      return cots.some((cot) => {
+        const fecha = cot.fecha_cotizacion || "";
+        const [year, month] = fecha.split("-").map(Number);
+        if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+        return year === filterYear && month === filterMonth;
+      });
     });
-  }, [items, cotsByItem]);
+  }, [items, cotsByItem, filterMonth, filterYear, statusFilter]);
 
   const openNew = (itemId: string) => {
     setEditing({ itemId, cotId: null });
@@ -306,14 +318,44 @@ export const Cotizaciones = () => {
 
   return (
     <section className="rounded-md border bg-card shadow-command">
-      <div className="border-b px-5 py-4">
-        <h3 className="text-lg font-semibold">Cotizaciones</h3>
-        <p className="text-sm text-muted-foreground">Ítems pendientes de cotización agrupados por ítem. Etapa previa al pedido.</p>
+      <div className="flex flex-col gap-4 border-b px-5 py-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Cotizaciones</h3>
+          <p className="text-sm text-muted-foreground">Ítems cotizados e historial de envíos a pedido.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="cotizacion-mes">Mes</Label>
+            <select id="cotizacion-mes" value={filterMonth} onChange={(event) => setFilterMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              {["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"].map((label, index) => (
+                <option key={label} value={index + 1}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="cotizacion-anio">Año</Label>
+            <select id="cotizacion-anio" value={filterYear} onChange={(event) => setFilterYear(Number(event.target.value))} className="flex h-10 w-28 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i).map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="cotizacion-estado">Estado</Label>
+            <select id="cotizacion-estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="flex h-10 w-48 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value="todos">Todos los estados</option>
+              <option value="pendiente_cotizacion">Pendiente</option>
+              <option value="cotizado_parcialmente">Cotizado</option>
+              <option value="proveedor_elegido">Proveedor elegido</option>
+              <option value="enviado_a_pedido">Enviado a pedido</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="divide-y">
         {itemsToShow.length === 0 && (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">No hay ítems pendientes de cotización.</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">No hay ítems de cotización para mostrar.</p>
         )}
         {itemsToShow.map((item) => {
           const cots = cotsByItem.get(item.id) || [];
@@ -345,7 +387,7 @@ export const Cotizaciones = () => {
                       <Plus className="h-4 w-4" /> Nueva cotización
                     </Button>
                   )}
-                  {isAdmin && elegida && (
+                  {isAdmin && elegida && estado !== "enviado_a_pedido" && (
                     <Button size="sm" variant="command" type="button" onClick={() => enviarAPedido(item)}>
                       <Send className="h-4 w-4" /> Enviar a pedido
                     </Button>

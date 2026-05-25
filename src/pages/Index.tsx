@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Search, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2 } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
@@ -79,6 +80,23 @@ type PedidoItem = {
   estado_cotizacion?: string | null;
 };
 
+type ReportPedidoItem = {
+  id?: string;
+  pedido_id: string;
+  descripcion?: string | null;
+  cantidad_pedida: number;
+  cantidad_recibida: number;
+  cantidad_pendiente?: number | null;
+  estado_entrega?: string | null;
+  fecha_recibido?: string | null;
+};
+
+type ReportCotizacion = {
+  id: string;
+  item_id: string;
+  fecha_cotizacion: string | null;
+};
+
 type PedidoForm = {
   fecha: string;
   supplierId: string;
@@ -117,6 +135,16 @@ type PedidoAlerta = {
   estado: string;
 };
 
+type PedidoNovedad = {
+  id: string;
+  pedido_id: string | number;
+  tipo: string | null;
+  mensaje: string;
+  visible_vendedor: boolean | null;
+  created_by: string | null;
+  created_at: string | null;
+};
+
 type AlertaRow = PedidoAlerta & {
   pedidos?: {
     cliente: string | null;
@@ -137,6 +165,7 @@ type AlertaRow = PedidoAlerta & {
 
 type AlertaListItem = {
   id: string;
+  pedidoId: string;
   proveedor: string;
   cliente: string;
   numeroPedido: string;
@@ -170,11 +199,28 @@ const optionalValue = (value?: string | number | null) => {
   return trimmed ? trimmed : null;
 };
 
+const escapeHtml = (value: string | number | null | undefined) =>
+  safeText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 const safeNumber = (value?: string | number | null) => {
   if (value === null || value === undefined || value === "") return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const parseDaysValue = (value?: string | number | null) => {
+  const match = safeText(value).replace(",", ".").match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatPercent = (value: number, total: number) => total > 0 ? `${Math.round((value / total) * 100)}%` : "0%";
 
 const isValidUuid = (value?: string | null) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeText(value));
 
@@ -208,6 +254,36 @@ const getDaysRemaining = (date?: string | null) => {
 };
 
 const isClosedAlerta = (estado?: string | null) => ["resuelta", "cerrada", "terminada", "terminado", "anulada", "anulado"].includes(safeText(estado).toLowerCase());
+const isClosedPedidoStatus = (estado?: string | null) => ["terminado", "recibido_total", "anulado", "cerrado", "entregado"].includes(safeText(estado).toLowerCase());
+const duplicateCheckStatuses = ["en_curso", "recibido_parcial"];
+const isActivePedidoForAlertas = (estado?: string | null) => {
+  const normalized = safeText(estado).toLowerCase();
+  return !!normalized && !isClosedPedidoStatus(normalized);
+};
+const isEntregaOriginalAlert = (tipo?: string | null) => safeText(tipo).toLowerCase() === "entrega_original";
+const getMostlyReceivedPedidoIds = (items: Array<{ pedido_id?: string | number | null; cantidad_pedida?: number | string | null; cantidad_recibida?: number | string | null }>) => {
+  const totals = new Map<string, { ordered: number; received: number }>();
+
+  items.forEach((item) => {
+    const pedidoId = safeText(item.pedido_id);
+    if (!pedidoId) return;
+    const current = totals.get(pedidoId) || { ordered: 0, received: 0 };
+    current.ordered += safeNumber(item.cantidad_pedida);
+    current.received += safeNumber(item.cantidad_recibida);
+    totals.set(pedidoId, current);
+  });
+
+  return new Set(
+    Array.from(totals.entries())
+      .filter(([, total]) => total.ordered > 0 && total.received / total.ordered >= 0.5)
+      .map(([pedidoId]) => pedidoId)
+  );
+};
+const shouldShowAlerta = (alerta: Pick<AlertaListItem, "pedidoId" | "pedidoEstado" | "tipo">, mostlyReceivedPedidoIds = new Set<string>()) => {
+  if (!isActivePedidoForAlertas(alerta.pedidoEstado)) return false;
+  if (isEntregaOriginalAlert(alerta.tipo) && (safeText(alerta.pedidoEstado).toLowerCase() === "recibido_parcial" || mostlyReceivedPedidoIds.has(safeText(alerta.pedidoId)))) return false;
+  return true;
+};
 
 const getAlertaPriorityClass = (alerta: Pick<AlertaListItem, "estado" | "daysRemaining"> | PedidoAlerta) => {
   const days = "daysRemaining" in alerta ? alerta.daysRemaining : getDaysRemaining(alerta.fecha_aviso);
@@ -269,6 +345,7 @@ const navItems = [
   { label: "Alertas", icon: CalendarClock },
   { label: "Cotizaciones", icon: FileText },
   { label: "Pedidos", icon: ClipboardList },
+  { label: "Crear pedido", icon: FilePlus2 },
   { label: "Proveedores", icon: Factory },
   { label: "Reportes", icon: BarChart3 },
 ];
@@ -317,6 +394,14 @@ const formatDate = (date?: string | null) => {
   const safeDate = safeDateForDisplay(date);
   if (!safeDate) return "-";
   return new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${safeDate}T12:00:00`));
+};
+
+const getAvisoDate = (date?: string | null) => {
+  const safeDate = safeDateForDisplay(date);
+  if (!safeDate) return null;
+  const aviso = new Date(`${safeDate}T12:00:00`);
+  aviso.setDate(aviso.getDate() - 3);
+  return aviso.toISOString().slice(0, 10);
 };
 
 const normalizeStatus = (status: string, eta: string): OrderStatus => {
@@ -403,6 +488,7 @@ const mapAlertaFromSupabase = (alerta: AlertaRow): AlertaListItem => {
   const fechaAviso = safeDateForDisplay(alerta.fecha_aviso);
   return {
     id: alerta.id,
+    pedidoId: alerta.pedido_id || "",
     proveedor: proveedor || "Sin proveedor",
     cliente: pedido?.cliente || "-",
     numeroPedido: pedido?.numero_pedido || "-",
@@ -421,6 +507,7 @@ const Index = () => {
   const [orders, setOrders] = useState(initialOrders);
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [alertas, setAlertas] = useState<AlertaListItem[]>([]);
+  const [recepciones, setRecepciones] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>(fallbackSuppliers);
   const [query, setQuery] = useState("");
   const [sellerFilter, setSellerFilter] = useState("todos");
@@ -440,6 +527,11 @@ const Index = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | number | null>(null);
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
+  const [pedidoNovedades, setPedidoNovedades] = useState<PedidoNovedad[]>([]);
+  const [allPedidoNovedades, setAllPedidoNovedades] = useState<PedidoNovedad[]>([]);
+  const [novedadForm, setNovedadForm] = useState({ tipo: "general", mensaje: "", visibleVendedor: true });
+  const [isSavingNovedad, setIsSavingNovedad] = useState(false);
+  const [novedadesDialogOrderId, setNovedadesDialogOrderId] = useState<string | number | null>(null);
   const [previewItemsByOrderId, setPreviewItemsByOrderId] = useState<Record<string, PedidoItem[]>>({});
   const [dashboardAlertasCount, setDashboardAlertasCount] = useState(0);
   const [receptionForm, setReceptionForm] = useState({ itemId: "", quantity: "", date: today(), newEta: "", notes: "" });
@@ -455,6 +547,8 @@ const Index = () => {
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
+  const [reportItems, setReportItems] = useState<ReportPedidoItem[]>([]);
+  const [reportCotizaciones, setReportCotizaciones] = useState<ReportCotizacion[]>([]);
   const [clientes, setClientes] = useState<Array<{ id: string; nombre: string; email: string | null; telefono: string | null }>>([]);
   const now = new Date();
   const [reportMonth, setReportMonth] = useState<number>(now.getMonth() + 1);
@@ -462,6 +556,13 @@ const Index = () => {
   const [reportFilterMode, setReportFilterMode] = useState<"mes" | "rango">("mes");
   const [reportFechaDesde, setReportFechaDesde] = useState<string>("");
   const [reportFechaHasta, setReportFechaHasta] = useState<string>("");
+  const [reportSections, setReportSections] = useState({
+    estados: true,
+    proveedores: false,
+    alertas: false,
+    cotizaciones: true,
+    pedidos: true,
+  });
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
@@ -486,7 +587,8 @@ const Index = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }, { data: totalsData, error: totalsError }] = await Promise.all([
+      const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }, { data: totalsData, error: totalsError },
+        { data: recepcionesData, error: recepcionesError }, { data: itemProgressData, error: itemProgressError }, { data: cotizacionesReportData, error: cotizacionesReportError }, { data: novedadesListData }] = await Promise.all([
         supabase.from("proveedores").select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").eq("activo", true).order("nombre", { ascending: true }),
         supabase
           .from("pedidos")
@@ -501,7 +603,20 @@ const Index = () => {
           .from("pedido_items")
           .select("cantidad_pedida, costo_unitario, moneda, pedidos(proveedores(nombre))")
           .not("costo_unitario", "is", null),
-      ]);
+          supabase
+          .from("recepciones")
+          .select("pedido_id, fecha_recepcion"),
+        supabase
+          .from("pedido_items")
+          .select("id, pedido_id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, estado_entrega, fecha_recibido"),
+        supabase
+          .from("cotizaciones_items" as any)
+          .select("id, item_id, fecha_cotizacion"),
+        supabase
+          .from("pedido_novedades" as any)
+          .select("id, pedido_id, tipo, mensaje, visible_vendedor, created_by, created_at")
+          .order("created_at", { ascending: false }),
+        ]);
 
       if (suppliersError || error || alertasError || alertasListError) {
         toast({
@@ -510,14 +625,27 @@ const Index = () => {
         });
         setIsPreviewMode(true);
         setSuppliers(fallbackSuppliers);
-        setForm((current) => ({ ...current, supplierId: fallbackSuppliers[0]?.id || "" }));
+        setForm((current) => ({ ...current, supplierId: "" }));
         setOrders(initialOrders);
-        setAlertas(Object.values(demoAlertasByOrderId).flat().map((alerta) => {
+        const demoAlertas = Object.values(demoAlertasByOrderId).flat().map((alerta) => {
           const order = initialOrders.find((item) => item.id === alerta.pedido_id);
-          return { id: alerta.id, proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", pedidoEstado: order?.rawStatus || "", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
-        }));
+          return { id: alerta.id, pedidoId: String(alerta.pedido_id || ""), proveedor: order?.supplier || "Sin proveedor", cliente: order?.cliente || "-", numeroPedido: order?.orderNumber || "-", numeroOcQubigo: order?.ocNumber || "-", tipo: alerta.tipo || "-", fechaEstimada: safeDateForDisplay(alerta.fecha_estimada), fechaAviso: safeDateForDisplay(alerta.fecha_aviso), estado: alerta.estado || "-", pedidoEstado: order?.rawStatus || "", vendedor: order?.vendedor || "-", daysRemaining: getDaysRemaining(alerta.fecha_aviso) };
+        }).filter((alerta) => shouldShowAlerta(alerta));
+        setAlertas(demoAlertas);
+        setAllPedidoNovedades([]);
+        setReportItems(Object.entries(demoItemsByOrderId).flatMap(([pedidoId, items]) => items.map((item) => ({
+          id: item.id,
+          pedido_id: pedidoId,
+          descripcion: item.descripcion,
+          cantidad_pedida: item.cantidad_pedida,
+          cantidad_recibida: item.cantidad_recibida,
+          cantidad_pendiente: item.cantidad_pendiente,
+          estado_entrega: item.cantidad_pendiente <= 0 ? "recibido_total" : "pendiente",
+          fecha_recibido: initialOrders.find((order) => String(order.id) === pedidoId)?.fecha || null,
+        }))));
+        setReportCotizaciones([]);
         setPurchaseTotalsBySupplier([]);
-        setDashboardAlertasCount(Object.values(demoAlertasByOrderId).flat().filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
+        setDashboardAlertasCount(demoAlertas.filter((alerta) => !isClosedAlerta(alerta.estado) && isUpcomingDueDate(alerta.fechaAviso)).length);
         setSelectedOrderId(initialOrders[0]?.id || null);
         setIsLoading(false);
         return;
@@ -525,10 +653,18 @@ const Index = () => {
 
       const activeSuppliers = suppliersData || [];
       setSuppliers(activeSuppliers.length > 0 ? activeSuppliers : fallbackSuppliers);
-      setForm((current) => ({ ...current, supplierId: activeSuppliers[0]?.id || "" }));
+      setForm((current) => ({ ...current, supplierId: "" }));
       const mappedOrders = ((data || []) as PurchaseOrderRow[]).map(mapOrderFromSupabase);
       setOrders(mappedOrders);
-      setAlertas(((alertasListData || []) as AlertaRow[]).map(mapAlertaFromSupabase));
+      setAllPedidoNovedades((novedadesListData || []) as any);
+      setRecepciones(recepcionesError ? [] : recepcionesData || []);
+      const mostlyReceivedPedidoIds = getMostlyReceivedPedidoIds(itemProgressError ? [] : itemProgressData || []);
+      setReportItems(itemProgressError ? [] : ((itemProgressData || []) as ReportPedidoItem[]));
+      setReportCotizaciones(cotizacionesReportError ? [] : ((cotizacionesReportData || []) as ReportCotizacion[]));
+      const mappedAlertas = ((alertasListData || []) as AlertaRow[])
+        .map(mapAlertaFromSupabase)
+        .filter((alerta) => shouldShowAlerta(alerta, mostlyReceivedPedidoIds));
+      setAlertas(mappedAlertas);
       const totalsMap = new Map<string, PurchaseTotalBySupplier>();
       (totalsError ? [] : totalsData || []).forEach((row: any) => {
         const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
@@ -541,7 +677,7 @@ const Index = () => {
         totalsMap.set(key, current);
       });
       setPurchaseTotalsBySupplier(Array.from(totalsMap.values()).sort((a, b) => b.total - a.total));
-      setDashboardAlertasCount((alertasData || []).filter((alerta) => alerta.estado !== "resuelta" && isUpcomingDueDate(alerta.fecha_aviso)).length);
+      setDashboardAlertasCount(mappedAlertas.filter((alerta) => !isClosedAlerta(alerta.estado) && isUpcomingDueDate(alerta.fechaAviso)).length);
       setSelectedOrderId(mappedOrders[0]?.id || null);
       setIsLoading(false);
     };
@@ -565,21 +701,25 @@ const Index = () => {
     if (!selectedOrderId) {
       setPedidoItems([]);
       setPedidoAlertas([]);
+      setPedidoNovedades([]);
       return;
     }
 
     const loadPedidoItems = async () => {
       setIsLoadingItems(true);
+      const selectedPedidoStatus = orders.find((order) => order.id === selectedOrderId)?.rawStatus;
+
       if (isPreviewMode) {
         const items = previewItemsByOrderId[String(selectedOrderId)] || getDemoItems(selectedOrderId);
         setPedidoItems(items);
-        setPedidoAlertas(getDemoAlertas(selectedOrderId));
+        setPedidoAlertas(isActivePedidoForAlertas(selectedPedidoStatus) ? getDemoAlertas(selectedOrderId).filter((alerta) => !(isEntregaOriginalAlert(alerta.tipo) && safeText(selectedPedidoStatus).toLowerCase() === "recibido_parcial")) : []);
+        setPedidoNovedades([]);
         setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
         setIsLoadingItems(false);
         return;
       }
 
-      const [{ data, error }, { data: alertasData, error: alertasError }] = await Promise.all([
+      const [{ data, error }, { data: alertasData, error: alertasError }, { data: novedadesData }] = await Promise.all([
         supabase
           .from("pedido_items")
           .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega, estado_cotizacion")
@@ -590,6 +730,11 @@ const Index = () => {
           .select("id, pedido_id, item_id, tipo, fecha_estimada, fecha_aviso, estado")
           .eq("pedido_id", selectedOrderId)
           .order("fecha_aviso", { ascending: true }),
+        supabase
+          .from("pedido_novedades" as any)
+          .select("id, pedido_id, tipo, mensaje, visible_vendedor, created_by, created_at")
+          .eq("pedido_id", selectedOrderId)
+          .order("created_at", { ascending: false }),
       ]);
 
       if (error || alertasError) {
@@ -602,13 +747,14 @@ const Index = () => {
 
       const items = (data || []) as PedidoItem[];
       setPedidoItems(items);
-      setPedidoAlertas((alertasData || []) as PedidoAlerta[]);
+      setPedidoAlertas(isActivePedidoForAlertas(selectedPedidoStatus) ? ((alertasData || []) as PedidoAlerta[]).filter((alerta) => !(isEntregaOriginalAlert(alerta.tipo) && safeText(selectedPedidoStatus).toLowerCase() === "recibido_parcial")) : []);
+      setPedidoNovedades((novedadesData || []) as any);
       setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
 
     loadPedidoItems();
-  }, [selectedOrderId, isPreviewMode, previewItemsByOrderId]);
+  }, [selectedOrderId, isPreviewMode, previewItemsByOrderId, orders]);
 
   const sellerOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.vendedor).filter(Boolean))).sort(), [orders]);
   const supplierOptions = useMemo(() => Array.from(new Set(orders.map((order) => order.supplier).filter(Boolean))).sort(), [orders]);
@@ -618,8 +764,7 @@ const Index = () => {
   const alertaVendedorOptions = useMemo(() => Array.from(new Set(alertas.map((alerta) => alerta.vendedor).filter(Boolean))).sort(), [alertas]);
   const filteredAlertas = useMemo(
     () => alertas.filter((alerta) => {
-      const pedidoEstado = (alerta.pedidoEstado || "").toLowerCase();
-      if (!["en_curso", "recibido_parcial"].includes(pedidoEstado)) return false;
+      if (!shouldShowAlerta(alerta)) return false;
       const matchesEstado = alertaEstadoFilter === "todos" || alerta.estado === alertaEstadoFilter;
       const matchesTipo = alertaTipoFilter === "todos" || alerta.tipo === alertaTipoFilter;
       const matchesProveedor = alertaProveedorFilter === "todos" || alerta.proveedor === alertaProveedorFilter;
@@ -629,6 +774,13 @@ const Index = () => {
       return matchesEstado && matchesTipo && matchesProveedor && matchesVendedor && matchesExpired && matchesUpcoming;
     }),
     [alertas, alertaEstadoFilter, alertaTipoFilter, alertaProveedorFilter, alertaVendedorFilter, onlyExpiredAlertas, onlyUpcomingAlertas],
+  );
+  const highlightedAlertas = useMemo(
+    () => filteredAlertas
+      .filter((alerta) => alerta.daysRemaining !== null && alerta.daysRemaining <= 3 && !isClosedAlerta(alerta.estado))
+      .sort((a, b) => (a.daysRemaining ?? 999) - (b.daysRemaining ?? 999))
+      .slice(0, 3),
+    [filteredAlertas],
   );
   const sortedOrders = useMemo(() => {
     const todayStr = today();
@@ -657,6 +809,15 @@ const Index = () => {
     [sortedOrders, query, sellerFilter, statusFilters, supplierFilter, onlyWithoutOc, onlyMyActiveOrders],
   );
 
+  const latestNovedadByOrderId = useMemo(() => {
+    const map = new Map<string, PedidoNovedad>();
+    allPedidoNovedades.forEach((novedad) => {
+      const key = String(novedad.pedido_id);
+      if (!map.has(key)) map.set(key, novedad);
+    });
+    return map;
+  }, [allPedidoNovedades]);
+
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
   const upcomingAlertItemIds = new Set(
     pedidoAlertas
@@ -671,14 +832,27 @@ const Index = () => {
   const totalOcCurrency = pedidoItems.find((item) => item.moneda)?.moneda || "ARS";
 
   const metrics = [
-    { label: "Total pedidos en curso", value: orders.filter((order) => order.rawStatus !== "cerrado" && order.rawStatus !== "entregado").length, icon: PackageCheck },
-    { label: "Pedidos atrasados", value: orders.filter((order) => order.status === "Atrasado").length, icon: AlertTriangle },
+    { label: "Total pedidos en curso", value: orders.filter((order) => !["terminado", "recibido_total", "anulado"].includes(order.rawStatus)).length, icon: PackageCheck },
+    {
+      label: "Pedidos atrasados",
+      value: orders.filter(
+        (order) =>
+          ["en_curso", "pedido_cargado", "recibido_parcial"].includes(order.rawStatus) &&
+          safeDateForDisplay(order.eta) &&
+          order.eta < today()
+      ).length,
+      icon: AlertTriangle
+    },
     { label: "Alertas próximas a vencer", value: dashboardAlertasCount, icon: CalendarClock },
     { label: "Pedidos sin OC", value: ordersWithoutOcCount, icon: AlertTriangle },
   ];
 
   const ordersByStatus = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: orders.filter((order) => order.rawStatus === estado).length })).filter((item) => item.count > 0), [orders]);
-  const activeAlertasCount = alertas.filter((alerta) => !isClosedAlerta(alerta.estado)).length;
+  const activeAlertasCount = alertas.filter(
+    (alerta) =>
+      !isClosedAlerta(alerta.estado) &&
+      shouldShowAlerta(alerta)
+  ).length;
   const recentOrders = orders.slice(0, 6);
 
   // Operational dashboard data
@@ -705,15 +879,32 @@ const Index = () => {
   );
   const totalEnCurso = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus)).length;
   const totalAtrasados = orders.filter((o) => ["en_curso", "pedido_cargado", "recibido_parcial"].includes(o.rawStatus) && safeDateForDisplay(o.eta) && o.eta < todayIsoStr).length;
+  const getLastReceptionDate = (orderId: string | number) => {
+    const dates = recepciones
+      .filter((r) => String(r.pedido_id) === String(orderId))
+      .map((r) => safeDateForDisplay(r.fecha_recepcion))
+      .filter(Boolean)
+      .sort();
+
+    return dates.at(-1) || null;
+  };
   const finalizedOrders = orders.filter((o) => ["terminado", "recibido_total"].includes(o.rawStatus));
-  const onTimeFinalized = finalizedOrders.filter((o) => safeDateForDisplay(o.eta) && o.eta >= o.fecha).length;
+  const onTimeFinalized = finalizedOrders.filter((o) => {
+    const eta = safeDateForDisplay(o.eta);
+    const lastReceptionDate = getLastReceptionDate(o.id);
+
+    return eta && lastReceptionDate && lastReceptionDate <= eta;
+  }).length;
   const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
 
   useEffect(() => {
     if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores")) {
       setActiveSection("Pedidos");
     }
-  }, [isAdminRole, activeSection]);
+    if (!canCreatePedido && activeSection === "Crear pedido") {
+      setActiveSection("Pedidos");
+    }
+  }, [isAdminRole, canCreatePedido, activeSection]);
 
   // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
   const isInReportPeriod = (fecha: string | null | undefined) => {
@@ -732,19 +923,138 @@ const Index = () => {
     return y === reportYear && m === reportMonth;
   };
   const ordersInReportMonth = useMemo(() => orders.filter((o) => isInReportPeriod(o.fecha)), [orders, reportMonth, reportYear, reportFilterMode, reportFechaDesde, reportFechaHasta]);
+  const orderByIdForReport = useMemo(() => new Map(ordersInReportMonth.map((order) => [String(order.id), order])), [ordersInReportMonth]);
+  const reportItemsInPeriod = useMemo(
+    () => reportItems.filter((item) => orderByIdForReport.has(String(item.pedido_id))),
+    [reportItems, orderByIdForReport],
+  );
+  const reportCotizacionesInPeriod = useMemo(
+    () => reportCotizaciones.filter((cotizacion) => isInReportPeriod(cotizacion.fecha_cotizacion)),
+    [reportCotizaciones, reportMonth, reportYear, reportFilterMode, reportFechaDesde, reportFechaHasta],
+  );
+  const cotizacionesByItemReport = useMemo(() => {
+    const counts = new Map<string, number>();
+    reportCotizacionesInPeriod.forEach((cotizacion) => {
+      const itemId = safeText(cotizacion.item_id);
+      if (!itemId) return;
+      counts.set(itemId, (counts.get(itemId) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([itemId, count]) => {
+      const item = reportItems.find((current) => current.id === itemId);
+      const order = item ? orders.find((current) => String(current.id) === String(item.pedido_id)) : null;
+      return {
+        itemId,
+        descripcion: item?.descripcion || itemId,
+        pedido: order?.orderNumber || "-",
+        cliente: order?.cliente || "-",
+        count,
+      };
+    }).sort((a, b) => b.count - a.count);
+  }, [reportCotizacionesInPeriod, reportItems, orders]);
+  const isFinishedReportItem = (item: ReportPedidoItem) =>
+    safeText(item.estado_entrega).toLowerCase() === "recibido_total" ||
+    safeNumber(item.cantidad_pendiente) <= 0 ||
+    (safeNumber(item.cantidad_pedida) > 0 && safeNumber(item.cantidad_recibida) >= safeNumber(item.cantidad_pedida));
+  const finishedReportItems = reportItemsInPeriod.filter(isFinishedReportItem);
+  const fulfilledFinishedReportItems = finishedReportItems.filter((item) => {
+    const order = orderByIdForReport.get(String(item.pedido_id));
+    const eta = safeDateForDisplay(order?.eta);
+    const receivedDate = safeDateForDisplay(item.fecha_recibido) || getLastReceptionDate(item.pedido_id);
+    return !!eta && !!receivedDate && receivedDate <= eta;
+  });
+  const unfulfilledFinishedReportItems = finishedReportItems.length - fulfilledFinishedReportItems.length;
+  const finishedOrdersReport = ordersInReportMonth.filter((order) => isClosedPedidoStatus(order.rawStatus));
+  const reportKpiRows = [
+    { label: "Cantidad de OC", quantity: ordersInReportMonth.length, percent: "100%" },
+    { label: "Cantidad de ítems", quantity: reportItemsInPeriod.length, percent: "100%" },
+    { label: "Cantidad de OC terminadas", quantity: finishedOrdersReport.length, percent: formatPercent(finishedOrdersReport.length, ordersInReportMonth.length) },
+    { label: "Cantidad de ítems terminados", quantity: finishedReportItems.length, percent: formatPercent(finishedReportItems.length, reportItemsInPeriod.length) },
+    { label: "Cantidad de ítems terminados cumplidos", quantity: fulfilledFinishedReportItems.length, percent: formatPercent(fulfilledFinishedReportItems.length, finishedReportItems.length) },
+    { label: "Cantidad de ítems terminados no cumplidos", quantity: unfulfilledFinishedReportItems, percent: formatPercent(unfulfilledFinishedReportItems, finishedReportItems.length) },
+    { label: "Cantidad de ítems cotizados", quantity: cotizacionesByItemReport.length, percent: formatPercent(cotizacionesByItemReport.length, reportItemsInPeriod.length) },
+  ];
   const ordersByStatusReport = useMemo(() => pedidoEstados.map((estado) => ({ estado, count: ordersInReportMonth.filter((o) => o.rawStatus === estado).length })).filter((item) => item.count > 0), [ordersInReportMonth]);
   const ordersWithoutOcReport = ordersInReportMonth.filter((o) => o.rawStatus === "pedido_cargado" && (!o.ocNumber || o.ocNumber === "-")).length;
-  const activeAlertasReport = useMemo(() => {
-    const orderIdsInMonth = new Set(ordersInReportMonth.map((o) => String(o.id)));
-    // alertas don't carry pedido fecha directly; match by numero_pedido
+  const reportAlertas = useMemo(() => {
     const numerosInMonth = new Set(ordersInReportMonth.map((o) => o.orderNumber));
-    return alertas.filter((a) => !isClosedAlerta(a.estado) && numerosInMonth.has(a.numeroPedido)).length;
+    return alertas.filter((a) => !isClosedAlerta(a.estado) && shouldShowAlerta(a) && numerosInMonth.has(a.numeroPedido));
   }, [alertas, ordersInReportMonth]);
+  const activeAlertasReport = useMemo(() => {
+    return reportAlertas.length;
+  }, [reportAlertas]);
   const purchaseTotalsBySupplierReport = useMemo(() => {
     // Filter purchase totals by supplier name appearing in this month's orders
     const allowedSuppliers = new Set(ordersInReportMonth.map((o) => o.supplier));
     return purchaseTotalsBySupplier.filter((p) => allowedSuppliers.has(p.proveedor));
   }, [purchaseTotalsBySupplier, ordersInReportMonth]);
+  const reportPeriodLabel = reportFilterMode === "rango"
+    ? `${reportFechaDesde || "inicio"} a ${reportFechaHasta || "hoy"}`
+    : `${String(reportMonth).padStart(2, "0")}-${reportYear}`;
+  const reportFileSuffix = reportPeriodLabel.replace(/[^a-zA-Z0-9-]+/g, "_");
+  const reportSummaryRows = [
+    ["Periodo", reportPeriodLabel, ""],
+    ...reportKpiRows.map((row) => [row.label, row.quantity, row.percent]),
+  ];
+
+  const buildReportHtml = () => {
+    const table = (title: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => `
+      <h2>${escapeHtml(title)}</h2>
+      <table>
+        <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.length > 0 ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">Sin datos</td></tr>`}</tbody>
+      </table>
+    `;
+
+    return `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Reporte OC ${escapeHtml(reportPeriodLabel)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
+            h1 { font-size: 22px; margin: 0 0 4px; }
+            h2 { font-size: 16px; margin: 24px 0 8px; }
+            p { margin: 0 0 16px; color: #4b5563; }
+            table { border-collapse: collapse; width: 100%; margin-bottom: 18px; font-size: 12px; }
+            th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; }
+            th { background: #f3f4f6; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <h1>Reporte OC</h1>
+          <p>Periodo: ${escapeHtml(reportPeriodLabel)}</p>
+          ${table("Indicadores", ["Indicador", "Cantidad", "Porcentaje"], reportSummaryRows)}
+          ${reportSections.estados ? table("Pedidos por estado", ["Estado", "Cantidad"], ordersByStatusReport.map((item) => [item.estado, item.count])) : ""}
+          ${reportSections.proveedores ? table("Total por proveedor", ["Proveedor", "Moneda", "Total"], purchaseTotalsBySupplierReport.map((item) => [item.proveedor, item.moneda, item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })])) : ""}
+          ${reportSections.alertas ? table("Alertas activas", ["Proveedor", "Pedido", "OC Qubigo", "Tipo", "Fecha aviso"], reportAlertas.map((alerta) => [alerta.proveedor, alerta.numeroPedido, alerta.numeroOcQubigo, alerta.tipo, formatDate(alerta.fechaAviso)])) : ""}
+          ${reportSections.cotizaciones ? table("Cotizaciones por ítem", ["Ítem", "Pedido", "Cliente", "Cantidad de cotizaciones"], cotizacionesByItemReport.map((item) => [item.descripcion, item.pedido, item.cliente, item.count])) : ""}
+          ${reportSections.pedidos ? table("Pedidos", ["Fecha", "Pedido", "Proveedor", "Cliente", "Vendedor", "Estado", "OC Qubigo", "Fecha estimada"], ordersInReportMonth.map((order) => [formatDate(order.fecha), order.orderNumber, order.supplier, order.cliente, order.vendedor, order.rawStatus, order.ocNumber, formatDate(order.eta)])) : ""}
+        </body>
+      </html>`;
+  };
+
+  const exportReportExcel = () => {
+    const blob = new Blob([buildReportHtml()], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reporte-oc-${reportFileSuffix}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportReportPdf = () => {
+    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!reportWindow) {
+      toast({ title: "No se pudo abrir el reporte", description: "Permití ventanas emergentes para generar el PDF.", variant: "destructive" });
+      return;
+    }
+    reportWindow.document.open();
+    reportWindow.document.write(buildReportHtml());
+    reportWindow.document.close();
+    reportWindow.focus();
+    window.setTimeout(() => reportWindow.print(), 300);
+  };
 
   // Cliente lookup for selected pedido
   const selectedClienteContact = useMemo(() => {
@@ -768,6 +1078,57 @@ const Index = () => {
 
   const updateEditItemForm = (index: number, field: keyof PedidoItemForm, value: string) => {
     setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const confirmNoDuplicateActiveItems = async (
+    numeroOcQubigo: string,
+    itemsToCheck: Array<Pick<PedidoItemForm, "codArticulo" | "descripcion">>,
+    currentPedidoId?: string | number | null,
+  ) => {
+    const oc = optionalValue(numeroOcQubigo);
+    const codes = Array.from(new Set(itemsToCheck.map((item) => safeText(item.codArticulo).toUpperCase()).filter(Boolean)));
+    if (!oc || codes.length === 0 || isPreviewMode) return true;
+
+    const { data, error } = await supabase
+      .from("pedido_items")
+      .select("id, pedido_id, descripcion, cod_articulo, pedidos(id, numero_oc_qubigo, fecha_estimada_entrega, estado)")
+      .not("cod_articulo", "is", null);
+
+    if (error) {
+      toast({ title: "No se pudo verificar duplicados", description: error.message, variant: "destructive" });
+      return false;
+    }
+
+    const codeSet = new Set(codes);
+    const duplicates = ((data || []) as any[]).filter((row) => {
+      const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
+      const pedidoId = pedido?.id || row.pedido_id;
+      if (currentPedidoId && String(pedidoId) === String(currentPedidoId)) return false;
+      if (!duplicateCheckStatuses.includes(safeText(pedido?.estado).toLowerCase())) return false;
+      if (!optionalValue(pedido?.numero_oc_qubigo)) return false;
+      return codeSet.has(safeText(row.cod_articulo).toUpperCase());
+    });
+
+    if (duplicates.length === 0) return true;
+
+    const message = duplicates.slice(0, 5).map((row) => {
+      const pedido = Array.isArray(row.pedidos) ? row.pedidos[0] : row.pedidos;
+      return `Artículo ${row.descripcion || row.cod_articulo} pedido en la OC ${pedido?.numero_oc_qubigo || "-"} con fecha estimada de entrega ${formatDate(pedido?.fecha_estimada_entrega)}.`;
+    }).join("\n");
+
+    return window.confirm(`${message}\n\n¿Querés continuar con el pedido igualmente?`);
+  };
+
+  const confirmSupplierLeadTime = (supplierId: string, plazoEntregaProveedor: string) => {
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const averageDays = safeNumber(supplier?.plazo_promedio_dias);
+    const requestedDays = parseDaysValue(plazoEntregaProveedor);
+    if (!supplier || averageDays <= 0 || requestedDays == null || requestedDays >= averageDays) return true;
+
+    return window.confirm(
+      `Tener en cuenta que el plazo de entrega promedio del proveedor es de ${averageDays} dias.\n\n` +
+      "Desea continuar con el plazo cargado?",
+    );
   };
 
   const addEditItemForm = () => {
@@ -838,7 +1199,9 @@ const Index = () => {
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const validItems = itemForms.filter((item) => safeText(item.descripcion) && safeNumber(item.cantidadPedida) > 0 && safeText(item.unidad));
-    if (!form.supplierId || !safeText(form.cliente) || !safeText(form.vendedor) || !safeText(form.plazoEntregaCliente) || validItems.length === 0) return;
+    if (!safeText(form.cliente) || !safeText(form.vendedor) || !safeText(form.plazoEntregaCliente) || validItems.length === 0) return;
+    if (!confirmSupplierLeadTime(form.supplierId, form.plazoEntregaProveedor)) return;
+    if (!(await confirmNoDuplicateActiveItems(form.numeroOcQubigo, validItems))) return;
 
     setIsSaving(true);
     const nextOrderNumber = optionalValue(form.numeroPedido) || generateOrderNumber();
@@ -879,14 +1242,14 @@ const Index = () => {
       setPedidoItems(createdItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(createdOrder.id)]: createdItems }));
       setPedidoAlertas([]);
-      setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+      setForm(createEmptyOrderForm());
       setItemForms([createEmptyItemForm()]);
       setIsSaving(false);
       toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
       return;
     }
 
-    if (!isValidUuid(form.supplierId)) {
+    if (form.supplierId && !isValidUuid(form.supplierId)) {
       toast({ title: "Proveedor inválido", description: "Seleccioná un proveedor válido antes de guardar.", variant: "destructive" });
       setIsSaving(false);
       return;
@@ -897,12 +1260,13 @@ const Index = () => {
       .insert({
         fecha: optionalDateValue(form.fecha),
         numero_pedido: nextOrderNumber,
-        proveedor_id: form.supplierId,
+        proveedor_id: optionalValue(form.supplierId),
         cliente: safeText(form.cliente),
         numero_oc_cliente: optionalValue(form.numeroOcCliente),
         numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
         plazo_entrega_cliente: safeText(form.plazoEntregaCliente),
         plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
+        fecha_estimada_entrega: optionalDateValue(form.fechaEstimadaEntrega),
         vendedor: safeText(form.vendedor),
         observaciones: optionalValue(form.observaciones),
         condiciones_pago: optionalValue(form.condicionesPago),
@@ -951,7 +1315,7 @@ const Index = () => {
       setSelectedOrderId(createdOrder.id);
       setPedidoItems((createdItems || []) as PedidoItem[]);
     }
-    setForm(createEmptyOrderForm(suppliers[0]?.id || ""));
+    setForm(createEmptyOrderForm());
     setItemForms([createEmptyItemForm()]);
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
@@ -961,9 +1325,12 @@ const Index = () => {
     event.preventDefault();
     if (!selectedOrder) return;
 
-    setIsSavingEdit(true);
     const derivedStatus = deriveStatusByOc(editForm.numeroOcQubigo, editForm.estado);
     const nextEta = optionalDateValue(editForm.fechaEstimadaEntrega);
+    if (!confirmSupplierLeadTime(editForm.supplierId, editForm.plazoEntregaProveedor)) return;
+    if (!(await confirmNoDuplicateActiveItems(editForm.numeroOcQubigo, editItemForms, selectedOrder.id))) return;
+
+    setIsSavingEdit(true);
     const nextItems = editItemForms.map((item) => {
       const ordered = safeNumber(item.cantidadPedida);
       const original = pedidoItems.find((current) => current.id === item.id);
@@ -1149,19 +1516,23 @@ const Index = () => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
     const receivedQuantity = safeNumber(receptionForm.quantity);
+    const nextEta = optionalDateValue(receptionForm.newEta);
+    const isQuantityReception = receivedQuantity > 0;
 
-    if (!selectedOrderId || !selectedItem || !receivedQuantity || receivedQuantity <= 0) return;
+    if (!selectedOrderId || !selectedItem || (!isQuantityReception && !nextEta)) return;
 
     setIsSavingReception(true);
-    const nextReceived = safeNumber(selectedItem.cantidad_recibida) + receivedQuantity;
+    const nextReceived = safeNumber(selectedItem.cantidad_recibida) + (isQuantityReception ? receivedQuantity : 0);
     const nextPending = Math.max(safeNumber(selectedItem.cantidad_pedida) - nextReceived, 0);
     const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
     const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
     if (isPreviewMode) {
-      setPedidoItems(updatedItems);
-      setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrderId)]: updatedItems }));
-      setOrders((current) => current.map((order) => order.id === selectedOrderId && order.rawStatus !== "anulado" ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
+      if (isQuantityReception) {
+        setPedidoItems(updatedItems);
+        setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrderId)]: updatedItems }));
+      }
+      setOrders((current) => current.map((order) => order.id === selectedOrderId && order.rawStatus !== "anulado" ? { ...order, rawStatus: isQuantityReception ? nextOrderStatus : order.rawStatus, status: normalizeStatus(isQuantityReception ? nextOrderStatus : order.rawStatus, nextEta || order.eta), eta: nextEta || order.eta } : order));
       setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
       setIsSavingReception(false);
       toast({ title: "Recepción cargada en preview", description: "Las cantidades se actualizaron localmente." });
@@ -1173,7 +1544,7 @@ const Index = () => {
       item_id: selectedItem.id,
       fecha_recepcion: optionalDateValue(receptionForm.date) || today(),
       cantidad_recibida: receivedQuantity,
-      nueva_fecha_entrega: optionalDateValue(receptionForm.newEta),
+      nueva_fecha_entrega: nextEta,
       observaciones: optionalValue(receptionForm.notes) || "Recepción cargada desde OC Control",
     });
 
@@ -1183,10 +1554,12 @@ const Index = () => {
       return;
     }
 
-    const { error: itemError } = await supabase
-      .from("pedido_items")
-      .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : "pendiente" })
-      .eq("id", selectedItem.id);
+    const { error: itemError } = isQuantityReception
+      ? await supabase
+        .from("pedido_items")
+        .update({ cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : "pendiente" })
+        .eq("id", selectedItem.id)
+      : { error: null };
 
     if (itemError) {
       toast({ title: "Recepción guardada, pero no se actualizó el ítem", description: itemError.message, variant: "destructive" });
@@ -1195,10 +1568,36 @@ const Index = () => {
     }
 
     if (selectedOrder?.rawStatus !== "anulado") {
-      await supabase.from("pedidos").update({ estado: nextOrderStatus }).eq("id", selectedOrderId);
-      setOrders((current) => current.map((order) => order.id === selectedOrderId ? { ...order, rawStatus: nextOrderStatus, status: normalizeStatus(nextOrderStatus, order.eta) } : order));
+      await supabase.from("pedidos").update({ estado: isQuantityReception ? nextOrderStatus : selectedOrder.rawStatus, fecha_estimada_entrega: nextEta || selectedOrder.eta || null }).eq("id", selectedOrderId);
+      if (nextEta) {
+        await supabase
+          .from("alertas")
+          .update({ fecha_estimada: nextEta, fecha_aviso: getAvisoDate(nextEta) })
+          .eq("pedido_id", selectedOrderId)
+          .eq("item_id", selectedItem.id)
+          .neq("estado", "resuelta");
+      }
+      if (nextOrderStatus === "terminado" || nextOrderStatus === "recibido_total") {
+        await supabase
+          .from("alertas")
+          .update({ estado: "resuelta" })
+          .eq("pedido_id", selectedOrderId);
+      }
+      if (nextOrderStatus === "terminado" || nextOrderStatus === "recibido_total") {
+        setAlertas((current) =>
+          current.map((alerta) =>
+            String(alerta.id) && alerta.numeroPedido === selectedOrder?.orderNumber
+              ? { ...alerta, estado: "resuelta", pedidoEstado: nextOrderStatus }
+              : alerta
+          )
+        );
+      }
+      setOrders((current) => current.map((order) => order.id === selectedOrderId ? { ...order, rawStatus: isQuantityReception ? nextOrderStatus : order.rawStatus, status: normalizeStatus(isQuantityReception ? nextOrderStatus : order.rawStatus, nextEta || order.eta), eta: nextEta || order.eta } : order));
+      if (nextEta) {
+        setPedidoAlertas((current) => current.map((alerta) => alerta.item_id === selectedItem.id ? { ...alerta, fecha_estimada: nextEta, fecha_aviso: getAvisoDate(nextEta) || alerta.fecha_aviso } : alerta));
+      }
     }
-    setPedidoItems(updatedItems);
+    if (isQuantityReception) setPedidoItems(updatedItems);
     setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
     setIsSavingReception(false);
     toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
@@ -1250,6 +1649,61 @@ Equipo NORFER`;
     await navigator.clipboard.writeText(sellerMessage);
     toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
   };
+
+  const saveNovedad = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedOrder || !safeText(novedadForm.mensaje)) return;
+    setIsSavingNovedad(true);
+
+    if (isPreviewMode) {
+      const next: PedidoNovedad = {
+        id: `preview-novedad-${Date.now()}`,
+        pedido_id: selectedOrder.id,
+        tipo: novedadForm.tipo,
+        mensaje: safeText(novedadForm.mensaje),
+        visible_vendedor: novedadForm.visibleVendedor,
+        created_by: currentUserProfile?.nombre || userEmail || "Usuario",
+        created_at: new Date().toISOString(),
+      };
+      setPedidoNovedades((current) => [next, ...current]);
+      setAllPedidoNovedades((current) => [next, ...current]);
+      setNovedadForm({ tipo: "general", mensaje: "", visibleVendedor: true });
+      setIsSavingNovedad(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedido_novedades" as any)
+      .insert({
+        pedido_id: selectedOrder.id,
+        tipo: novedadForm.tipo,
+        mensaje: safeText(novedadForm.mensaje),
+        visible_vendedor: novedadForm.visibleVendedor,
+        created_by: currentUserProfile?.nombre || userEmail || null,
+      })
+      .select("id, pedido_id, tipo, mensaje, visible_vendedor, created_by, created_at")
+      .maybeSingle();
+    setIsSavingNovedad(false);
+    if (error) {
+      toast({ title: "No se pudo guardar la novedad", description: error.message, variant: "destructive" });
+      return;
+    }
+    if (data) {
+      setPedidoNovedades((current) => [data as any, ...current]);
+      setAllPedidoNovedades((current) => [data as any, ...current]);
+    }
+    setNovedadForm({ tipo: "general", mensaje: "", visibleVendedor: true });
+    toast({ title: "Novedad guardada" });
+  };
+
+  const copyNovedadForSeller = async (novedad: PedidoNovedad) => {
+    if (!selectedOrder) return;
+    const text = `Pedido ${selectedOrder.orderNumber} / OC ${selectedOrder.ocNumber || "-"}\nNovedad: ${novedad.mensaje}`;
+    await navigator.clipboard.writeText(text);
+    toast({ title: "Novedad copiada", description: "Lista para pegar en WhatsApp o mail." });
+  };
+
+  const openOrderNovedades = (orderId: string | number) => setNovedadesDialogOrderId(orderId);
 
   const startEditSupplier = (supplier: Supplier) => {
     setEditingSupplierId(supplier.id);
@@ -1323,6 +1777,7 @@ Equipo NORFER`;
             {navItems.filter((item) => {
               if (item.label === "Alertas") return canSeeAlertas;
               if (item.label === "Reportes") return canSeeReportes;
+              if (item.label === "Crear pedido") return canCreatePedido;
               if (item.label === "Proveedores") return canSeeProveedores;
               if (item.label === "Cotizaciones") return canSeeCotizaciones;
               if (item.label === "Dashboard") return isAdminRole;
@@ -1357,7 +1812,7 @@ Equipo NORFER`;
                   </div>
                 )}
                 {canCreatePedido && (
-                  <Button variant="command" onClick={() => { setActiveSection("Pedidos"); window.requestAnimationFrame(() => document.getElementById("crear-pedido")?.scrollIntoView({ behavior: "smooth" })); }}>
+                  <Button variant="command" onClick={() => setActiveSection("Crear pedido")}>
                     <FilePlus2 className="h-4 w-4" />
                     Nuevo pedido
                   </Button>
@@ -1370,7 +1825,7 @@ Equipo NORFER`;
             </div>
           </header>
 
-          <div className={`grid gap-6 p-5 md:p-8 ${["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido ? "xl:grid-cols-[1fr_360px]" : ""}`}>
+          <div className="grid gap-6 p-5 md:p-8">
             <div id="panel-operativo" className="space-y-6">
               {activeSection === "Dashboard" && (
                 <>
@@ -1501,6 +1956,32 @@ Equipo NORFER`;
                   <Button type="button" variant={onlyExpiredAlertas ? "command" : "outline"} onClick={() => setOnlyExpiredAlertas((current) => !current)}>Vencidas</Button>
                   <Button type="button" variant={onlyUpcomingAlertas ? "command" : "outline"} onClick={() => setOnlyUpcomingAlertas((current) => !current)}>Próximas</Button>
                 </div>
+                {highlightedAlertas.length > 0 && (
+                  <div className="grid gap-3 border-b bg-warning/10 p-5">
+                    {highlightedAlertas.map((alerta) => {
+                      const isOverdue = (alerta.daysRemaining ?? 0) < 0;
+                      const order = orders.find((item) => item.orderNumber === alerta.numeroPedido);
+                      return (
+                        <div key={`destacada-${alerta.id}`} className={`rounded-md border p-4 ${isOverdue ? "border-destructive/40 bg-destructive/10" : "border-warning/40 bg-warning/15"}`}>
+                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <p className="font-semibold">{isOverdue ? "Alerta vencida" : "Entrega próxima"}</p>
+                              <p className="text-sm">
+                                OC {alerta.numeroOcQubigo || "-"} de {alerta.proveedor}: fecha estimada {formatDate(alerta.fechaEstimada)}.
+                              </p>
+                              <p className="text-xs text-muted-foreground">Pedido {alerta.numeroPedido} · {alerta.daysRemaining} días restantes</p>
+                            </div>
+                            {order && (
+                              <Button size="sm" variant={isOverdue ? "destructive" : "outline"} type="button" onClick={() => { setSelectedOrderId(order.id); setActiveSection("Pedidos"); }}>
+                                Ver pedido
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[980px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
@@ -1563,28 +2044,34 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">Estado</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
-                        {canSendMessages && <th className="px-5 py-3 font-semibold">WhatsApp</th>}
+                        <th className="px-5 py-3 font-semibold">Novedad</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {!isLoading && filteredOrders.map((order) => (
-                        <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
-                          <td className="px-5 py-4">{order.supplier}</td>
-                          <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
-                          <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
-                          <td className="px-5 py-4">{formatDate(order.eta)}</td>
-                          {canSendMessages && (
-                            <td className="px-5 py-4">
-                              <Button size="icon" variant="outline" type="button" onClick={(event) => { event.stopPropagation(); openWhatsAppMessage(order); }}>
-                                <MessageCircle className="h-4 w-4" />
-                              </Button>
+                      {!isLoading && filteredOrders.map((order) => {
+                        const novedad = latestNovedadByOrderId.get(String(order.id));
+                        return (
+                          <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
+                            <td className="px-5 py-4">{order.supplier}</td>
+                            <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
+                            <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
+                            <td className="px-5 py-4">{formatDate(order.eta)}</td>
+                            <td className="max-w-[320px] px-5 py-4 text-sm">
+                              {novedad ? (
+                                <button type="button" className="w-full text-left hover:text-primary" onClick={(event) => { event.stopPropagation(); openOrderNovedades(order.id); }}>
+                                  <span className="rounded-md border bg-surface-subtle px-2 py-0.5 text-xs font-semibold">{novedad.tipo || "general"}</span>
+                                  <p className="mt-1 truncate">{novedad.mensaje}</p>
+                                </button>
+                              ) : (
+                                <span className="text-muted-foreground">Sin novedades</span>
+                              )}
                             </td>
-                          )}
-                        </tr>
-                      ))}
+                          </tr>
+                        );
+                      })}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={canSendMessages ? 5 : 4}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1712,6 +2199,52 @@ Equipo NORFER`;
                 </div>
                 {selectedOrder && (
                   <div className="border-t p-5">
+                    <div className="mb-5 rounded-md border bg-card p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-semibold">Novedades del pedido</h4>
+                        <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold text-muted-foreground">{pedidoNovedades.length}</span>
+                      </div>
+                      {canSendMessages && (
+                        <form className="mt-4 grid gap-3" onSubmit={saveNovedad}>
+                          <div className="grid gap-3 md:grid-cols-[180px_1fr]">
+                            <select value={novedadForm.tipo} onChange={(event) => setNovedadForm({ ...novedadForm, tipo: event.target.value })} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              <option value="general">General</option>
+                              <option value="proveedor">Proveedor</option>
+                              <option value="pago">Pago</option>
+                              <option value="documentacion">Documentación</option>
+                              <option value="fabricacion">Fabricación</option>
+                              <option value="entrega">Entrega</option>
+                            </select>
+                            <Input value={novedadForm.mensaje} onChange={(event) => setNovedadForm({ ...novedadForm, mensaje: event.target.value })} placeholder="Cargar novedad para el vendedor" />
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <label className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={novedadForm.visibleVendedor} onChange={(event) => setNovedadForm({ ...novedadForm, visibleVendedor: event.target.checked })} />
+                              Visible para vendedor
+                            </label>
+                            <Button type="submit" size="sm" variant="command" disabled={isSavingNovedad}>{isSavingNovedad ? "Guardando..." : "Guardar novedad"}</Button>
+                          </div>
+                        </form>
+                      )}
+                      <div className="mt-4 grid gap-3">
+                        {pedidoNovedades.map((novedad) => (
+                          <div key={novedad.id} className="rounded-md border bg-surface-subtle p-3">
+                            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md border bg-card px-2 py-0.5 text-xs font-semibold">{novedad.tipo || "general"}</span>
+                                  {novedad.visible_vendedor && <span className="rounded-md border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-semibold text-success">visible vendedor</span>}
+                                  <span className="text-xs text-muted-foreground">{formatDate((novedad.created_at || "").slice(0, 10))} · {novedad.created_by || "-"}</span>
+                                </div>
+                                <p className="mt-2 text-sm">{novedad.mensaje}</p>
+                              </div>
+                              {canSendMessages && <Button type="button" size="sm" variant="outline" onClick={() => copyNovedadForSeller(novedad)}>Copiar</Button>}
+                            </div>
+                          </div>
+                        ))}
+                        {pedidoNovedades.length === 0 && <p className="rounded-md border bg-surface-subtle p-3 text-sm text-muted-foreground">Sin novedades cargadas.</p>}
+                      </div>
+                    </div>
                     {canAddRecepcion && pedidoItems.length > 0 && (
                       <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
                     )}
@@ -1763,78 +2296,119 @@ Equipo NORFER`;
                       <Label htmlFor="reception-new-eta">Nueva entrega</Label>
                       <Input id="reception-new-eta" type="date" value={receptionForm.newEta} onChange={(event) => setReceptionForm({ ...receptionForm, newEta: event.target.value })} />
                     </div>
-                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
-                      <Label htmlFor="reception-notes">Observaciones</Label>
-                      <Input id="reception-notes" value={receptionForm.notes} onChange={(event) => setReceptionForm({ ...receptionForm, notes: event.target.value })} placeholder="Entrega parcial, remito o comentario" />
-                    </div>
                     <div className="flex items-end">
                       <Button className="w-full" variant="command" type="submit" disabled={isSavingReception}>
                         <PackageCheck className="h-4 w-4" />
-                        {isSavingReception ? "Cargando..." : "Agregar recepción"}
+                        {isSavingReception ? "Guardando..." : receptionForm.quantity ? "Agregar recepcion" : "Guardar fecha"}
                       </Button>
+                    </div>
+                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                      <Label htmlFor="reception-notes">Observaciones</Label>
+                      <Input id="reception-notes" value={receptionForm.notes} onChange={(event) => setReceptionForm({ ...receptionForm, notes: event.target.value })} placeholder="Entrega parcial, remito o comentario" />
                     </div>
                   </form>
                 )}
               </section>}
             </div>
 
-            {["Dashboard", "Pedidos"].includes(activeSection) && canCreatePedido && <aside className="space-y-6">
-              <section id="crear-pedido" className="rounded-md border bg-card p-5 shadow-command">
-                <div className="mb-5 flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
-                    <FilePlus2 className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">Crear pedido</h3>
-                    <p className="text-sm text-muted-foreground">Alta rápida de una nueva OC.</p>
+            {activeSection === "Crear pedido" && canCreatePedido && <section className="space-y-6">
+              <section id="crear-pedido" className="rounded-md border bg-card shadow-command">
+                <div className="border-b p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-10 w-10 place-items-center rounded-md bg-command-gradient text-primary-foreground">
+                      <FilePlus2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Crear pedido</h3>
+                      <p className="text-sm text-muted-foreground">Alta completa de una nueva OC.</p>
+                    </div>
                   </div>
                 </div>
-                <form className="space-y-4" onSubmit={createOrder}>
-                  <div className="space-y-2">
-                    <Label htmlFor="supplier">Proveedor</Label>
-                    <select id="supplier" value={form.supplierId} onChange={(event) => setForm({ ...form, supplierId: event.target.value })} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                      {suppliers.map((supplier) => <option key={supplier.id || supplier.nombre} value={supplier.id}>{supplier.nombre}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-3 border-t pt-4">
-                    <h4 className="font-semibold">Paso 1 · Requeridos</h4>
+                <form className="space-y-5 p-5" onSubmit={createOrder}>
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="font-semibold">Ítems</h4>
+                      <p className="text-sm text-muted-foreground">Descripción, cantidad, unidad, moneda y precio si está disponible.</p>
+                    </div>
                     {itemForms.map((item, index) => (
                       <div key={index} className="space-y-3 rounded-md border bg-surface-subtle p-3">
-                        <div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Ítem {index + 1}</p><Button type="button" size="icon" variant="ghost" onClick={() => removeItemForm(index)} disabled={itemForms.length === 1}><Trash2 className="h-4 w-4" /></Button></div>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                          <div className="space-y-2"><Label>descripcion</Label><Input ref={(element) => { itemDescriptionRefs.current[`create-${index}`] = element; }} value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
-                          <div className="space-y-2"><Label>moneda</Label><Input value={item.moneda} onChange={(event) => updateItemForm(index, "moneda", event.target.value)} placeholder="ARS" /></div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">Ítem {index + 1}</p>
+                          <Button type="button" size="icon" variant="ghost" onClick={() => removeItemForm(index)} disabled={itemForms.length === 1} aria-label={`Quitar ítem ${index + 1}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="space-y-2"><Label htmlFor={`descripcion-${index}`}>Descripción</Label><Input id={`descripcion-${index}`} ref={(element) => { itemDescriptionRefs.current[`create-${index}`] = element; }} value={item.descripcion} onChange={(event) => updateItemForm(index, "descripcion", event.target.value)} required /></div>
+                          <div className="grid gap-3 md:grid-cols-4">
+                            <div className="space-y-2"><Label htmlFor={`cantidad-${index}`}>Cantidad</Label><Input id={`cantidad-${index}`} type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateItemForm(index, "cantidadPedida", event.target.value)} required /></div>
+                            <div className="space-y-2"><Label htmlFor={`unidad-${index}`}>Unidad</Label><Input id={`unidad-${index}`} value={item.unidad} onChange={(event) => updateItemForm(index, "unidad", event.target.value)} required /></div>
+                            <div className="space-y-2"><Label htmlFor={`precio-unitario-${index}`}>Precio unitario</Label><Input id={`precio-unitario-${index}`} type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} /></div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`moneda-${index}`}>Moneda</Label>
+                              <Select value={item.moneda} onValueChange={(value) => updateItemForm(index, "moneda", value)}>
+                                <SelectTrigger id={`moneda-${index}`}>
+                                  <SelectValue placeholder="Moneda" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="ARS">ARS</SelectItem>
+                                  <SelectItem value="USD">USD</SelectItem>
+                                  <SelectItem value="EUR">EUR</SelectItem>
+                                  <SelectItem value="CLP">CLP</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
                     <Button type="button" size="sm" variant="outline" onClick={addItemForm}><Plus className="h-4 w-4" />Agregar ítem</Button>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                      <div className="space-y-2"><Label htmlFor="cliente">cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
-                      <div className="space-y-2"><Label htmlFor="vendedor">vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
-                      <div className="space-y-2"><Label htmlFor="plazo-cliente">plazo_entrega_cliente</Label><Input id="plazo-cliente" value={form.plazoEntregaCliente} onChange={(event) => setForm({ ...form, plazoEntregaCliente: event.target.value })} required /></div>
+                  </div>
+
+                  <div className="space-y-4 border-t pt-5">
+                    <div>
+                      <h4 className="font-semibold">Cliente y entrega</h4>
+                      <p className="text-sm text-muted-foreground">Datos mínimos para seguimiento.</p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="space-y-2"><Label htmlFor="cliente">Cliente</Label><Input id="cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} required /></div>
+                      <div className="space-y-2"><Label htmlFor="vendedor">Vendedor</Label><Input id="vendedor" value={form.vendedor} onChange={(event) => setForm({ ...form, vendedor: event.target.value })} required /></div>
+                      <div className="space-y-2"><Label htmlFor="plazo-cliente">Plazo cliente</Label><Input id="plazo-cliente" value={form.plazoEntregaCliente} onChange={(event) => setForm({ ...form, plazoEntregaCliente: event.target.value })} required /></div>
+                      <div className="space-y-2"><Label htmlFor="fecha-estimada">Fecha estimada</Label><Input id="fecha-estimada" type="date" value={form.fechaEstimadaEntrega} onChange={(event) => setForm({ ...form, fechaEstimadaEntrega: event.target.value })} /></div>
                     </div>
                   </div>
 
                   <details className="rounded-md border bg-surface-subtle p-3">
-                    <summary className="cursor-pointer font-semibold">Paso 2 · Opcionales</summary>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                      {itemForms.map((item, index) => (
-                        <div className="space-y-2" key={`costo-${index}`}><Label htmlFor={`costo-unitario-${index}`}>costo_unitario {itemForms.length > 1 ? `ítem ${index + 1}` : ""}</Label><Input id={`costo-unitario-${index}`} type="number" min="0" step="0.01" value={item.costoUnitario} onChange={(event) => updateItemForm(index, "costoUnitario", event.target.value)} /></div>
-                      ))}
-                      <div className="space-y-2"><Label htmlFor="numero-oc-cliente">numero_oc_cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor="plazo-proveedor">plazo_entrega_proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">numero_oc_qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value, estado: event.target.value.trim() && form.estado === "pedido_cargado" ? "en_curso" : form.estado })} /></div>
+                    <summary className="cursor-pointer font-semibold">Opcionales</summary>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <div className="space-y-2">
-                        <Label htmlFor="estado">estado</Label>
-                        <select id="estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                          {pedidoEstados.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
-                        </select>
+                        <Label htmlFor="supplier">Proveedor</Label>
+                        <Select value={form.supplierId || "sin-proveedor"} onValueChange={(value) => setForm({ ...form, supplierId: value === "sin-proveedor" ? "" : value })}>
+                          <SelectTrigger id="supplier">
+                            <SelectValue placeholder="Sin proveedor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sin-proveedor">Sin proveedor</SelectItem>
+                            {suppliers.map((supplier) => <SelectItem key={supplier.id || supplier.nombre} value={supplier.id || supplier.nombre}>{supplier.nombre}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="space-y-2 md:col-span-2 xl:col-span-1"><Label htmlFor="observaciones">observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor="condiciones-pago">condiciones_pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-cliente">N° OC cliente</Label><Input id="numero-oc-cliente" value={form.numeroOcCliente} onChange={(event) => setForm({ ...form, numeroOcCliente: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="plazo-proveedor">Plazo proveedor</Label><Input id="plazo-proveedor" value={form.plazoEntregaProveedor} onChange={(event) => setForm({ ...form, plazoEntregaProveedor: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="numero-oc-qubigo">N° OC Qubigo</Label><Input id="numero-oc-qubigo" value={form.numeroOcQubigo} onChange={(event) => setForm({ ...form, numeroOcQubigo: event.target.value, estado: event.target.value.trim() && form.estado === "pedido_cargado" ? "en_curso" : form.estado })} /></div>
+                      <div className="space-y-2">
+                        <Label htmlFor="estado">Estado</Label>
+                        <Select value={form.estado} onValueChange={(value) => setForm({ ...form, estado: value })}>
+                          <SelectTrigger id="estado">
+                            <SelectValue placeholder="Estado" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pedidoEstados.map((estado) => <SelectItem key={estado} value={estado}>{estado}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2 md:col-span-2 xl:col-span-4"><Label htmlFor="observaciones">Observaciones</Label><Textarea id="observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor="condiciones-pago">Condiciones de pago</Label><Input id="condiciones-pago" value={form.condicionesPago} onChange={(event) => setForm({ ...form, condicionesPago: event.target.value })} /></div>
                     </div>
                   </details>
 
@@ -1859,7 +2433,7 @@ Equipo NORFER`;
                   ))}
                 </div>
               </section>
-            </aside>}
+            </section>}
             {activeSection === "Proveedores" && (
               <section className="space-y-6">
                 <div className="rounded-md border bg-card shadow-command">
@@ -1924,8 +2498,49 @@ Equipo NORFER`;
                           </div>
                         </>
                       )}
+                      <Button type="button" variant="outline" onClick={exportReportExcel}>
+                        <Download className="h-4 w-4" />
+                        Excel
+                      </Button>
+                      <Button type="button" variant="outline" onClick={exportReportPdf}>
+                        <Printer className="h-4 w-4" />
+                        PDF
+                      </Button>
                     </div>
                   </div>
+                </div>
+                <div className="rounded-md border bg-card p-5 shadow-command">
+                  <h3 className="font-semibold">Contenido del informe</h3>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    {[
+                      ["estados", "Pedidos por estado"],
+                      ["cotizaciones", "Cotizaciones por ítem"],
+                      ["pedidos", "Listado de pedidos"],
+                      ["proveedores", "Total por proveedor"],
+                      ["alertas", "Alertas activas"],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 rounded-md border bg-surface-subtle px-3 py-2 text-sm font-medium">
+                        <input
+                          type="checkbox"
+                          checked={reportSections[key as keyof typeof reportSections]}
+                          onChange={(event) => setReportSections((current) => ({ ...current, [key]: event.target.checked }))}
+                          className="h-4 w-4"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {reportKpiRows.map((item) => (
+                    <div key={item.label} className="rounded-md border bg-card p-5 shadow-command">
+                      <h3 className="text-sm font-semibold text-muted-foreground">{item.label}</h3>
+                      <div className="mt-4 flex items-end justify-between gap-3">
+                        <p className="text-4xl font-semibold">{item.quantity}</p>
+                        <span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-sm font-semibold">{item.percent}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <div className="grid gap-6 lg:grid-cols-2">
                   <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
@@ -1995,6 +2610,35 @@ Equipo NORFER`;
             <Button type="button" variant="outline" onClick={() => setIsSellerMessageOpen(false)}>Cerrar</Button>
             <Button type="button" variant="command" onClick={copySellerMessage}>Copiar mensaje</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!novedadesDialogOrderId} onOpenChange={(open) => !open && setNovedadesDialogOrderId(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Novedades del pedido</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const order = orders.find((item) => String(item.id) === String(novedadesDialogOrderId));
+            const novedades = allPedidoNovedades.filter((item) => String(item.pedido_id) === String(novedadesDialogOrderId));
+            return (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">{order ? `${order.supplier} · OC ${order.ocNumber || "-"} · Pedido ${order.orderNumber}` : "Pedido seleccionado"}</p>
+                <div className="max-h-[420px] space-y-3 overflow-y-auto">
+                  {novedades.map((novedad) => (
+                    <div key={novedad.id} className="rounded-md border bg-surface-subtle p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-md border bg-card px-2 py-0.5 text-xs font-semibold">{novedad.tipo || "general"}</span>
+                        {novedad.visible_vendedor && <span className="rounded-md border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-semibold text-success">visible vendedor</span>}
+                        <span className="text-xs text-muted-foreground">{formatDate((novedad.created_at || "").slice(0, 10))} · {novedad.created_by || "-"}</span>
+                      </div>
+                      <p className="mt-2 text-sm">{novedad.mensaje}</p>
+                    </div>
+                  ))}
+                  {novedades.length === 0 && <p className="rounded-md border bg-surface-subtle p-3 text-sm text-muted-foreground">Sin novedades cargadas.</p>}
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </main>
