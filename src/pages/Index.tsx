@@ -148,11 +148,15 @@ type NotaCreditoForm = {
   motivo: string;
   vendedor: string;
   obs: string;
+  observaciones: string;
+  estado: string;
+};
+
+type NotaCreditoCierreForm = {
   fechaGeneradaNc: string;
   numeroNc: string;
   realizo: string;
   observaciones: string;
-  estado: string;
 };
 
 type PedidoForm = {
@@ -518,12 +522,10 @@ const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   motivo: "",
   vendedor: "",
   obs: "",
-  fechaGeneradaNc: "",
-  numeroNc: "",
-  realizo: "",
   observaciones: "",
   estado: "pendiente",
 });
+const createEmptyNotaCreditoCierreForm = (): NotaCreditoCierreForm => ({ fechaGeneradaNc: today(), numeroNc: "", realizo: "", observaciones: "" });
 
 const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
@@ -631,7 +633,10 @@ const Index = () => {
   const [clientesNc, setClientesNc] = useState<ClienteNc[]>([]);
   const [notasCredito, setNotasCredito] = useState<NotaCredito[]>([]);
   const [notaCreditoForm, setNotaCreditoForm] = useState<NotaCreditoForm>(() => createEmptyNotaCreditoForm());
+  const [notaCreditoCierreForm, setNotaCreditoCierreForm] = useState<NotaCreditoCierreForm>(() => createEmptyNotaCreditoCierreForm());
+  const [notaCreditoCierreId, setNotaCreditoCierreId] = useState<string | null>(null);
   const [isSavingNotaCredito, setIsSavingNotaCredito] = useState(false);
+  const [isSavingNotaCreditoCierre, setIsSavingNotaCreditoCierre] = useState(false);
   const [notaCreditoQuery, setNotaCreditoQuery] = useState("");
   const [notaCreditoEstadoFilter, setNotaCreditoEstadoFilter] = useState("todos");
   const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
@@ -1949,11 +1954,11 @@ Equipo NORFER`;
       motivo: optionalValue(notaCreditoForm.motivo),
       vendedor: optionalValue(notaCreditoForm.vendedor),
       obs: optionalValue(notaCreditoForm.obs),
-      fecha_generada_nc: optionalDateValue(notaCreditoForm.fechaGeneradaNc),
-      numero_nc: optionalValue(notaCreditoForm.numeroNc),
-      realizo: optionalValue(notaCreditoForm.realizo) || currentUserProfile?.nombre || userEmail,
+      fecha_generada_nc: null,
+      numero_nc: null,
+      realizo: null,
       observaciones: optionalValue(observaciones),
-      estado: optionalValue(notaCreditoForm.numeroNc) ? "generada" : notaCreditoForm.estado,
+      estado: "pendiente",
     };
 
     if (isPreviewMode) {
@@ -1973,6 +1978,47 @@ Equipo NORFER`;
     if (data) setNotasCredito((current) => [data as any, ...current]);
     setNotaCreditoForm(createEmptyNotaCreditoForm());
     toast({ title: "Pedido de NC guardado", description: cliente ? "Cliente completado automáticamente." : "El código quedó registrado en observaciones." });
+  };
+
+  const openNotaCreditoCierre = (nota: NotaCredito) => {
+    setNotaCreditoCierreId(nota.id);
+    setNotaCreditoCierreForm({
+      fechaGeneradaNc: safeDateForDisplay(nota.fecha_generada_nc) || today(),
+      numeroNc: nota.numero_nc || "",
+      realizo: nota.realizo || currentUserProfile?.nombre || "",
+      observaciones: nota.observaciones || "",
+    });
+  };
+
+  const saveNotaCreditoCierre = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!notaCreditoCierreId || !safeText(notaCreditoCierreForm.numeroNc) || !safeText(notaCreditoCierreForm.realizo)) return;
+    setIsSavingNotaCreditoCierre(true);
+    const payload = {
+      fecha_generada_nc: optionalDateValue(notaCreditoCierreForm.fechaGeneradaNc) || today(),
+      numero_nc: safeText(notaCreditoCierreForm.numeroNc),
+      realizo: safeText(notaCreditoCierreForm.realizo),
+      observaciones: optionalValue(notaCreditoCierreForm.observaciones),
+      estado: "generada",
+    };
+
+    if (isPreviewMode) {
+      setNotasCredito((current) => current.map((nota) => nota.id === notaCreditoCierreId ? { ...nota, ...payload } : nota));
+      setNotaCreditoCierreId(null);
+      setIsSavingNotaCreditoCierre(false);
+      toast({ title: "NC completada en preview" });
+      return;
+    }
+
+    const { data, error } = await supabase.from("notas_credito" as any).update(payload).eq("id", notaCreditoCierreId).select("*").maybeSingle();
+    setIsSavingNotaCreditoCierre(false);
+    if (error) {
+      toast({ title: "No se pudo completar la NC", description: error.message, variant: "destructive" });
+      return;
+    }
+    if (data) setNotasCredito((current) => current.map((nota) => nota.id === notaCreditoCierreId ? data as any : nota));
+    setNotaCreditoCierreId(null);
+    toast({ title: "NC completada", description: "La solicitud quedó marcada como generada." });
   };
 
   return (
@@ -2692,11 +2738,8 @@ Equipo NORFER`;
                     <div className="space-y-2"><Label htmlFor="nc-moneda">Moneda</Label><Input id="nc-moneda" value={notaCreditoForm.moneda} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, moneda: event.target.value })} /></div>
                     <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-motivo">Motivo</Label><Input id="nc-motivo" value={notaCreditoForm.motivo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, motivo: event.target.value })} /></div>
                     <div className="space-y-2"><Label htmlFor="nc-vendedor">Vendedor</Label><Input id="nc-vendedor" value={notaCreditoForm.vendedor} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, vendedor: event.target.value })} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-realizo">Realizó</Label><Input id="nc-realizo" value={notaCreditoForm.realizo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, realizo: event.target.value })} placeholder={currentUserProfile?.nombre || ""} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-fecha-generada">Fecha generada NC</Label><Input id="nc-fecha-generada" type="date" value={notaCreditoForm.fechaGeneradaNc} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaGeneradaNc: event.target.value })} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-numero">N° NC</Label><Input id="nc-numero" value={notaCreditoForm.numeroNc} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, numeroNc: event.target.value, estado: event.target.value.trim() ? "generada" : notaCreditoForm.estado })} /></div>
                     <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-obs">OBS</Label><Input id="nc-obs" value={notaCreditoForm.obs} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, obs: event.target.value })} /></div>
-                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-observaciones">Observaciones</Label><Textarea id="nc-observaciones" value={notaCreditoForm.observaciones} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, observaciones: event.target.value })} /></div>
+                    <div className="space-y-2 xl:col-span-3"><Label htmlFor="nc-observaciones">Observaciones</Label><Textarea id="nc-observaciones" value={notaCreditoForm.observaciones} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, observaciones: event.target.value })} /></div>
                     <div className="flex items-end"><Button type="submit" variant="command" disabled={isSavingNotaCredito}><CheckCircle2 className="h-4 w-4" />{isSavingNotaCredito ? "Guardando..." : "Guardar pedido NC"}</Button></div>
                   </form>
                 </section>
@@ -2717,10 +2760,10 @@ Equipo NORFER`;
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[1100px] text-left text-sm">
-                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Estado</th></tr></thead>
+                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Realizó</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Acción</th></tr></thead>
                       <tbody className="divide-y">
-                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td></tr>)}
-                        {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={10}>No hay notas de crédito para mostrar.</td></tr>}
+                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4">{nota.realizo || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td><td className="px-5 py-4">{isAdminRole && nota.estado !== "generada" ? <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoCierre(nota)}>Completar NC</Button> : "-"}</td></tr>)}
+                        {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={12}>No hay notas de crédito para mostrar.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -2912,6 +2955,38 @@ Equipo NORFER`;
               </div>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!notaCreditoCierreId} onOpenChange={(open) => !open && setNotaCreditoCierreId(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Completar nota de crédito</DialogTitle>
+          </DialogHeader>
+          <form className="grid gap-4" onSubmit={saveNotaCreditoCierre}>
+            <div className="space-y-2">
+              <Label htmlFor="nc-cierre-fecha">Fecha generada NC</Label>
+              <Input id="nc-cierre-fecha" type="date" value={notaCreditoCierreForm.fechaGeneradaNc} onChange={(event) => setNotaCreditoCierreForm({ ...notaCreditoCierreForm, fechaGeneradaNc: event.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc-cierre-numero">N° NC</Label>
+              <Input id="nc-cierre-numero" value={notaCreditoCierreForm.numeroNc} onChange={(event) => setNotaCreditoCierreForm({ ...notaCreditoCierreForm, numeroNc: event.target.value })} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc-cierre-realizo">Realizó</Label>
+              <select id="nc-cierre-realizo" value={notaCreditoCierreForm.realizo} onChange={(event) => setNotaCreditoCierreForm({ ...notaCreditoCierreForm, realizo: event.target.value })} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" required>
+                <option value="">Seleccionar</option>
+                {["SEBASTIAN", "VANESA", "FABIAN", "ESTEBAN", "NICOLAS"].map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc-cierre-observaciones">Observaciones</Label>
+              <Textarea id="nc-cierre-observaciones" value={notaCreditoCierreForm.observaciones} onChange={(event) => setNotaCreditoCierreForm({ ...notaCreditoCierreForm, observaciones: event.target.value })} />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setNotaCreditoCierreId(null)}>Cancelar</Button>
+              <Button type="submit" variant="command" disabled={isSavingNotaCreditoCierre}>{isSavingNotaCreditoCierre ? "Guardando..." : "Guardar NC"}</Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
       <Dialog open={isSellerMessageOpen} onOpenChange={setIsSellerMessageOpen}>
