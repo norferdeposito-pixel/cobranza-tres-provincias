@@ -693,7 +693,7 @@ const Index = () => {
   const canSeeProveedores = isAdminRole;
   const canSeeUsuarios = isAdminRole;
   const canSeeNotasCredito = isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol);
-  const canCreatePedido = isAdminRole || isVendedor;
+  const canCreatePedido = isAdminRole || isVendedor || isDeposito;
   const canSendMessages = isAdminRole || isDeposito;
   const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
   const currentSeller = currentUserProfile?.nombre || "María";
