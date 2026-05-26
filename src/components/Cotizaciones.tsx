@@ -161,6 +161,9 @@ export const Cotizaciones = () => {
     });
   }, [items, cotsByItem, filterMonth, filterYear, statusFilter]);
 
+  const editingItem = editing ? items.find((row) => row.id === editing.itemId) : null;
+  const editingMeta = editingItem ? getPedidoMeta(editingItem) : null;
+
   const openNew = (itemId: string) => {
     setEditing({ itemId, cotId: null });
     setForm(emptyForm());
@@ -548,6 +551,15 @@ export const Cotizaciones = () => {
             <DialogTitle>{editing?.cotId ? "Editar cotización" : "Nueva cotización"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={saveCotizacion} className="space-y-3">
+            {editingItem && (
+              <div className="rounded-md border bg-muted/35 px-3 py-2">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Articulo a cotizar</p>
+                <p className="mt-1 text-sm font-semibold">{editingItem.descripcion?.trim() || editingItem.cod_articulo?.trim() || "Articulo sin descripcion"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {editingItem.cantidad_pedida} {editingItem.unidad || "u"} · Pedido {editingMeta?.numeroPedido || "-"} · Cliente: {editingMeta?.cliente || "-"}
+                </p>
+              </div>
+            )}
             <div className="space-y-1">
               <Label>Proveedor *</Label>
               <select required value={form.proveedor_id} onChange={(e) => setForm({ ...form, proveedor_id: e.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
