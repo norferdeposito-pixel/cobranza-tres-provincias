@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, Menu, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2, UserPlus } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -697,6 +697,18 @@ const Index = () => {
   const canSendMessages = isAdminRole || isDeposito;
   const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
   const currentSeller = currentUserProfile?.nombre || "María";
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.label === "Alertas") return canSeeAlertas;
+    if (item.label === "Reportes") return canSeeReportes;
+    if (item.label === "Crear pedido") return canCreatePedido;
+    if (item.label === "Notas de crédito") return canSeeNotasCredito;
+    if (item.label === "Proveedores") return canSeeProveedores;
+    if (item.label === "Usuarios") return canSeeUsuarios;
+    if (item.label === "Cotizaciones") return canSeeCotizaciones;
+    if (item.label === "Dashboard") return isAdminRole;
+    if (item.label === "Pedidos") return canSeePedidos;
+    return true;
+  });
 
   useEffect(() => {
     const loadOrders = async (preferredOrderId?: string | null) => {
@@ -2087,18 +2099,7 @@ Equipo NORFER`;
             </div>
           </div>
           <nav className="space-y-2 p-4">
-            {navItems.filter((item) => {
-              if (item.label === "Alertas") return canSeeAlertas;
-              if (item.label === "Reportes") return canSeeReportes;
-              if (item.label === "Crear pedido") return canCreatePedido;
-              if (item.label === "Notas de crédito") return canSeeNotasCredito;
-              if (item.label === "Proveedores") return canSeeProveedores;
-              if (item.label === "Usuarios") return canSeeUsuarios;
-              if (item.label === "Cotizaciones") return canSeeCotizaciones;
-              if (item.label === "Dashboard") return isAdminRole;
-              if (item.label === "Pedidos") return canSeePedidos;
-              return true;
-            }).map((item, index) => (
+            {visibleNavItems.map((item, index) => (
               <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
@@ -2120,7 +2121,7 @@ Equipo NORFER`;
                 <p className="text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
                 <h2 className="mt-1 text-2xl font-semibold md:text-3xl">{activeSection}</h2>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 {(currentUserProfile?.nombre || userEmail) && (
                   <div className="hidden text-right text-xs text-muted-foreground md:block">
                     <p className="font-medium text-foreground">{currentUserProfile?.nombre || userEmail}</p>
@@ -2128,20 +2129,31 @@ Equipo NORFER`;
                   </div>
                 )}
                 {canCreatePedido && (
-                  <Button variant="command" onClick={() => setActiveSection("Crear pedido")}>
+                  <Button className="w-full sm:w-auto" variant="command" onClick={() => setActiveSection("Crear pedido")}>
                     <FilePlus2 className="h-4 w-4" />
                     Nuevo pedido
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => signOut()}>
+                <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => signOut()}>
                   <LogOut className="h-4 w-4" />
                   Cerrar sesión
                 </Button>
               </div>
             </div>
+            <div className="mt-4 grid gap-2 lg:hidden">
+              <Label htmlFor="mobile-section" className="flex items-center gap-2 text-xs uppercase text-muted-foreground">
+                <Menu className="h-4 w-4" />
+                Módulo
+              </Label>
+              <select id="mobile-section" value={activeSection} onChange={(event) => setActiveSection(event.target.value)} className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                {visibleNavItems.map((item) => (
+                  <option key={item.label} value={item.label}>{item.label}</option>
+                ))}
+              </select>
+            </div>
           </header>
 
-          <div className="grid gap-6 p-5 md:p-8">
+          <div className="grid gap-6 p-3 sm:p-5 md:p-8">
             <div id="panel-operativo" className="space-y-6">
               {activeSection === "Dashboard" && (
                 <>

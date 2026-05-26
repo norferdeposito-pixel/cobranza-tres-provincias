@@ -568,7 +568,7 @@ export const Cotizaciones = () => {
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Costo unitario *</Label>
                 <Input required type="number" step="0.01" value={form.costo_unitario} onChange={(e) => setForm({ ...form, costo_unitario: e.target.value })} />
@@ -582,7 +582,7 @@ export const Cotizaciones = () => {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Plazo entrega (días) *</Label>
                 <Input required type="number" value={form.plazo_entrega_dias} onChange={(e) => setForm({ ...form, plazo_entrega_dias: e.target.value })} />
@@ -600,9 +600,9 @@ export const Cotizaciones = () => {
               <Label>Observaciones</Label>
               <Textarea value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={closeDialog}>Cancelar</Button>
-              <Button type="submit" variant="command" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button>
+            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+              <Button className="w-full sm:w-auto" type="button" variant="ghost" onClick={closeDialog}>Cancelar</Button>
+              <Button className="w-full sm:w-auto" type="submit" variant="command" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button>
             </div>
           </form>
         </DialogContent>
