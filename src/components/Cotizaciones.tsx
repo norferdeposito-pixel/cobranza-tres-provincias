@@ -271,48 +271,125 @@ export const Cotizaciones = () => {
     }
     const meta = getPedidoMeta(item);
     const proveedorElegido = getProveedorNombre(elegida, suppliers);
-    const detalleItem = item.descripcion?.trim() || item.cod_articulo?.trim() || "Articulo sin descripcion";
-    const observacionCotizacion = [
-      "Cotizacion enviada a pedido.",
-      `Item: ${detalleItem}.`,
-      `Proveedor elegido: ${proveedorElegido}.`,
-      elegida.observaciones ? `Obs. cotizacion: ${elegida.observaciones}` : "",
-    ].filter(Boolean).join(" ");
-    const { data: pedidoActual } = await supabase
-      .from("pedidos")
-      .select("observaciones")
-      .eq("id", item.pedido_id)
-      .maybeSingle();
+
+    if (item.estado_cotizacion === "enviado_a_pedido") {
+      const detalleItem = item.descripcion?.trim() || item.cod_articulo?.trim() || "Articulo sin descripcion";
+      const observacionCotizacion = [
+        "Cotizacion enviada a pedido.",
+        `Item: ${detalleItem}.`,
+        `Proveedor elegido: ${proveedorElegido}.`,
+        elegida.observaciones ? `Obs. cotizacion: ${elegida.observaciones}` : "",
+      ].filter(Boolean).join(" ");
+      const { data: pedidoActual } = await supabase
+        .from("pedidos")
+        .select("observaciones")
+        .eq("id", item.pedido_id)
+        .maybeSingle();
+      const observacionesPedido = [
+        (pedidoActual as any)?.observaciones || "",
+        observacionCotizacion,
+      ].filter(Boolean).join("\n");
+      const { error: pedidoError } = await supabase
+        .from("pedidos")
+        .update({
+          proveedor_id: elegida.proveedor_id,
+          plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} dias` : null,
+          condiciones_pago: elegida.condicion_pago,
+          observaciones: observacionesPedido,
+        })
+        .eq("id", item.pedido_id);
+      if (pedidoError) {
+        toast({ title: "Error al actualizar pedido", description: pedidoError.message, variant: "destructive" });
+        return;
+      }
+      const { error: itemError } = await supabase
+        .from("pedido_items")
+        .update({
+          costo_unitario: elegida.costo_unitario,
+          moneda: elegida.moneda || "ARS",
+          estado_cotizacion: "enviado_a_pedido",
+        } as any)
+        .eq("id", item.id);
+      if (itemError) {
+        toast({ title: "Error al actualizar item", description: itemError.message, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Pedido actualizado", description: `Se actualizo el pedido ${meta.numeroPedido}.` });
+      await loadAll();
+      return;
+    }
+
+    const getElegida = (row: ItemRow) => (cotsByItem.get(row.id) || []).find((cot) => cot.elegida);
+    const itemsAgrupados = items.filter((row) => {
+      if (row.pedido_id !== item.pedido_id) return false;
+      if (row.estado_cotizacion === "enviado_a_pedido") return false;
+      const elegidaRow = getElegida(row);
+      return elegidaRow?.proveedor_id === elegida.proveedor_id;
+    });
+    const itemsParaPedido = itemsAgrupados.length > 0 ? itemsAgrupados : [item];
+    const numero = `COT-${Date.now().toString().slice(-6)}`;
     const observacionesPedido = [
-      (pedidoActual as any)?.observaciones || "",
-      observacionCotizacion,
-    ].filter(Boolean).join("\n");
-    const { error: pedidoError } = await supabase
+      `Pedido creado desde cotizaciones. Pedido origen: ${meta.numeroPedido}.`,
+      `Proveedor elegido: ${proveedorElegido}.`,
+      `Items incluidos: ${itemsParaPedido.map((row) => row.descripcion?.trim() || row.cod_articulo?.trim() || "Articulo sin descripcion").join("; ")}.`,
+    ].join("\n");
+    const { data: pedido, error: pedidoError } = await supabase
       .from("pedidos")
-      .update({
+      .insert({
+        fecha: today(),
+        numero_pedido: numero,
         proveedor_id: elegida.proveedor_id,
+        cliente: meta.cliente !== "-" ? meta.cliente : "",
+        vendedor: meta.vendedor !== "-" ? meta.vendedor : "",
+        plazo_entrega_cliente: "",
         plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} dias` : null,
         condiciones_pago: elegida.condicion_pago,
         observaciones: observacionesPedido,
+        estado: "pedido_cargado",
       })
-      .eq("id", item.pedido_id);
+      .select("id")
+      .maybeSingle();
     if (pedidoError) {
-      toast({ title: "Error al actualizar pedido", description: pedidoError.message, variant: "destructive" });
+      toast({ title: "Error al crear pedido", description: pedidoError.message, variant: "destructive" });
       return;
     }
+    const nuevoPedidoId = (pedido as any)?.id;
+    if (!nuevoPedidoId) {
+      toast({ title: "Error al crear pedido", description: "No se pudo obtener el pedido creado.", variant: "destructive" });
+      return;
+    }
+    const itemsInsert = itemsParaPedido.map((row) => {
+      const cot = getElegida(row) || elegida;
+      return {
+        pedido_id: nuevoPedidoId,
+        descripcion: row.descripcion?.trim() || row.cod_articulo?.trim() || "Articulo sin descripcion",
+        cantidad_pedida: row.cantidad_pedida,
+        cantidad_recibida: 0,
+        cantidad_pendiente: row.cantidad_pedida,
+        unidad: row.unidad,
+        cod_articulo: row.cod_articulo,
+        costo_unitario: cot.costo_unitario,
+        moneda: cot.moneda || "ARS",
+        estado_entrega: "pendiente",
+      };
+    });
+    const { error: insertItemsError } = await supabase.from("pedido_items").insert(itemsInsert as any);
+    if (insertItemsError) {
+      toast({ title: "Error al copiar items", description: insertItemsError.message, variant: "destructive" });
+      return;
+    }
+    const idsAgrupados = itemsParaPedido.map((row) => row.id);
     const { error: itemError } = await supabase
       .from("pedido_items")
       .update({
-        costo_unitario: elegida.costo_unitario,
-        moneda: elegida.moneda || "ARS",
         estado_cotizacion: "enviado_a_pedido",
       } as any)
-      .eq("id", item.id);
+      .in("id", idsAgrupados);
     if (itemError) {
-      toast({ title: "Error al actualizar item", description: itemError.message, variant: "destructive" });
+      toast({ title: "Pedido creado con aviso", description: itemError.message, variant: "destructive" });
       return;
     }
-    toast({ title: "Cotizacion enviada al pedido", description: `Se actualizo el pedido ${meta.numeroPedido}.` });
+    toast({ title: "Pedido agrupado creado", description: `${itemsParaPedido.length} item(s) para ${proveedorElegido}. Pedido ${numero}.` });
     await loadAll();
   };
 
