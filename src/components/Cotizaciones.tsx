@@ -392,6 +392,7 @@ export const Cotizaciones = () => {
       toast({ title: "Pedido creado con aviso", description: itemError.message, variant: "destructive" });
       return;
     }
+    window.dispatchEvent(new CustomEvent("pedidos:refresh", { detail: { pedidoId: nuevoPedidoId } }));
     toast({ title: "Pedido agrupado creado", description: `${itemsParaPedido.length} item(s) para ${proveedorElegido}. Pedido ${numero}.` });
     await loadAll();
   };

@@ -699,7 +699,7 @@ const Index = () => {
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
-    const loadOrders = async () => {
+    const loadOrders = async (preferredOrderId?: string | null) => {
       const [{ data: suppliersData, error: suppliersError }, { data, error }, { data: alertasData, error: alertasError }, { data: alertasListData, error: alertasListError }, { data: totalsData, error: totalsError },
         { data: recepcionesData, error: recepcionesError }, { data: itemProgressData, error: itemProgressError }, { data: cotizacionesReportData, error: cotizacionesReportError }, { data: novedadesListData }] = await Promise.all([
         supabase.from("proveedores").select("id, nombre, email, telefono, condicion_pago, plazo_promedio_dias").eq("activo", true).order("nombre", { ascending: true }),
@@ -759,7 +759,7 @@ const Index = () => {
         setReportCotizaciones([]);
         setPurchaseTotalsBySupplier([]);
         setDashboardAlertasCount(demoAlertas.filter((alerta) => !isClosedAlerta(alerta.estado) && isUpcomingDueDate(alerta.fechaAviso)).length);
-        setSelectedOrderId(initialOrders[0]?.id || null);
+        setSelectedOrderId(preferredOrderId || initialOrders[0]?.id || null);
         setIsLoading(false);
         return;
       }
@@ -791,7 +791,7 @@ const Index = () => {
       });
       setPurchaseTotalsBySupplier(Array.from(totalsMap.values()).sort((a, b) => b.total - a.total));
       setDashboardAlertasCount(mappedAlertas.filter((alerta) => !isClosedAlerta(alerta.estado) && isUpcomingDueDate(alerta.fechaAviso)).length);
-      setSelectedOrderId(mappedOrders[0]?.id || null);
+      setSelectedOrderId(preferredOrderId && mappedOrders.some((order) => order.id === preferredOrderId) ? preferredOrderId : mappedOrders[0]?.id || null);
       setIsLoading(false);
     };
 
@@ -806,8 +806,16 @@ const Index = () => {
       }
     };
 
+    const refreshPedidos = (event: Event) => {
+      const pedidoId = (event as CustomEvent<{ pedidoId?: string }>).detail?.pedidoId || null;
+      loadOrders(pedidoId);
+    };
+
+    window.addEventListener("pedidos:refresh", refreshPedidos);
     loadOrders();
     loadClientes();
+
+    return () => window.removeEventListener("pedidos:refresh", refreshPedidos);
   }, []);
 
   useEffect(() => {
@@ -2350,6 +2358,7 @@ Equipo NORFER`;
                       <tr>
                         <th className="px-5 py-3 font-semibold">Proveedor</th>
                         <th className="px-5 py-3 font-semibold">Estado</th>
+                        <th className="px-5 py-3 font-semibold">N° pedido</th>
                         <th className="px-5 py-3 font-semibold">numero_oc_qubigo</th>
                         <th className="px-5 py-3 font-semibold">fecha_estimada_entrega</th>
                         <th className="px-5 py-3 font-semibold">Novedad</th>
@@ -2362,6 +2371,7 @@ Equipo NORFER`;
                           <tr key={order.id} onClick={() => setSelectedOrderId(order.id)} className={`cursor-pointer transition hover:bg-surface-subtle/70 ${selectedOrderId === order.id ? "bg-surface-subtle" : ""}`}>
                             <td className="px-5 py-4">{order.supplier}</td>
                             <td className="px-5 py-4"><span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente sin OC" : order.rawStatus}</span></td>
+                            <td className="px-5 py-4 font-semibold">{order.orderNumber}</td>
                             <td className="px-5 py-4 font-medium text-primary">{order.ocNumber}</td>
                             <td className="px-5 py-4">{formatDate(order.eta)}</td>
                             <td className="max-w-[320px] px-5 py-4 text-sm">
@@ -2379,7 +2389,7 @@ Equipo NORFER`;
                       })}
                       {!isLoading && filteredOrders.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={5}>No hay pedidos para mostrar.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={6}>No hay pedidos para mostrar.</td>
                         </tr>
                       )}
                     </tbody>
