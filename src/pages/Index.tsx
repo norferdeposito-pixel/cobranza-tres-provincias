@@ -512,7 +512,7 @@ const createEmptyItemForm = (): PedidoItemForm => ({
 });
 
 const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
-const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "vendedor" });
+const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "comercial" });
 const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   fechaCarga: today(),
   codigoCliente: "",
@@ -667,21 +667,28 @@ const Index = () => {
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const { currentUserProfile, email: userEmail, signOut } = useCurrentUserProfile();
   const userRol = (currentUserProfile?.rol || "").toLowerCase();
-  const isAdminRole = userRol === "admin" || userRol === "compras";
-  const isVendedor = userRol === "vendedor";
-  const isDeposito = userRol === "deposito";
+  const adminRoles = ["admin", "compras"];
+  const comercialRoles = ["vendedor", "comercial", "produccion"];
+  const consultorRoles = ["consultor", "gerencia"];
+  const administracionRoles = ["administracion"];
+  const contaduriaRoles = ["contaduria"];
+  const logisticaRoles = ["deposito", "logistica"];
+  const isAdminRole = adminRoles.includes(userRol);
+  const isVendedor = comercialRoles.includes(userRol);
+  const isDeposito = logisticaRoles.includes(userRol);
+  const canSeePedidos = isAdminRole || isVendedor || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol) || isDeposito;
   const isAdmin = isAdminRole || isVendedor; // controls cost columns visibility
   const canViewCosts = isAdminRole || isVendedor;
   const canEditPedido = isAdminRole;
   const canAddRecepcion = isAdminRole || isDeposito;
   const canSeeAlertas = isAdminRole;
-  const canSeeReportes = isAdminRole;
+  const canSeeReportes = isAdminRole || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol);
   const canSeeProveedores = isAdminRole;
   const canSeeUsuarios = isAdminRole;
-  const canSeeNotasCredito = isAdminRole || isVendedor;
+  const canSeeNotasCredito = isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol);
   const canCreatePedido = isAdminRole || isVendedor;
-  const canSendMessages = isAdminRole;
-  const canSeeCotizaciones = isAdminRole || isVendedor;
+  const canSendMessages = isAdminRole || isDeposito;
+  const canSeeCotizaciones = isAdminRole || isVendedor || consultorRoles.includes(userRol);
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
@@ -1028,16 +1035,22 @@ const Index = () => {
   const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
 
   useEffect(() => {
-    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores" || activeSection === "Usuarios")) {
-      setActiveSection("Pedidos");
+    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Proveedores" || activeSection === "Usuarios")) {
+      setActiveSection(canSeePedidos ? "Pedidos" : "Notas de crédito");
+    }
+    if (!canSeeReportes && activeSection === "Reportes") {
+      setActiveSection(canSeePedidos ? "Pedidos" : "Notas de crédito");
     }
     if (!canCreatePedido && activeSection === "Crear pedido") {
-      setActiveSection("Pedidos");
+      setActiveSection(canSeePedidos ? "Pedidos" : "Notas de crédito");
     }
     if (!canSeeNotasCredito && activeSection === "Notas de crédito") {
       setActiveSection("Pedidos");
     }
-  }, [isAdminRole, canCreatePedido, canSeeNotasCredito, activeSection]);
+    if (!canSeePedidos && activeSection === "Pedidos") {
+      setActiveSection(canSeeNotasCredito ? "Notas de crédito" : "Cotizaciones");
+    }
+  }, [isAdminRole, canCreatePedido, canSeeNotasCredito, canSeePedidos, canSeeReportes, activeSection]);
 
   // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
   const isInReportPeriod = (fecha: string | null | undefined) => {
@@ -2065,6 +2078,7 @@ Equipo NORFER`;
               if (item.label === "Usuarios") return canSeeUsuarios;
               if (item.label === "Cotizaciones") return canSeeCotizaciones;
               if (item.label === "Dashboard") return isAdminRole;
+              if (item.label === "Pedidos") return canSeePedidos;
               return true;
             }).map((item, index) => (
               <button key={item.label} onClick={() => setActiveSection(item.label)} className={`flex w-full items-center gap-3 rounded-md px-4 py-3 text-left text-sm transition hover:bg-sidebar-accent ${activeSection === item.label || (index === 0 && activeSection === "Dashboard") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/78"}`}>
@@ -2842,8 +2856,11 @@ Equipo NORFER`;
                   <div className="space-y-2">
                     <Label htmlFor="user-role">Rol</Label>
                     <select id="user-role" value={usuarioForm.rol} onChange={(event) => setUsuarioForm({ ...usuarioForm, rol: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                      <option value="vendedor">Vendedor</option>
-                      <option value="deposito">Depósito</option>
+                      <option value="comercial">Comercial / Producción</option>
+                      <option value="consultor">Consultor / Gerencia</option>
+                      <option value="administracion">Administración</option>
+                      <option value="contaduria">Contaduría</option>
+                      <option value="logistica">Logística</option>
                       <option value="compras">Compras</option>
                       <option value="admin">Admin</option>
                     </select>

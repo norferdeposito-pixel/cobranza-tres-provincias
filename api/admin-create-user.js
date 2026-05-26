@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://mwbhjlyuitkgunchsyht.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_9PkFScfGvzwbziQ9AJWBgQ_gNqIld9B";
-const allowedRoles = new Set(["admin", "compras", "vendedor", "deposito"]);
+const allowedRoles = new Set(["admin", "compras", "vendedor", "deposito", "comercial", "produccion", "consultor", "gerencia", "administracion", "contaduria", "logistica"]);
 
 const json = (res, status, body) => {
   res.status(status).json(body);

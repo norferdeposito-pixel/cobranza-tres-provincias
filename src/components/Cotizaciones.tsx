@@ -89,7 +89,7 @@ const estadoBadge: Record<string, string> = {
 
 export const Cotizaciones = () => {
   const { currentUserProfile } = useCurrentUserProfile();
-  const rol = currentUserProfile?.rol || "";
+  const rol = (currentUserProfile?.rol || "").toLowerCase();
   const isAdmin = rol === "admin" || rol === "compras";
 
   const [items, setItems] = useState<ItemRow[]>([]);
