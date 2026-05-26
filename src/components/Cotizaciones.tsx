@@ -101,7 +101,7 @@ export const Cotizaciones = () => {
   const [form, setForm] = useState<CotizacionForm>(emptyForm());
   const [saving, setSaving] = useState(false);
   const now = new Date();
-  const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1);
+  const [filterMonth, setFilterMonth] = useState<number>(0);
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear());
   const [statusFilter, setStatusFilter] = useState("todos");
 
@@ -150,7 +150,8 @@ export const Cotizaciones = () => {
       const estado = computeEstado(cots, it.estado_cotizacion);
       if (estado === "anulado") return false;
       if (statusFilter !== "todos" && estado !== statusFilter) return false;
-      if (cots.length === 0) return filterMonth === 0;
+      if (filterMonth === 0) return true;
+      if (cots.length === 0) return false;
       return cots.some((cot) => {
         const fecha = cot.fecha_cotizacion || "";
         const [year, month] = fecha.split("-").map(Number);
@@ -327,6 +328,7 @@ export const Cotizaciones = () => {
           <div className="space-y-1">
             <Label htmlFor="cotizacion-mes">Mes</Label>
             <select id="cotizacion-mes" value={filterMonth} onChange={(event) => setFilterMonth(Number(event.target.value))} className="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value={0}>Todos</option>
               {["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"].map((label, index) => (
                 <option key={label} value={index + 1}>{label}</option>
               ))}
