@@ -270,46 +270,49 @@ export const Cotizaciones = () => {
       return;
     }
     const meta = getPedidoMeta(item);
-    // Generar número de pedido borrador
-    const numero = `COT-${Date.now().toString().slice(-6)}`;
-    const { data: pedido, error: eP } = await supabase
+    const proveedorElegido = getProveedorNombre(elegida, suppliers);
+    const detalleItem = item.descripcion?.trim() || item.cod_articulo?.trim() || "Articulo sin descripcion";
+    const observacionCotizacion = [
+      "Cotizacion enviada a pedido.",
+      `Item: ${detalleItem}.`,
+      `Proveedor elegido: ${proveedorElegido}.`,
+      elegida.observaciones ? `Obs. cotizacion: ${elegida.observaciones}` : "",
+    ].filter(Boolean).join(" ");
+    const { data: pedidoActual } = await supabase
       .from("pedidos")
-      .insert({
-        fecha: today(),
-        numero_pedido: numero,
-        proveedor_id: elegida.proveedor_id,
-        cliente: meta.cliente !== "-" ? meta.cliente : "",
-        vendedor: meta.vendedor !== "-" ? meta.vendedor : "",
-        plazo_entrega_cliente: "",
-        plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} días` : null,
-        condiciones_pago: elegida.condicion_pago,
-        observaciones: elegida.observaciones,
-        estado: "pedido_cargado",
-      })
-      .select("id")
+      .select("observaciones")
+      .eq("id", item.pedido_id)
       .maybeSingle();
-    if (eP || !pedido) {
-      toast({ title: "Error al crear pedido", description: eP?.message, variant: "destructive" });
+    const observacionesPedido = [
+      (pedidoActual as any)?.observaciones || "",
+      observacionCotizacion,
+    ].filter(Boolean).join("\n");
+    const { error: pedidoError } = await supabase
+      .from("pedidos")
+      .update({
+        proveedor_id: elegida.proveedor_id,
+        plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} dias` : null,
+        condiciones_pago: elegida.condicion_pago,
+        observaciones: observacionesPedido,
+      })
+      .eq("id", item.pedido_id);
+    if (pedidoError) {
+      toast({ title: "Error al actualizar pedido", description: pedidoError.message, variant: "destructive" });
       return;
     }
-    const { error: eI } = await supabase.from("pedido_items").insert({
-      pedido_id: (pedido as any).id,
-      descripcion: item.descripcion,
-      cantidad_pedida: item.cantidad_pedida,
-      cantidad_recibida: 0,
-      cantidad_pendiente: item.cantidad_pedida,
-      unidad: item.unidad,
-      cod_articulo: item.cod_articulo,
-      costo_unitario: elegida.costo_unitario,
-      moneda: elegida.moneda || "ARS",
-      estado_entrega: "pendiente",
-    } as any);
-    if (eI) {
-      toast({ title: "Error al copiar ítem", description: eI.message, variant: "destructive" });
+    const { error: itemError } = await supabase
+      .from("pedido_items")
+      .update({
+        costo_unitario: elegida.costo_unitario,
+        moneda: elegida.moneda || "ARS",
+        estado_cotizacion: "enviado_a_pedido",
+      } as any)
+      .eq("id", item.id);
+    if (itemError) {
+      toast({ title: "Error al actualizar item", description: itemError.message, variant: "destructive" });
       return;
     }
-    await supabase.from("pedido_items").update({ estado_cotizacion: "enviado_a_pedido" } as any).eq("id", item.id);
-    toast({ title: "Pedido borrador creado", description: `Compras puede revisarlo en Pedidos (${numero}).` });
+    toast({ title: "Cotizacion enviada al pedido", description: `Se actualizo el pedido ${meta.numeroPedido}.` });
     await loadAll();
   };
 
@@ -373,7 +376,7 @@ export const Cotizaciones = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-muted-foreground" />
-                    <p className="font-semibold">{item.descripcion}</p>
+                    <p className="font-semibold">{item.descripcion?.trim() || item.cod_articulo?.trim() || "Articulo sin descripcion"}</p>
                     <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${estadoBadge[estado] || ""}`}>{estado}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -389,9 +392,9 @@ export const Cotizaciones = () => {
                       <Plus className="h-4 w-4" /> Nueva cotización
                     </Button>
                   )}
-                  {isAdmin && elegida && estado !== "enviado_a_pedido" && (
+                  {isAdmin && elegida && (
                     <Button size="sm" variant="command" type="button" onClick={() => enviarAPedido(item)}>
-                      <Send className="h-4 w-4" /> Enviar a pedido
+                      <Send className="h-4 w-4" /> {estado === "enviado_a_pedido" ? "Actualizar pedido" : "Enviar a pedido"}
                     </Button>
                   )}
                   <Button size="sm" variant="ghost" type="button" onClick={() => setExpanded(isExpanded ? null : item.id)}>
