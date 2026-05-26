@@ -147,9 +147,13 @@ type NotaCreditoForm = {
   moneda: string;
   motivo: string;
   vendedor: string;
-  obs: string;
   observaciones: string;
   estado: string;
+};
+
+type NotaCreditoItemForm = {
+  descripcion: string;
+  monto: string;
 };
 
 type NotaCreditoCierreForm = {
@@ -521,7 +525,6 @@ const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   moneda: "PESOS",
   motivo: "",
   vendedor: "",
-  obs: "",
   observaciones: "",
   estado: "pendiente",
 });
@@ -633,6 +636,7 @@ const Index = () => {
   const [clientesNc, setClientesNc] = useState<ClienteNc[]>([]);
   const [notasCredito, setNotasCredito] = useState<NotaCredito[]>([]);
   const [notaCreditoForm, setNotaCreditoForm] = useState<NotaCreditoForm>(() => createEmptyNotaCreditoForm());
+  const [notaCreditoItems, setNotaCreditoItems] = useState<NotaCreditoItemForm[]>([{ descripcion: "", monto: "" }]);
   const [notaCreditoCierreForm, setNotaCreditoCierreForm] = useState<NotaCreditoCierreForm>(() => createEmptyNotaCreditoCierreForm());
   const [notaCreditoCierreId, setNotaCreditoCierreId] = useState<string | null>(null);
   const [isSavingNotaCredito, setIsSavingNotaCredito] = useState(false);
@@ -1934,6 +1938,19 @@ Equipo NORFER`;
     }));
   };
 
+  const updateNotaCreditoItem = (index: number, field: keyof NotaCreditoItemForm, value: string) => {
+    setNotaCreditoItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addNotaCreditoItem = () => setNotaCreditoItems((current) => [...current, { descripcion: "", monto: "" }]);
+  const removeNotaCreditoItem = (index: number) => setNotaCreditoItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+
+  const notaCreditoDetalle = () => {
+    const validItems = notaCreditoItems.filter((item) => safeText(item.descripcion) || safeNumber(item.monto) > 0);
+    if (safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL") return "TOTAL";
+    return validItems.map((item, index) => `${index + 1}. ${safeText(item.descripcion) || "Item"} - ${safeNumber(item.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join("\n");
+  };
+
   const saveNotaCredito = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!safeText(notaCreditoForm.fechaCarga) || !safeText(notaCreditoForm.codigoCliente) || !safeText(notaCreditoForm.tipoComprobante) || !safeText(notaCreditoForm.numeroComprobante)) return;
@@ -1948,12 +1965,12 @@ Equipo NORFER`;
       tipo_comprobante: optionalValue(notaCreditoForm.tipoComprobante),
       numero_comprobante: optionalValue(notaCreditoForm.numeroComprobante),
       fecha_comprobante: optionalDateValue(notaCreditoForm.fechaComprobante),
-      detalle: optionalValue(notaCreditoForm.detalle),
-      monto: optionalValue(notaCreditoForm.monto) ? safeNumber(notaCreditoForm.monto) : null,
+      detalle: optionalValue(notaCreditoDetalle()),
+      monto: safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL" ? (optionalValue(notaCreditoForm.monto) ? safeNumber(notaCreditoForm.monto) : null) : notaCreditoItems.reduce((sum, item) => sum + safeNumber(item.monto), 0),
       moneda: optionalValue(notaCreditoForm.moneda) || "PESOS",
       motivo: optionalValue(notaCreditoForm.motivo),
       vendedor: optionalValue(notaCreditoForm.vendedor),
-      obs: optionalValue(notaCreditoForm.obs),
+      obs: null,
       fecha_generada_nc: null,
       numero_nc: null,
       realizo: null,
@@ -1964,6 +1981,7 @@ Equipo NORFER`;
     if (isPreviewMode) {
       setNotasCredito((current) => [{ id: `preview-nc-${Date.now()}`, ...payload, dias_transcurridos: payload.fecha_comprobante ? Math.round((new Date(`${payload.fecha_carga}T12:00:00`).getTime() - new Date(`${payload.fecha_comprobante}T12:00:00`).getTime()) / 86400000) : null } as NotaCredito, ...current]);
       setNotaCreditoForm(createEmptyNotaCreditoForm());
+      setNotaCreditoItems([{ descripcion: "", monto: "" }]);
       setIsSavingNotaCredito(false);
       toast({ title: "Pedido de NC creado en preview" });
       return;
@@ -1977,6 +1995,7 @@ Equipo NORFER`;
     }
     if (data) setNotasCredito((current) => [data as any, ...current]);
     setNotaCreditoForm(createEmptyNotaCreditoForm());
+    setNotaCreditoItems([{ descripcion: "", monto: "" }]);
     toast({ title: "Pedido de NC guardado", description: cliente ? "Cliente completado automáticamente." : "El código quedó registrado en observaciones." });
   };
 
@@ -2729,16 +2748,45 @@ Equipo NORFER`;
                     <div className="space-y-2"><Label htmlFor="nc-fecha-carga">Fecha de carga</Label><Input id="nc-fecha-carga" type="date" value={notaCreditoForm.fechaCarga} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaCarga: event.target.value })} required /></div>
                     <div className="space-y-2"><Label htmlFor="nc-codigo">COD.</Label><Input id="nc-codigo" value={notaCreditoForm.codigoCliente} onChange={(event) => updateNotaCreditoCodigo(event.target.value)} required /></div>
                     <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-cliente">Cliente</Label><Input id="nc-cliente" value={notaCreditoForm.cliente} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, cliente: event.target.value })} placeholder={notaCreditoForm.codigoCliente && !notaCreditoCliente ? "Cliente no encontrado, se registra en observaciones" : ""} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-tipo">Tipo comprobante</Label><Input id="nc-tipo" value={notaCreditoForm.tipoComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, tipoComprobante: event.target.value })} required /></div>
+                    <div className="space-y-2">
+                      <Label htmlFor="nc-tipo">Tipo comprobante</Label>
+                      <select id="nc-tipo" value={notaCreditoForm.tipoComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, tipoComprobante: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" required>
+                        <option value="FA">FA</option>
+                        <option value="PRES">PRES</option>
+                        <option value="FB">FB</option>
+                      </select>
+                    </div>
                     <div className="space-y-2"><Label htmlFor="nc-numero-comprobante">N° comprobante</Label><Input id="nc-numero-comprobante" value={notaCreditoForm.numeroComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, numeroComprobante: event.target.value })} required /></div>
                     <div className="space-y-2"><Label htmlFor="nc-fecha-comprobante">Fecha de comprobante</Label><Input id="nc-fecha-comprobante" type="date" value={notaCreditoForm.fechaComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaComprobante: event.target.value })} /></div>
                     <div className="space-y-2"><Label>Días transcurridos</Label><div className="flex h-10 items-center rounded-md border bg-surface-subtle px-3 text-sm font-semibold">{notaCreditoForm.fechaCarga && notaCreditoForm.fechaComprobante ? Math.round((new Date(`${notaCreditoForm.fechaCarga}T12:00:00`).getTime() - new Date(`${notaCreditoForm.fechaComprobante}T12:00:00`).getTime()) / 86400000) : "-"}</div></div>
-                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-detalle">Detalle</Label><Input id="nc-detalle" value={notaCreditoForm.detalle} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, detalle: event.target.value })} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-monto">Monto</Label><Input id="nc-monto" type="number" step="0.01" min="0" value={notaCreditoForm.monto} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, monto: event.target.value })} /></div>
-                    <div className="space-y-2"><Label htmlFor="nc-moneda">Moneda</Label><Input id="nc-moneda" value={notaCreditoForm.moneda} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, moneda: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-moneda">Moneda</Label><select id="nc-moneda" value={notaCreditoForm.moneda} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, moneda: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="PESOS">PESOS</option><option value="USD">USD</option><option value="EURO">EURO</option><option value="CLP">CLP</option></select></div>
+                    <div className="space-y-3 rounded-md border bg-surface-subtle p-3 xl:col-span-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div><h4 className="font-semibold">Items</h4><p className="text-sm text-muted-foreground">Cargá los ítems del comprobante o marcá TOTAL.</p></div>
+                        <label className="flex items-center gap-2 text-sm font-semibold">
+                          <input type="checkbox" checked={safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL"} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, detalle: event.target.checked ? "TOTAL" : "", monto: event.target.checked ? notaCreditoForm.monto : "" })} />
+                          TOTAL
+                        </label>
+                      </div>
+                      {safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL" ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2"><Label htmlFor="nc-monto-total">Total sin IVA</Label><Input id="nc-monto-total" type="number" step="0.01" min="0" value={notaCreditoForm.monto} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, monto: event.target.value })} /></div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {notaCreditoItems.map((item, index) => (
+                            <div key={index} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+                              <div className="space-y-2"><Label>Item {index + 1}</Label><Input value={item.descripcion} onChange={(event) => updateNotaCreditoItem(index, "descripcion", event.target.value)} /></div>
+                              <div className="space-y-2"><Label>Precio</Label><Input type="number" step="0.01" min="0" value={item.monto} onChange={(event) => updateNotaCreditoItem(index, "monto", event.target.value)} /></div>
+                              <div className="flex items-end"><Button type="button" size="icon" variant="ghost" onClick={() => removeNotaCreditoItem(index)} disabled={notaCreditoItems.length === 1} aria-label={`Quitar item ${index + 1}`}><Trash2 className="h-4 w-4" /></Button></div>
+                            </div>
+                          ))}
+                          <Button type="button" size="sm" variant="outline" onClick={addNotaCreditoItem}><Plus className="h-4 w-4" />Agregar item</Button>
+                        </div>
+                      )}
+                    </div>
                     <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-motivo">Motivo</Label><Input id="nc-motivo" value={notaCreditoForm.motivo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, motivo: event.target.value })} /></div>
                     <div className="space-y-2"><Label htmlFor="nc-vendedor">Vendedor</Label><Input id="nc-vendedor" value={notaCreditoForm.vendedor} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, vendedor: event.target.value })} /></div>
-                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-obs">OBS</Label><Input id="nc-obs" value={notaCreditoForm.obs} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, obs: event.target.value })} /></div>
                     <div className="space-y-2 xl:col-span-3"><Label htmlFor="nc-observaciones">Observaciones</Label><Textarea id="nc-observaciones" value={notaCreditoForm.observaciones} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, observaciones: event.target.value })} /></div>
                     <div className="flex items-end"><Button type="submit" variant="command" disabled={isSavingNotaCredito}><CheckCircle2 className="h-4 w-4" />{isSavingNotaCredito ? "Guardando..." : "Guardar pedido NC"}</Button></div>
                   </form>
