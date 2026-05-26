@@ -666,9 +666,16 @@ const Index = () => {
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const { currentUserProfile, email: userEmail, signOut } = useCurrentUserProfile();
-  const userRol = (currentUserProfile?.rol || "").toLowerCase();
+  const normalizeRole = (role?: string | null) =>
+    (role || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/\//g, "_");
+  const userRol = normalizeRole(currentUserProfile?.rol);
   const adminRoles = ["admin", "compras"];
-  const comercialRoles = ["vendedor", "comercial", "produccion"];
+  const comercialRoles = ["vendedor", "comercial", "produccion", "comercial_produccion"];
   const consultorRoles = ["consultor", "gerencia"];
   const administracionRoles = ["administracion"];
   const contaduriaRoles = ["contaduria"];
