@@ -695,7 +695,7 @@ const Index = () => {
   const canSeeNotasCredito = isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol);
   const canCreatePedido = isAdminRole || isVendedor;
   const canSendMessages = isAdminRole || isDeposito;
-  const canSeeCotizaciones = isAdminRole || isVendedor || consultorRoles.includes(userRol);
+  const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
   const currentSeller = currentUserProfile?.nombre || "María";
 
   useEffect(() => {
