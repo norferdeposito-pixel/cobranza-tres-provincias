@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2, UserPlus } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,13 @@ type SupplierForm = {
   plazoPromedioDias: string;
 };
 
+type UsuarioForm = {
+  nombre: string;
+  email: string;
+  password: string;
+  rol: string;
+};
+
 type PurchaseTotalBySupplier = {
   proveedor: string;
   total: number;
@@ -95,6 +102,57 @@ type ReportCotizacion = {
   id: string;
   item_id: string;
   fecha_cotizacion: string | null;
+};
+
+type ClienteNc = {
+  id?: string;
+  codigo: string;
+  nombre: string;
+  domicilio_1?: string | null;
+  domicilio_2?: string | null;
+  transporte?: string | null;
+};
+
+type NotaCredito = {
+  id: string;
+  fecha_carga: string;
+  codigo_cliente: string | null;
+  cliente: string | null;
+  tipo_comprobante: string | null;
+  numero_comprobante: string | null;
+  fecha_comprobante: string | null;
+  detalle: string | null;
+  monto: number | null;
+  moneda: string | null;
+  motivo: string | null;
+  vendedor: string | null;
+  obs: string | null;
+  fecha_generada_nc: string | null;
+  numero_nc: string | null;
+  realizo: string | null;
+  observaciones: string | null;
+  estado: string;
+  dias_transcurridos?: number | null;
+};
+
+type NotaCreditoForm = {
+  fechaCarga: string;
+  codigoCliente: string;
+  cliente: string;
+  tipoComprobante: string;
+  numeroComprobante: string;
+  fechaComprobante: string;
+  detalle: string;
+  monto: string;
+  moneda: string;
+  motivo: string;
+  vendedor: string;
+  obs: string;
+  fechaGeneradaNc: string;
+  numeroNc: string;
+  realizo: string;
+  observaciones: string;
+  estado: string;
 };
 
 type PedidoForm = {
@@ -346,7 +404,9 @@ const navItems = [
   { label: "Cotizaciones", icon: FileText },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Crear pedido", icon: FilePlus2 },
+  { label: "Notas de crédito", icon: FileText },
   { label: "Proveedores", icon: Factory },
+  { label: "Usuarios", icon: UserPlus },
   { label: "Reportes", icon: BarChart3 },
 ];
 
@@ -444,6 +504,26 @@ const createEmptyItemForm = (): PedidoItemForm => ({
 });
 
 const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
+const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "vendedor" });
+const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
+  fechaCarga: today(),
+  codigoCliente: "",
+  cliente: "",
+  tipoComprobante: "FA",
+  numeroComprobante: "",
+  fechaComprobante: "",
+  detalle: "",
+  monto: "",
+  moneda: "PESOS",
+  motivo: "",
+  vendedor: "",
+  obs: "",
+  fechaGeneradaNc: "",
+  numeroNc: "",
+  realizo: "",
+  observaciones: "",
+  estado: "pendiente",
+});
 
 const optionalDateValue = (value?: string | null) => safeDateForDisplay(value);
 
@@ -546,6 +626,14 @@ const Index = () => {
   const [supplierForm, setSupplierForm] = useState<SupplierForm>(() => createEmptySupplierForm());
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+  const [usuarioForm, setUsuarioForm] = useState<UsuarioForm>(() => createEmptyUsuarioForm());
+  const [isSavingUsuario, setIsSavingUsuario] = useState(false);
+  const [clientesNc, setClientesNc] = useState<ClienteNc[]>([]);
+  const [notasCredito, setNotasCredito] = useState<NotaCredito[]>([]);
+  const [notaCreditoForm, setNotaCreditoForm] = useState<NotaCreditoForm>(() => createEmptyNotaCreditoForm());
+  const [isSavingNotaCredito, setIsSavingNotaCredito] = useState(false);
+  const [notaCreditoQuery, setNotaCreditoQuery] = useState("");
+  const [notaCreditoEstadoFilter, setNotaCreditoEstadoFilter] = useState("todos");
   const [purchaseTotalsBySupplier, setPurchaseTotalsBySupplier] = useState<PurchaseTotalBySupplier[]>([]);
   const [reportItems, setReportItems] = useState<ReportPedidoItem[]>([]);
   const [reportCotizaciones, setReportCotizaciones] = useState<ReportCotizacion[]>([]);
@@ -580,6 +668,8 @@ const Index = () => {
   const canSeeAlertas = isAdminRole;
   const canSeeReportes = isAdminRole;
   const canSeeProveedores = isAdminRole;
+  const canSeeUsuarios = isAdminRole;
+  const canSeeNotasCredito = isAdminRole || isVendedor;
   const canCreatePedido = isAdminRole || isVendedor;
   const canSendMessages = isAdminRole;
   const canSeeCotizaciones = isAdminRole || isVendedor;
@@ -696,6 +786,24 @@ const Index = () => {
     loadOrders();
     loadClientes();
   }, []);
+
+  useEffect(() => {
+    const loadNotasCredito = async () => {
+      if (!canSeeNotasCredito || isPreviewMode) return;
+      try {
+        const [{ data: clientesData }, { data: notasData }] = await Promise.all([
+          supabase.from("clientes_nc" as any).select("id, codigo, nombre, domicilio_1, domicilio_2, transporte").order("nombre", { ascending: true }),
+          supabase.from("notas_credito" as any).select("*").order("fecha_carga", { ascending: false }),
+        ]);
+        setClientesNc((clientesData || []) as any);
+        setNotasCredito((notasData || []) as any);
+      } catch {
+        setClientesNc([]);
+        setNotasCredito([]);
+      }
+    };
+    loadNotasCredito();
+  }, [canSeeNotasCredito, isPreviewMode]);
 
   useEffect(() => {
     if (!selectedOrderId) {
@@ -818,6 +926,19 @@ const Index = () => {
     return map;
   }, [allPedidoNovedades]);
 
+  const notaCreditoCliente = useMemo(
+    () => clientesNc.find((cliente) => safeText(cliente.codigo) === safeText(notaCreditoForm.codigoCliente)),
+    [clientesNc, notaCreditoForm.codigoCliente],
+  );
+  const notaCreditoFiltered = useMemo(() => {
+    const q = notaCreditoQuery.toLowerCase();
+    return notasCredito.filter((nota) => {
+      const matchesSearch = !q || `${nota.codigo_cliente || ""} ${nota.cliente || ""} ${nota.numero_comprobante || ""} ${nota.numero_nc || ""} ${nota.motivo || ""} ${nota.vendedor || ""}`.toLowerCase().includes(q);
+      const matchesEstado = notaCreditoEstadoFilter === "todos" || nota.estado === notaCreditoEstadoFilter;
+      return matchesSearch && matchesEstado;
+    });
+  }, [notasCredito, notaCreditoQuery, notaCreditoEstadoFilter]);
+
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
   const upcomingAlertItemIds = new Set(
     pedidoAlertas
@@ -898,13 +1019,16 @@ const Index = () => {
   const cumplimientoPct = finalizedOrders.length > 0 ? Math.round((onTimeFinalized / finalizedOrders.length) * 100) : 0;
 
   useEffect(() => {
-    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores")) {
+    if (!isAdminRole && (activeSection === "Dashboard" || activeSection === "Alertas" || activeSection === "Reportes" || activeSection === "Proveedores" || activeSection === "Usuarios")) {
       setActiveSection("Pedidos");
     }
     if (!canCreatePedido && activeSection === "Crear pedido") {
       setActiveSection("Pedidos");
     }
-  }, [isAdminRole, canCreatePedido, activeSection]);
+    if (!canSeeNotasCredito && activeSection === "Notas de crédito") {
+      setActiveSection("Pedidos");
+    }
+  }, [isAdminRole, canCreatePedido, canSeeNotasCredito, activeSection]);
 
   // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
   const isInReportPeriod = (fecha: string | null | undefined) => {
@@ -1758,6 +1882,99 @@ Equipo NORFER`;
     toast({ title: editingSupplierId ? "Proveedor actualizado" : "Proveedor creado", description: "Los datos quedaron guardados." });
   };
 
+  const saveUsuario = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!safeText(usuarioForm.nombre) || !safeText(usuarioForm.email) || !safeText(usuarioForm.password)) return;
+    setIsSavingUsuario(true);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      toast({ title: "Sesion vencida", description: "Volvé a iniciar sesión antes de crear usuarios.", variant: "destructive" });
+      setIsSavingUsuario(false);
+      return;
+    }
+
+    const response = await fetch("/api/admin-create-user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        nombre: safeText(usuarioForm.nombre),
+        email: safeText(usuarioForm.email),
+        password: usuarioForm.password,
+        rol: usuarioForm.rol,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setIsSavingUsuario(false);
+
+    if (!response.ok) {
+      toast({ title: "No se pudo crear el usuario", description: result.error || "Revisá la configuración de Vercel/Supabase.", variant: "destructive" });
+      return;
+    }
+
+    setUsuarioForm(createEmptyUsuarioForm());
+    toast({ title: "Usuario creado", description: "Ya puede iniciar sesión con el mail y contraseña cargados." });
+  };
+
+  const updateNotaCreditoCodigo = (codigoCliente: string) => {
+    const cliente = clientesNc.find((item) => safeText(item.codigo) === safeText(codigoCliente));
+    setNotaCreditoForm((current) => ({
+      ...current,
+      codigoCliente,
+      cliente: cliente?.nombre || "",
+    }));
+  };
+
+  const saveNotaCredito = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!safeText(notaCreditoForm.fechaCarga) || !safeText(notaCreditoForm.codigoCliente) || !safeText(notaCreditoForm.tipoComprobante) || !safeText(notaCreditoForm.numeroComprobante)) return;
+    setIsSavingNotaCredito(true);
+    const cliente = notaCreditoCliente;
+    const missingClienteNote = cliente ? "" : `Cliente no encontrado. Codigo informado: ${safeText(notaCreditoForm.codigoCliente)}.`;
+    const observaciones = [missingClienteNote, safeText(notaCreditoForm.observaciones)].filter(Boolean).join(" ");
+    const payload = {
+      fecha_carga: optionalDateValue(notaCreditoForm.fechaCarga) || today(),
+      codigo_cliente: safeText(notaCreditoForm.codigoCliente),
+      cliente: optionalValue(notaCreditoForm.cliente) || cliente?.nombre || null,
+      tipo_comprobante: optionalValue(notaCreditoForm.tipoComprobante),
+      numero_comprobante: optionalValue(notaCreditoForm.numeroComprobante),
+      fecha_comprobante: optionalDateValue(notaCreditoForm.fechaComprobante),
+      detalle: optionalValue(notaCreditoForm.detalle),
+      monto: optionalValue(notaCreditoForm.monto) ? safeNumber(notaCreditoForm.monto) : null,
+      moneda: optionalValue(notaCreditoForm.moneda) || "PESOS",
+      motivo: optionalValue(notaCreditoForm.motivo),
+      vendedor: optionalValue(notaCreditoForm.vendedor),
+      obs: optionalValue(notaCreditoForm.obs),
+      fecha_generada_nc: optionalDateValue(notaCreditoForm.fechaGeneradaNc),
+      numero_nc: optionalValue(notaCreditoForm.numeroNc),
+      realizo: optionalValue(notaCreditoForm.realizo) || currentUserProfile?.nombre || userEmail,
+      observaciones: optionalValue(observaciones),
+      estado: optionalValue(notaCreditoForm.numeroNc) ? "generada" : notaCreditoForm.estado,
+    };
+
+    if (isPreviewMode) {
+      setNotasCredito((current) => [{ id: `preview-nc-${Date.now()}`, ...payload, dias_transcurridos: payload.fecha_comprobante ? Math.round((new Date(`${payload.fecha_carga}T12:00:00`).getTime() - new Date(`${payload.fecha_comprobante}T12:00:00`).getTime()) / 86400000) : null } as NotaCredito, ...current]);
+      setNotaCreditoForm(createEmptyNotaCreditoForm());
+      setIsSavingNotaCredito(false);
+      toast({ title: "Pedido de NC creado en preview" });
+      return;
+    }
+
+    const { data, error } = await supabase.from("notas_credito" as any).insert(payload).select("*").maybeSingle();
+    setIsSavingNotaCredito(false);
+    if (error) {
+      toast({ title: "No se pudo guardar la NC", description: error.message, variant: "destructive" });
+      return;
+    }
+    if (data) setNotasCredito((current) => [data as any, ...current]);
+    setNotaCreditoForm(createEmptyNotaCreditoForm());
+    toast({ title: "Pedido de NC guardado", description: cliente ? "Cliente completado automáticamente." : "El código quedó registrado en observaciones." });
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
@@ -1778,7 +1995,9 @@ Equipo NORFER`;
               if (item.label === "Alertas") return canSeeAlertas;
               if (item.label === "Reportes") return canSeeReportes;
               if (item.label === "Crear pedido") return canCreatePedido;
+              if (item.label === "Notas de crédito") return canSeeNotasCredito;
               if (item.label === "Proveedores") return canSeeProveedores;
+              if (item.label === "Usuarios") return canSeeUsuarios;
               if (item.label === "Cotizaciones") return canSeeCotizaciones;
               if (item.label === "Dashboard") return isAdminRole;
               return true;
@@ -2451,6 +2670,101 @@ Equipo NORFER`;
                     <div className="flex items-end gap-3"><Button type="submit" variant="command" disabled={isSavingSupplier}>{isSavingSupplier ? "Guardando..." : editingSupplierId ? "Guardar cambios" : "Crear proveedor"}</Button>{editingSupplierId && <Button type="button" variant="outline" onClick={resetSupplierForm}>Cancelar</Button>}</div>
                   </form>
                 </section>
+              </section>
+            )}
+            {activeSection === "Notas de crédito" && canSeeNotasCredito && (
+              <section className="space-y-6">
+                <section className="rounded-md border bg-card shadow-command">
+                  <div className="border-b p-5">
+                    <h3 className="text-lg font-semibold">Crear pedido de NC</h3>
+                    <p className="text-sm text-muted-foreground">Carga de solicitud de nota de crédito con cliente automático por código.</p>
+                  </div>
+                  <form className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4" onSubmit={saveNotaCredito}>
+                    <div className="space-y-2"><Label htmlFor="nc-fecha-carga">Fecha de carga</Label><Input id="nc-fecha-carga" type="date" value={notaCreditoForm.fechaCarga} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaCarga: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-codigo">COD.</Label><Input id="nc-codigo" value={notaCreditoForm.codigoCliente} onChange={(event) => updateNotaCreditoCodigo(event.target.value)} required /></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-cliente">Cliente</Label><Input id="nc-cliente" value={notaCreditoForm.cliente} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, cliente: event.target.value })} placeholder={notaCreditoForm.codigoCliente && !notaCreditoCliente ? "Cliente no encontrado, se registra en observaciones" : ""} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-tipo">Tipo comprobante</Label><Input id="nc-tipo" value={notaCreditoForm.tipoComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, tipoComprobante: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-numero-comprobante">N° comprobante</Label><Input id="nc-numero-comprobante" value={notaCreditoForm.numeroComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, numeroComprobante: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-fecha-comprobante">Fecha de comprobante</Label><Input id="nc-fecha-comprobante" type="date" value={notaCreditoForm.fechaComprobante} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaComprobante: event.target.value })} /></div>
+                    <div className="space-y-2"><Label>Días transcurridos</Label><div className="flex h-10 items-center rounded-md border bg-surface-subtle px-3 text-sm font-semibold">{notaCreditoForm.fechaCarga && notaCreditoForm.fechaComprobante ? Math.round((new Date(`${notaCreditoForm.fechaCarga}T12:00:00`).getTime() - new Date(`${notaCreditoForm.fechaComprobante}T12:00:00`).getTime()) / 86400000) : "-"}</div></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-detalle">Detalle</Label><Input id="nc-detalle" value={notaCreditoForm.detalle} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, detalle: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-monto">Monto</Label><Input id="nc-monto" type="number" step="0.01" min="0" value={notaCreditoForm.monto} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, monto: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-moneda">Moneda</Label><Input id="nc-moneda" value={notaCreditoForm.moneda} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, moneda: event.target.value })} /></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-motivo">Motivo</Label><Input id="nc-motivo" value={notaCreditoForm.motivo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, motivo: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-vendedor">Vendedor</Label><Input id="nc-vendedor" value={notaCreditoForm.vendedor} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, vendedor: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-realizo">Realizó</Label><Input id="nc-realizo" value={notaCreditoForm.realizo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, realizo: event.target.value })} placeholder={currentUserProfile?.nombre || ""} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-fecha-generada">Fecha generada NC</Label><Input id="nc-fecha-generada" type="date" value={notaCreditoForm.fechaGeneradaNc} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaGeneradaNc: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="nc-numero">N° NC</Label><Input id="nc-numero" value={notaCreditoForm.numeroNc} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, numeroNc: event.target.value, estado: event.target.value.trim() ? "generada" : notaCreditoForm.estado })} /></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-obs">OBS</Label><Input id="nc-obs" value={notaCreditoForm.obs} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, obs: event.target.value })} /></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-observaciones">Observaciones</Label><Textarea id="nc-observaciones" value={notaCreditoForm.observaciones} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, observaciones: event.target.value })} /></div>
+                    <div className="flex items-end"><Button type="submit" variant="command" disabled={isSavingNotaCredito}><CheckCircle2 className="h-4 w-4" />{isSavingNotaCredito ? "Guardando..." : "Guardar pedido NC"}</Button></div>
+                  </form>
+                </section>
+
+                <section className="rounded-md border bg-card shadow-command">
+                  <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                    <div><h3 className="text-lg font-semibold">Notas de crédito</h3><p className="text-sm text-muted-foreground">Solicitudes e histórico importado desde Excel.</p></div>
+                    <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{notaCreditoFiltered.length}</span>
+                  </div>
+                  <div className="grid gap-3 border-b p-5 md:grid-cols-3">
+                    <Input value={notaCreditoQuery} onChange={(event) => setNotaCreditoQuery(event.target.value)} placeholder="Buscar cliente, comprobante, NC o motivo" />
+                    <select value={notaCreditoEstadoFilter} onChange={(event) => setNotaCreditoEstadoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option value="todos">Todos los estados</option>
+                      <option value="pendiente">Pendiente</option>
+                      <option value="generada">Generada</option>
+                      <option value="anulada">Anulada</option>
+                    </select>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1100px] text-left text-sm">
+                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Estado</th></tr></thead>
+                      <tbody className="divide-y">
+                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td></tr>)}
+                        {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={10}>No hay notas de crédito para mostrar.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </section>
+            )}
+            {activeSection === "Usuarios" && canSeeUsuarios && (
+              <section className="rounded-md border bg-card p-5 shadow-command">
+                <div className="flex flex-col gap-3 border-b pb-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Crear usuario</h3>
+                    <p className="text-sm text-muted-foreground">Alta de acceso a la app y perfil interno. Solo administradores/compras.</p>
+                  </div>
+                  <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">Admin</span>
+                </div>
+                <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={saveUsuario}>
+                  <div className="space-y-2">
+                    <Label htmlFor="user-name">Nombre</Label>
+                    <Input id="user-name" value={usuarioForm.nombre} onChange={(event) => setUsuarioForm({ ...usuarioForm, nombre: event.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="user-email">Email</Label>
+                    <Input id="user-email" type="email" value={usuarioForm.email} onChange={(event) => setUsuarioForm({ ...usuarioForm, email: event.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="user-password">Contraseña inicial</Label>
+                    <Input id="user-password" type="password" minLength={6} value={usuarioForm.password} onChange={(event) => setUsuarioForm({ ...usuarioForm, password: event.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="user-role">Rol</Label>
+                    <select id="user-role" value={usuarioForm.rol} onChange={(event) => setUsuarioForm({ ...usuarioForm, rol: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option value="vendedor">Vendedor</option>
+                      <option value="deposito">Depósito</option>
+                      <option value="compras">Compras</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end gap-3 md:col-span-2">
+                    <Button type="submit" variant="command" disabled={isSavingUsuario}>
+                      <UserPlus className="h-4 w-4" />
+                      {isSavingUsuario ? "Creando..." : "Crear usuario"}
+                    </Button>
+                  </div>
+                </form>
               </section>
             )}
             {activeSection === "Reportes" && (
