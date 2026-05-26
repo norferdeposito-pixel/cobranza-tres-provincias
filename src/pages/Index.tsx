@@ -2401,7 +2401,16 @@ Equipo NORFER`;
                 <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">Detalle de pedido</h3>
-                    <p className="text-sm text-muted-foreground">{selectedOrder ? `${selectedOrder.supplier} · ${selectedOrder.ocNumber}` : "Seleccioná un pedido para ver sus ítems."}</p>
+                    {selectedOrder ? (
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span><strong className="text-foreground">Cliente:</strong> {selectedOrder.cliente || "-"}</span>
+                        <span><strong className="text-foreground">Proveedor:</strong> {selectedOrder.supplier || "-"}</span>
+                        <span><strong className="text-foreground">Pedido:</strong> {selectedOrder.orderNumber || "-"}</span>
+                        <span><strong className="text-foreground">OC:</strong> {selectedOrder.ocNumber || "-"}</span>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Seleccioná un pedido para ver sus ítems.</p>
+                    )}
                   </div>
                   {selectedOrder && (
                     <div className="flex flex-wrap gap-2">
