@@ -1939,7 +1939,10 @@ Equipo NORFER`;
     }
 
     setUsuarioForm(createEmptyUsuarioForm());
-    toast({ title: "Usuario creado", description: "Ya puede iniciar sesión con el mail y contraseña cargados." });
+    toast({
+      title: result.userAlreadyExists ? "Perfil actualizado" : "Usuario creado",
+      description: result.userAlreadyExists ? "El mail ya existía. Se actualizó nombre y rol; si no recuerda la contraseña, enviá recuperación desde Supabase." : "Ya puede iniciar sesión con el mail y contraseña cargados.",
+    });
   };
 
   const updateNotaCreditoCodigo = (codigoCliente: string) => {

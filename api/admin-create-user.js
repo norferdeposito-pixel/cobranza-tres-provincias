@@ -72,7 +72,8 @@ export default async function handler(req, res) {
     user_metadata: { nombre: cleanNombre, rol: cleanRol },
   });
 
-  if (createError && !createError.message.toLowerCase().includes("already registered")) {
+  const userAlreadyExists = !!createError && createError.message.toLowerCase().includes("registered");
+  if (createError && !userAlreadyExists) {
     json(res, 400, { error: createError.message });
     return;
   }
@@ -94,5 +95,5 @@ export default async function handler(req, res) {
     return;
   }
 
-  json(res, 200, { ok: true, userId: createdUser?.user?.id || null });
+  json(res, 200, { ok: true, userId: createdUser?.user?.id || null, userAlreadyExists });
 }
