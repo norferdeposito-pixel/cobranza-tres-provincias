@@ -2364,7 +2364,32 @@ Equipo NORFER`;
                     <Button type="button" size="sm" variant="ghost" onClick={() => setStatusFilters(defaultStatusFilters)}>Restablecer</Button>
                   </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="grid gap-3 p-3 md:hidden">
+                  {!isLoading && filteredOrders.map((order) => {
+                    const novedad = latestNovedadByOrderId.get(String(order.id));
+                    return (
+                      <button key={order.id} type="button" onClick={() => setSelectedOrderId(order.id)} className={`rounded-md border p-3 text-left shadow-sm ${selectedOrderId === order.id ? "border-primary bg-primary/5" : "bg-card"}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold leading-5">{order.supplier || "Sin proveedor"}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Cliente: {order.cliente || "-"}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(order.rawStatus, order.ocNumber)}`}>{order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-") ? "pendiente" : order.rawStatus}</span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <span><strong>Pedido:</strong> {order.orderNumber || "-"}</span>
+                          <span><strong>OC:</strong> {order.ocNumber || "-"}</span>
+                          <span className="col-span-2"><strong>Entrega:</strong> {formatDate(order.eta)}</span>
+                        </div>
+                        {novedad && <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{novedad.mensaje}</p>}
+                      </button>
+                    );
+                  })}
+                  {!isLoading && filteredOrders.length === 0 && (
+                    <p className="rounded-md border bg-surface-subtle p-4 text-center text-sm text-muted-foreground">No hay pedidos para mostrar.</p>
+                  )}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
@@ -2475,7 +2500,52 @@ Equipo NORFER`;
                     </div>
                   );
                 })()}
-                <div className="overflow-x-auto">
+                <div className="grid gap-3 p-3 md:hidden">
+                  {!isLoadingItems && pedidoItems.map((item) => {
+                    const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
+                    const cotEstado = item.estado_cotizacion || null;
+                    const cotEnCurso = cotEstado === "pendiente_cotizacion" || cotEstado === "cotizado_parcialmente" || cotEstado === "proveedor_elegido";
+                    return (
+                      <div key={item.id} className={`rounded-md border bg-card p-3 ${hasUpcomingAlert ? "border-warning/40 bg-warning/10" : ""}`}>
+                        <div className="flex items-start gap-2">
+                          {hasUpcomingAlert && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />}
+                          <p className="font-semibold leading-5">{item.descripcion}</p>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                          <span><strong>Pedida</strong><br />{item.cantidad_pedida}</span>
+                          <span><strong>Recibida</strong><br />{item.cantidad_recibida}</span>
+                          <span><strong>Pendiente</strong><br /><span className="font-semibold text-primary">{item.cantidad_pendiente}</span></span>
+                        </div>
+                        {isAdmin && (
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <span><strong>Costo</strong><br />{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</span>
+                            <span><strong>Subtotal</strong><br />{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</span>
+                          </div>
+                        )}
+                        {isAdminRole && (
+                          <div className="mt-3">
+                            {cotEnCurso ? (
+                              <span className="inline-flex rounded-md border border-warning/40 bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">{cotEstado}</span>
+                            ) : cotEstado === "enviado_a_pedido" ? (
+                              <span className="inline-flex rounded-md border border-primary/30 bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">enviado_a_pedido</span>
+                            ) : (
+                              <Button className="w-full" size="sm" variant="outline" type="button" onClick={() => enviarItemACotizar(item)}>
+                                <Send className="h-3 w-3" /> Enviar a cotizar
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
+                    <p className="rounded-md border bg-surface-subtle p-4 text-center text-sm text-muted-foreground">Este pedido no tiene items cargados.</p>
+                  )}
+                  {!selectedOrder && (
+                    <p className="rounded-md border bg-surface-subtle p-4 text-center text-sm text-muted-foreground">No hay pedido seleccionado.</p>
+                  )}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
                       <tr>
@@ -2638,10 +2708,10 @@ Equipo NORFER`;
                     <div className="flex items-end">
                       <Button className="w-full" variant="command" type="submit" disabled={isSavingReception}>
                         <PackageCheck className="h-4 w-4" />
-                        {isSavingReception ? "Guardando..." : receptionForm.quantity ? "Agregar recepcion" : "Guardar fecha"}
+                        <span>{isSavingReception ? "Guardando..." : receptionForm.quantity ? "Agregar recepcion" : "Guardar fecha"}</span>
                       </Button>
                     </div>
-                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                    <div className="space-y-2 md:col-span-2 xl:col-span-5">
                       <Label htmlFor="reception-notes">Observaciones</Label>
                       <Input id="reception-notes" value={receptionForm.notes} onChange={(event) => setReceptionForm({ ...receptionForm, notes: event.target.value })} placeholder="Entrega parcial, remito o comentario" />
                     </div>
