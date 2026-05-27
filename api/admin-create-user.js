@@ -51,7 +51,7 @@ export default async function handler(req, res) {
   }
 
   const { nombre, email, password, rol } = req.body || {};
-  const cleanNombre = String(nombre || "").trim();
+  const cleanNombre = String(nombre || "").trim().toLocaleUpperCase("es-AR");
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanPassword = String(password || "");
   const cleanRol = String(rol || "").trim().toLowerCase();

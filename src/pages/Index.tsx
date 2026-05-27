@@ -259,9 +259,15 @@ const pedidoEstados = [
 ];
 
 const safeText = (value?: string | number | null) => String(value ?? "").trim();
+const upperText = (value?: string | number | null) => safeText(value).toLocaleUpperCase("es-AR");
 
 const optionalValue = (value?: string | number | null) => {
   const trimmed = safeText(value);
+  return trimmed ? trimmed : null;
+};
+
+const optionalUpperValue = (value?: string | number | null) => {
+  const trimmed = upperText(value);
   return trimmed ? trimmed : null;
 };
 
@@ -1394,20 +1400,20 @@ const Index = () => {
         ocNumber: form.numeroOcQubigo,
         eta: form.fechaEstimadaEntrega || today(),
         notes: form.observaciones || "Sin observaciones",
-        cliente: safeText(form.cliente),
-        vendedor: safeText(form.vendedor),
+        cliente: upperText(form.cliente),
+        vendedor: upperText(form.vendedor),
         fecha: form.fecha,
       };
       const createdItems: PedidoItem[] = validItems.map((item, index) => ({
         id: `${createdOrder.id}-item-${index + 1}`,
-        descripcion: safeText(item.descripcion),
+        descripcion: upperText(item.descripcion),
         cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: safeNumber(item.cantidadPedida),
-        unidad: safeText(item.unidad),
+        unidad: upperText(item.unidad),
         costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
-        moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || "",
+        moneda: optionalUpperValue(item.moneda) || "ARS",
+        cod_articulo: optionalUpperValue(item.codArticulo) || "",
         estado_entrega: "pendiente",
       }));
       setOrders((current) => [createdOrder, ...current]);
@@ -1434,15 +1440,15 @@ const Index = () => {
         fecha: optionalDateValue(form.fecha),
         numero_pedido: nextOrderNumber,
         proveedor_id: optionalValue(form.supplierId),
-        cliente: safeText(form.cliente),
-        numero_oc_cliente: optionalValue(form.numeroOcCliente),
-        numero_oc_qubigo: optionalValue(form.numeroOcQubigo),
-        plazo_entrega_cliente: safeText(form.plazoEntregaCliente),
-        plazo_entrega_proveedor: optionalValue(form.plazoEntregaProveedor),
+        cliente: upperText(form.cliente),
+        numero_oc_cliente: optionalUpperValue(form.numeroOcCliente),
+        numero_oc_qubigo: optionalUpperValue(form.numeroOcQubigo),
+        plazo_entrega_cliente: upperText(form.plazoEntregaCliente),
+        plazo_entrega_proveedor: optionalUpperValue(form.plazoEntregaProveedor),
         fecha_estimada_entrega: optionalDateValue(form.fechaEstimadaEntrega),
-        vendedor: safeText(form.vendedor),
-        observaciones: optionalValue(form.observaciones),
-        condiciones_pago: optionalValue(form.condicionesPago),
+        vendedor: upperText(form.vendedor),
+        observaciones: optionalUpperValue(form.observaciones),
+        condiciones_pago: optionalUpperValue(form.condicionesPago),
         estado: nextStatus,
         mail_vendedor: nextSellerEmail,
       })
@@ -1463,14 +1469,14 @@ const Index = () => {
       const createdOrder = mapOrderFromSupabase(data as PurchaseOrderRow);
       const itemsToInsert = validItems.map((item) => ({
         pedido_id: createdOrder.id,
-        descripcion: safeText(item.descripcion),
+        descripcion: upperText(item.descripcion),
         cantidad_pedida: safeNumber(item.cantidadPedida),
         cantidad_recibida: 0,
         cantidad_pendiente: safeNumber(item.cantidadPedida),
-        unidad: safeText(item.unidad),
+        unidad: upperText(item.unidad),
         costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
-        moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo),
+        moneda: optionalUpperValue(item.moneda) || "ARS",
+        cod_articulo: optionalUpperValue(item.codArticulo),
         estado_entrega: "pendiente",
       }));
       const { data: createdItems, error: itemsError } = await supabase
@@ -1511,14 +1517,14 @@ const Index = () => {
       return {
         ...original,
         id: item.id,
-        descripcion: safeText(item.descripcion),
+        descripcion: upperText(item.descripcion),
         cantidad_pedida: ordered,
         cantidad_recibida: received,
         cantidad_pendiente: Math.max(ordered - received, 0),
-        unidad: safeText(item.unidad),
+        unidad: upperText(item.unidad),
         costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : 0,
-        moneda: optionalValue(item.moneda) || "ARS",
-        cod_articulo: optionalValue(item.codArticulo) || "",
+        moneda: optionalUpperValue(item.moneda) || "ARS",
+        cod_articulo: optionalUpperValue(item.codArticulo) || "",
         estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : original?.estado_entrega || "pendiente",
       } as PedidoItem;
     });
@@ -1541,8 +1547,8 @@ const Index = () => {
         ocNumber: editForm.numeroOcQubigo || "-",
         eta: nextEta || "",
         notes: editForm.observaciones || "Sin observaciones",
-        cliente: safeText(editForm.cliente) || order.cliente,
-        vendedor: safeText(editForm.vendedor) || order.vendedor,
+        cliente: upperText(editForm.cliente) || order.cliente,
+        vendedor: upperText(editForm.vendedor) || order.vendedor,
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
@@ -1562,14 +1568,14 @@ const Index = () => {
       .from("pedidos")
       .update({
         proveedor_id: editForm.supplierId,
-        cliente: optionalValue(editForm.cliente),
-        numero_oc_cliente: optionalValue(editForm.numeroOcCliente),
-        plazo_entrega_cliente: optionalValue(editForm.plazoEntregaCliente),
-        plazo_entrega_proveedor: optionalValue(editForm.plazoEntregaProveedor),
-        vendedor: optionalValue(editForm.vendedor),
-        observaciones: optionalValue(editForm.observaciones),
-        condiciones_pago: optionalValue(editForm.condicionesPago),
-        numero_oc_qubigo: optionalValue(editForm.numeroOcQubigo),
+        cliente: optionalUpperValue(editForm.cliente),
+        numero_oc_cliente: optionalUpperValue(editForm.numeroOcCliente),
+        plazo_entrega_cliente: optionalUpperValue(editForm.plazoEntregaCliente),
+        plazo_entrega_proveedor: optionalUpperValue(editForm.plazoEntregaProveedor),
+        vendedor: optionalUpperValue(editForm.vendedor),
+        observaciones: optionalUpperValue(editForm.observaciones),
+        condiciones_pago: optionalUpperValue(editForm.condicionesPago),
+        numero_oc_qubigo: optionalUpperValue(editForm.numeroOcQubigo),
         estado: nextStatus,
         fecha_estimada_entrega: nextEta,
         mail_vendedor: getSellerEmail(editForm.vendedor, editForm.mailVendedor),
@@ -1591,13 +1597,13 @@ const Index = () => {
       const { error: itemError } = await supabase
         .from("pedido_items")
         .update({
-          descripcion: safeText(item.descripcion),
+          descripcion: upperText(item.descripcion),
           cantidad_pedida: ordered,
           cantidad_pendiente: Math.max(ordered - received, 0),
-          unidad: safeText(item.unidad),
-          moneda: optionalValue(item.moneda) || "ARS",
+          unidad: upperText(item.unidad),
+          moneda: optionalUpperValue(item.moneda) || "ARS",
           costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
-          cod_articulo: optionalValue(item.codArticulo),
+          cod_articulo: optionalUpperValue(item.codArticulo),
           estado_entrega: Math.max(ordered - received, 0) <= 0 ? "recibido_total" : "pendiente",
         })
         .eq("id", item.id);
@@ -1615,14 +1621,14 @@ const Index = () => {
         .from("pedido_items")
         .insert(newItems.map((item) => ({
           pedido_id: selectedOrder.id,
-          descripcion: safeText(item.descripcion),
+          descripcion: upperText(item.descripcion),
           cantidad_pedida: safeNumber(item.cantidadPedida),
           cantidad_recibida: 0,
           cantidad_pendiente: safeNumber(item.cantidadPedida),
-          unidad: safeText(item.unidad),
-          moneda: optionalValue(item.moneda) || "ARS",
+          unidad: upperText(item.unidad),
+          moneda: optionalUpperValue(item.moneda) || "ARS",
           costo_unitario: optionalValue(item.costoUnitario) ? safeNumber(item.costoUnitario) : null,
-          cod_articulo: optionalValue(item.codArticulo),
+          cod_articulo: optionalUpperValue(item.codArticulo),
           estado_entrega: "pendiente",
         })))
         .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega");
@@ -1718,7 +1724,7 @@ const Index = () => {
       fecha_recepcion: optionalDateValue(receptionForm.date) || today(),
       cantidad_recibida: receivedQuantity,
       nueva_fecha_entrega: nextEta,
-      observaciones: optionalValue(receptionForm.notes) || "Recepción cargada desde OC Control",
+      observaciones: optionalUpperValue(receptionForm.notes) || "RECEPCIÓN CARGADA DESDE OC CONTROL",
     });
 
     if (receptionError) {
@@ -1833,7 +1839,7 @@ Equipo NORFER`;
         id: `preview-novedad-${Date.now()}`,
         pedido_id: selectedOrder.id,
         tipo: novedadForm.tipo,
-        mensaje: safeText(novedadForm.mensaje),
+        mensaje: upperText(novedadForm.mensaje),
         visible_vendedor: novedadForm.visibleVendedor,
         created_by: currentUserProfile?.nombre || userEmail || "Usuario",
         created_at: new Date().toISOString(),
@@ -1850,7 +1856,7 @@ Equipo NORFER`;
       .insert({
         pedido_id: selectedOrder.id,
         tipo: novedadForm.tipo,
-        mensaje: safeText(novedadForm.mensaje),
+        mensaje: upperText(novedadForm.mensaje),
         visible_vendedor: novedadForm.visibleVendedor,
         created_by: currentUserProfile?.nombre || userEmail || null,
       })
@@ -1899,10 +1905,10 @@ Equipo NORFER`;
     if (!safeText(supplierForm.nombre)) return;
     setIsSavingSupplier(true);
     const payload = {
-      nombre: safeText(supplierForm.nombre),
+      nombre: upperText(supplierForm.nombre),
       email: optionalValue(supplierForm.email),
-      telefono: optionalValue(supplierForm.telefono),
-      condicion_pago: optionalValue(supplierForm.condicionPago),
+      telefono: optionalUpperValue(supplierForm.telefono),
+      condicion_pago: optionalUpperValue(supplierForm.condicionPago),
       plazo_promedio_dias: optionalValue(supplierForm.plazoPromedioDias) ? safeNumber(supplierForm.plazoPromedioDias) : null,
       activo: true,
     };
@@ -1951,7 +1957,7 @@ Equipo NORFER`;
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        nombre: safeText(usuarioForm.nombre),
+        nombre: upperText(usuarioForm.nombre),
         email: safeText(usuarioForm.email),
         password: usuarioForm.password,
         rol: usuarioForm.rol,
@@ -1991,7 +1997,7 @@ Equipo NORFER`;
   const notaCreditoDetalle = () => {
     const validItems = notaCreditoItems.filter((item) => safeText(item.descripcion) || safeNumber(item.monto) > 0);
     if (safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL") return "TOTAL";
-    return validItems.map((item, index) => `${index + 1}. ${safeText(item.descripcion) || "Item"} - ${safeNumber(item.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join("\n");
+    return validItems.map((item, index) => `${index + 1}. ${upperText(item.descripcion) || "ITEM"} - ${safeNumber(item.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join("\n");
   };
 
   const saveNotaCredito = async (event: FormEvent<HTMLFormElement>) => {
@@ -1999,25 +2005,25 @@ Equipo NORFER`;
     if (!safeText(notaCreditoForm.fechaCarga) || !safeText(notaCreditoForm.codigoCliente) || !safeText(notaCreditoForm.tipoComprobante) || !safeText(notaCreditoForm.numeroComprobante)) return;
     setIsSavingNotaCredito(true);
     const cliente = notaCreditoCliente;
-    const missingClienteNote = cliente ? "" : `Cliente no encontrado. Codigo informado: ${safeText(notaCreditoForm.codigoCliente)}.`;
-    const observaciones = [missingClienteNote, safeText(notaCreditoForm.observaciones)].filter(Boolean).join(" ");
+    const missingClienteNote = cliente ? "" : `CLIENTE NO ENCONTRADO. CODIGO INFORMADO: ${upperText(notaCreditoForm.codigoCliente)}.`;
+    const observaciones = [missingClienteNote, upperText(notaCreditoForm.observaciones)].filter(Boolean).join(" ");
     const payload = {
       fecha_carga: optionalDateValue(notaCreditoForm.fechaCarga) || today(),
-      codigo_cliente: safeText(notaCreditoForm.codigoCliente),
-      cliente: optionalValue(notaCreditoForm.cliente) || cliente?.nombre || null,
-      tipo_comprobante: optionalValue(notaCreditoForm.tipoComprobante),
-      numero_comprobante: optionalValue(notaCreditoForm.numeroComprobante),
+      codigo_cliente: upperText(notaCreditoForm.codigoCliente),
+      cliente: optionalUpperValue(notaCreditoForm.cliente) || upperText(cliente?.nombre) || null,
+      tipo_comprobante: optionalUpperValue(notaCreditoForm.tipoComprobante),
+      numero_comprobante: optionalUpperValue(notaCreditoForm.numeroComprobante),
       fecha_comprobante: optionalDateValue(notaCreditoForm.fechaComprobante),
-      detalle: optionalValue(notaCreditoDetalle()),
+      detalle: optionalUpperValue(notaCreditoDetalle()),
       monto: safeText(notaCreditoForm.detalle).toUpperCase() === "TOTAL" ? (optionalValue(notaCreditoForm.monto) ? safeNumber(notaCreditoForm.monto) : null) : notaCreditoItems.reduce((sum, item) => sum + safeNumber(item.monto), 0),
-      moneda: optionalValue(notaCreditoForm.moneda) || "PESOS",
-      motivo: optionalValue(notaCreditoForm.motivo),
-      vendedor: optionalValue(notaCreditoForm.vendedor),
+      moneda: optionalUpperValue(notaCreditoForm.moneda) || "PESOS",
+      motivo: optionalUpperValue(notaCreditoForm.motivo),
+      vendedor: optionalUpperValue(notaCreditoForm.vendedor),
       obs: null,
       fecha_generada_nc: null,
       numero_nc: null,
       realizo: null,
-      observaciones: optionalValue(observaciones),
+      observaciones: optionalUpperValue(observaciones),
       estado: "pendiente",
     };
 
@@ -2058,9 +2064,9 @@ Equipo NORFER`;
     setIsSavingNotaCreditoCierre(true);
     const payload = {
       fecha_generada_nc: optionalDateValue(notaCreditoCierreForm.fechaGeneradaNc) || today(),
-      numero_nc: safeText(notaCreditoCierreForm.numeroNc),
-      realizo: safeText(notaCreditoCierreForm.realizo),
-      observaciones: optionalValue(notaCreditoCierreForm.observaciones),
+      numero_nc: upperText(notaCreditoCierreForm.numeroNc),
+      realizo: upperText(notaCreditoCierreForm.realizo),
+      observaciones: optionalUpperValue(notaCreditoCierreForm.observaciones),
       estado: "generada",
     };
 

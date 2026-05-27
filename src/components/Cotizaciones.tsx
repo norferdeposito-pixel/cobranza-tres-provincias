@@ -50,6 +50,7 @@ type CotizacionForm = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const upperText = (value?: string | number | null) => String(value ?? "").trim().toLocaleUpperCase("es-AR");
 
 const emptyForm = (): CotizacionForm => ({
   proveedor_id: "",
@@ -199,10 +200,10 @@ export const Cotizaciones = () => {
       item_id: editing.itemId,
       proveedor_id: form.proveedor_id,
       costo_unitario: Number(form.costo_unitario),
-      moneda: form.moneda,
-      condicion_pago: form.condicion_pago || null,
+      moneda: upperText(form.moneda) || "ARS",
+      condicion_pago: upperText(form.condicion_pago) || null,
       plazo_entrega_dias: Number(form.plazo_entrega_dias),
-      observaciones: form.observaciones || null,
+      observaciones: upperText(form.observaciones) || null,
       fecha_cotizacion: form.fecha_cotizacion || today(),
     };
     const res = editing.cotId
@@ -276,12 +277,12 @@ export const Cotizaciones = () => {
     const proveedorElegido = getProveedorNombre(elegida, suppliers);
 
     if (item.estado_cotizacion === "enviado_a_pedido") {
-      const detalleItem = item.descripcion?.trim() || item.cod_articulo?.trim() || "Articulo sin descripcion";
+      const detalleItem = upperText(item.descripcion) || upperText(item.cod_articulo) || "ARTICULO SIN DESCRIPCION";
       const observacionCotizacion = [
         "Cotizacion enviada a pedido.",
         `Item: ${detalleItem}.`,
         `Proveedor elegido: ${proveedorElegido}.`,
-        elegida.observaciones ? `Obs. cotizacion: ${elegida.observaciones}` : "",
+        elegida.observaciones ? `Obs. cotizacion: ${upperText(elegida.observaciones)}` : "",
       ].filter(Boolean).join(" ");
       const { data: pedidoActual } = await supabase
         .from("pedidos")
@@ -297,8 +298,8 @@ export const Cotizaciones = () => {
         .update({
           proveedor_id: elegida.proveedor_id,
           plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} dias` : null,
-          condiciones_pago: elegida.condicion_pago,
-          observaciones: observacionesPedido,
+          condiciones_pago: upperText(elegida.condicion_pago) || null,
+          observaciones: upperText(observacionesPedido),
         })
         .eq("id", item.pedido_id);
       if (pedidoError) {
@@ -309,7 +310,7 @@ export const Cotizaciones = () => {
         .from("pedido_items")
         .update({
           costo_unitario: elegida.costo_unitario,
-          moneda: elegida.moneda || "ARS",
+          moneda: upperText(elegida.moneda) || "ARS",
           estado_cotizacion: "enviado_a_pedido",
         } as any)
         .eq("id", item.id);
@@ -342,12 +343,12 @@ export const Cotizaciones = () => {
         fecha: today(),
         numero_pedido: numero,
         proveedor_id: elegida.proveedor_id,
-        cliente: meta.cliente !== "-" ? meta.cliente : "",
-        vendedor: meta.vendedor !== "-" ? meta.vendedor : "",
+        cliente: meta.cliente !== "-" ? upperText(meta.cliente) : "",
+        vendedor: meta.vendedor !== "-" ? upperText(meta.vendedor) : "",
         plazo_entrega_cliente: "",
         plazo_entrega_proveedor: elegida.plazo_entrega_dias != null ? `${elegida.plazo_entrega_dias} dias` : null,
-        condiciones_pago: elegida.condicion_pago,
-        observaciones: observacionesPedido,
+        condiciones_pago: upperText(elegida.condicion_pago) || null,
+        observaciones: upperText(observacionesPedido),
         estado: "pedido_cargado",
       })
       .select("id")
@@ -365,14 +366,14 @@ export const Cotizaciones = () => {
       const cot = getElegida(row) || elegida;
       return {
         pedido_id: nuevoPedidoId,
-        descripcion: row.descripcion?.trim() || row.cod_articulo?.trim() || "Articulo sin descripcion",
+        descripcion: upperText(row.descripcion) || upperText(row.cod_articulo) || "ARTICULO SIN DESCRIPCION",
         cantidad_pedida: row.cantidad_pedida,
         cantidad_recibida: 0,
         cantidad_pendiente: row.cantidad_pedida,
-        unidad: row.unidad,
-        cod_articulo: row.cod_articulo,
+        unidad: upperText(row.unidad) || null,
+        cod_articulo: upperText(row.cod_articulo) || null,
         costo_unitario: cot.costo_unitario,
-        moneda: cot.moneda || "ARS",
+        moneda: upperText(cot.moneda) || "ARS",
         estado_entrega: "pendiente",
       };
     });
