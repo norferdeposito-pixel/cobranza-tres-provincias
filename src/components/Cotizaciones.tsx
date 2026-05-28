@@ -80,6 +80,15 @@ const computeEstado = (cots: Cotizacion[], current: string | null | undefined) =
   return "cotizado_parcialmente";
 };
 
+const getPriceDiff = (cot: Cotizacion, base?: Cotizacion | null) => {
+  if (!base?.costo_unitario || !cot.costo_unitario) return { label: "-", className: "text-muted-foreground" };
+  if ((cot.moneda || "").toUpperCase() !== (base.moneda || "").toUpperCase()) return { label: "-", className: "text-muted-foreground" };
+  const diff = ((cot.costo_unitario - base.costo_unitario) / base.costo_unitario) * 100;
+  const label = `${diff > 0 ? "+" : ""}${diff.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  if (Math.abs(diff) < 0.05) return { label: "0,0%", className: "text-muted-foreground" };
+  return { label, className: diff > 0 ? "text-destructive" : "text-success" };
+};
+
 const estadoBadge: Record<string, string> = {
   pendiente_cotizacion: "bg-warning/20 text-warning-foreground border-warning/40",
   cotizado_parcialmente: "bg-secondary text-secondary-foreground border-border",
@@ -492,6 +501,7 @@ export const Cotizaciones = () => {
                       <tr>
                         <th className="px-4 py-2 text-left">Proveedor</th>
                         <th className="px-4 py-2 text-left">Precio</th>
+                        <th className="px-4 py-2 text-left">Dif. %</th>
                         <th className="px-4 py-2 text-left">Moneda</th>
                         <th className="px-4 py-2 text-left">Plazo (días)</th>
                         <th className="px-4 py-2 text-left">Cond. pago</th>
@@ -502,9 +512,11 @@ export const Cotizaciones = () => {
                     </thead>
                     <tbody>
                       {cots.length === 0 && (
-                        <tr><td className="px-4 py-3 text-muted-foreground" colSpan={8}>Sin cotizaciones cargadas.</td></tr>
+                        <tr><td className="px-4 py-3 text-muted-foreground" colSpan={9}>Sin cotizaciones cargadas.</td></tr>
                       )}
-                      {cots.map((cot) => (
+                      {cots.map((cot) => {
+                        const diff = getPriceDiff(cot, elegida);
+                        return (
                         <tr key={cot.id} className={cot.elegida ? "bg-success/10" : cot.sugerida ? "bg-warning/5" : ""}>
                           <td className="px-4 py-2 font-medium">
                             {getProveedorNombre(cot, suppliers)}
@@ -512,6 +524,7 @@ export const Cotizaciones = () => {
                             {cot.elegida && <span className="ml-2 inline-flex items-center gap-1 text-success"><Check className="h-3 w-3" />elegida</span>}
                           </td>
                           <td className="px-4 py-2">{cot.costo_unitario ?? "-"}</td>
+                          <td className={`px-4 py-2 font-semibold ${diff.className}`}>{diff.label}</td>
                           <td className="px-4 py-2">{cot.moneda || "-"}</td>
                           <td className="px-4 py-2">{cot.plazo_entrega_dias ?? "-"}</td>
                           <td className="px-4 py-2">{cot.condicion_pago || "-"}</td>
@@ -537,7 +550,8 @@ export const Cotizaciones = () => {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
