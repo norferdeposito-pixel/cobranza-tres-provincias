@@ -463,6 +463,8 @@ const getPedidoLifecycleStatus = (items: PedidoItem[], currentStatus?: string) =
 };
 
 const getItemSubtotal = (item: PedidoItem) => safeNumber(item.cantidad_pedida) * safeNumber(item.costo_unitario);
+const getDiscountedUnitCost = (item: PedidoItem, discountPercent: number) => safeNumber(item.costo_unitario) * (1 - discountPercent / 100);
+const getDiscountedItemSubtotal = (item: PedidoItem, discountPercent: number) => safeNumber(item.cantidad_pedida) * getDiscountedUnitCost(item, discountPercent);
 
 const formatDate = (date?: string | null) => {
   const safeDate = safeDateForDisplay(date);
@@ -1005,6 +1007,7 @@ const Index = () => {
   const latestDiscount = pedidoNovedades.find((novedad) => safeText(novedad.tipo).toLowerCase() === "descuento");
   const latestDiscountPercent = latestDiscount ? safeNumber((latestDiscount.mensaje || "").match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", ".")) : 0;
   const totalOcWithDiscount = latestDiscountPercent > 0 ? totalOcAmount * (1 - latestDiscountPercent / 100) : totalOcAmount;
+  const itemTableColSpan = isAdmin ? (isAdminRole ? 7 : 6) + (latestDiscountPercent > 0 ? 2 : 0) : 4;
 
   const metrics = [
     { label: "Total pedidos en curso", value: orders.filter((order) => !["terminado", "recibido_total", "anulado"].includes(order.rawStatus)).length, icon: PackageCheck },
@@ -2579,6 +2582,12 @@ Equipo NORFER`;
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <span><strong>Costo</strong><br />{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</span>
                             <span><strong>Subtotal</strong><br />{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</span>
+                            {latestDiscountPercent > 0 && (
+                              <>
+                                <span><strong>Costo c/desc.</strong><br />{getDiscountedUnitCost(item, latestDiscountPercent).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</span>
+                                <span><strong>Subtotal c/desc.</strong><br />{getDiscountedItemSubtotal(item, latestDiscountPercent).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</span>
+                              </>
+                            )}
                           </div>
                         )}
                         {isAdminRole && (
@@ -2614,6 +2623,8 @@ Equipo NORFER`;
                         <th className="px-5 py-3 font-semibold">cantidad_pendiente</th>
                         {isAdmin && <th className="px-5 py-3 font-semibold">costo</th>}
                         {isAdmin && <th className="px-5 py-3 font-semibold">subtotal</th>}
+                        {isAdmin && latestDiscountPercent > 0 && <th className="px-5 py-3 font-semibold">costo c/desc.</th>}
+                        {isAdmin && latestDiscountPercent > 0 && <th className="px-5 py-3 font-semibold">subtotal c/desc.</th>}
                         {isAdminRole && <th className="px-5 py-3 font-semibold">cotización</th>}
                       </tr>
                     </thead>
@@ -2636,6 +2647,16 @@ Equipo NORFER`;
                           <td className="px-5 py-4 font-medium text-primary">{item.cantidad_pendiente}</td>
                           {isAdmin && <td className="px-5 py-4">{item.costo_unitario ?? "-"} {item.moneda || "ARS"}</td>}
                           {isAdmin && <td className="px-5 py-4 font-semibold">{getItemSubtotal(item).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}</td>}
+                          {isAdmin && latestDiscountPercent > 0 && (
+                            <td className="select-text px-5 py-4 font-semibold text-success">
+                              {getDiscountedUnitCost(item, latestDiscountPercent).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}
+                            </td>
+                          )}
+                          {isAdmin && latestDiscountPercent > 0 && (
+                            <td className="select-text px-5 py-4 font-semibold text-success">
+                              {getDiscountedItemSubtotal(item, latestDiscountPercent).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda || "ARS"}
+                            </td>
+                          )}
                           {isAdminRole && (
                             <td className="px-5 py-4">
                               {cotEnCurso ? (
@@ -2654,12 +2675,12 @@ Equipo NORFER`;
                       })}
                       {!isLoadingItems && selectedOrder && pedidoItems.length === 0 && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>Este pedido no tiene ítems cargados.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={itemTableColSpan}>Este pedido no tiene ítems cargados.</td>
                         </tr>
                       )}
                       {!selectedOrder && (
                         <tr>
-                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={isAdmin ? (isAdminRole ? 7 : 6) : 4}>No hay pedido seleccionado.</td>
+                          <td className="px-5 py-8 text-center text-muted-foreground" colSpan={itemTableColSpan}>No hay pedido seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
