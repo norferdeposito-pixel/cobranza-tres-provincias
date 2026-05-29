@@ -622,6 +622,8 @@ const Index = () => {
   const [allPedidoNovedades, setAllPedidoNovedades] = useState<PedidoNovedad[]>([]);
   const [novedadForm, setNovedadForm] = useState({ tipo: "general", mensaje: "", visibleVendedor: true });
   const [isSavingNovedad, setIsSavingNovedad] = useState(false);
+  const [discountForm, setDiscountForm] = useState("");
+  const [isSavingDiscount, setIsSavingDiscount] = useState(false);
   const [novedadesDialogOrderId, setNovedadesDialogOrderId] = useState<string | number | null>(null);
   const [previewItemsByOrderId, setPreviewItemsByOrderId] = useState<Record<string, PedidoItem[]>>({});
   const [dashboardAlertasCount, setDashboardAlertasCount] = useState(0);
@@ -1000,6 +1002,9 @@ const Index = () => {
   const ordersWithoutOcCount = orders.filter((order) => order.rawStatus === "pedido_cargado" && (!order.ocNumber || order.ocNumber === "-")).length;
   const totalOcAmount = pedidoItems.reduce((total, item) => total + getItemSubtotal(item), 0);
   const totalOcCurrency = pedidoItems.find((item) => item.moneda)?.moneda || "ARS";
+  const latestDiscount = pedidoNovedades.find((novedad) => safeText(novedad.tipo).toLowerCase() === "descuento");
+  const latestDiscountPercent = latestDiscount ? safeNumber((latestDiscount.mensaje || "").match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", ".")) : 0;
+  const totalOcWithDiscount = latestDiscountPercent > 0 ? totalOcAmount * (1 - latestDiscountPercent / 100) : totalOcAmount;
 
   const metrics = [
     { label: "Total pedidos en curso", value: orders.filter((order) => !["terminado", "recibido_total", "anulado"].includes(order.rawStatus)).length, icon: PackageCheck },
@@ -1704,7 +1709,7 @@ const Index = () => {
     const nextReceived = safeNumber(selectedItem.cantidad_recibida) + (isQuantityReception ? receivedQuantity : 0);
     const nextPending = Math.max(safeNumber(selectedItem.cantidad_pedida) - nextReceived, 0);
     const updatedItems = pedidoItems.map((item) => item.id === selectedItem.id ? { ...item, cantidad_recibida: nextReceived, cantidad_pendiente: nextPending, estado_entrega: nextPending <= 0 ? "recibido_total" : item.estado_entrega || "pendiente" } : item);
-    const nextOrderStatus = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
+    const nextOrderStatus: string = getPedidoLifecycleStatus(updatedItems, selectedOrder?.rawStatus);
 
     if (isPreviewMode) {
       if (isQuantityReception) {
@@ -1873,6 +1878,54 @@ Equipo NORFER`;
     }
     setNovedadForm({ tipo: "general", mensaje: "", visibleVendedor: true });
     toast({ title: "Novedad guardada" });
+  };
+
+  const saveDiscount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedOrder || safeNumber(discountForm) <= 0) return;
+    const percent = safeNumber(discountForm);
+    const message = `DESCUENTO LOGRADO: ${percent.toLocaleString("es-AR", { maximumFractionDigits: 2 })}%`;
+    setIsSavingDiscount(true);
+
+    if (isPreviewMode) {
+      const next: PedidoNovedad = {
+        id: `preview-descuento-${Date.now()}`,
+        pedido_id: selectedOrder.id,
+        tipo: "descuento",
+        mensaje: message,
+        visible_vendedor: true,
+        created_by: currentUserProfile?.nombre || userEmail || "Usuario",
+        created_at: new Date().toISOString(),
+      };
+      setPedidoNovedades((current) => [next, ...current]);
+      setAllPedidoNovedades((current) => [next, ...current]);
+      setDiscountForm("");
+      setIsSavingDiscount(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("pedido_novedades" as any)
+      .insert({
+        pedido_id: selectedOrder.id,
+        tipo: "descuento",
+        mensaje: message,
+        visible_vendedor: true,
+        created_by: currentUserProfile?.nombre || userEmail || null,
+      })
+      .select("id, pedido_id, tipo, mensaje, visible_vendedor, created_by, created_at")
+      .maybeSingle();
+    setIsSavingDiscount(false);
+    if (error) {
+      toast({ title: "No se pudo guardar el descuento", description: error.message, variant: "destructive" });
+      return;
+    }
+    if (data) {
+      setPedidoNovedades((current) => [data as any, ...current]);
+      setAllPedidoNovedades((current) => [data as any, ...current]);
+    }
+    setDiscountForm("");
+    toast({ title: "Descuento guardado" });
   };
 
   const copyNovedadForSeller = async (novedad: PedidoNovedad) => {
@@ -2661,7 +2714,27 @@ Equipo NORFER`;
                       </div>
                     </div>
                     {canAddRecepcion && pedidoItems.length > 0 && (
-                      <div className="mb-4 rounded-md border bg-surface-subtle p-3 text-sm font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</div>
+                      <div className="mb-4 grid gap-3 rounded-md border bg-surface-subtle p-3 text-sm">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</p>
+                            {latestDiscountPercent > 0 && (
+                              <p className="mt-1 font-semibold text-success">
+                                DESCUENTO LOGRADO: {latestDiscountPercent.toLocaleString("es-AR", { maximumFractionDigits: 2 })}% · TOTAL CON DESCUENTO: {totalOcWithDiscount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}
+                              </p>
+                            )}
+                          </div>
+                          {latestDiscount && <span className="rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-xs font-semibold text-success">REGISTRADO</span>}
+                        </div>
+                        {canSendMessages && (
+                          <form className="grid gap-2 md:grid-cols-[180px_auto]" onSubmit={saveDiscount}>
+                            <Input type="number" min="0" step="0.01" value={discountForm} onChange={(event) => setDiscountForm(event.target.value)} placeholder="Descuento %" />
+                            <Button type="submit" variant="command" disabled={isSavingDiscount || safeNumber(discountForm) <= 0}>
+                              {isSavingDiscount ? "Guardando..." : "Guardar descuento"}
+                            </Button>
+                          </form>
+                        )}
+                      </div>
                     )}
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h4 className="font-semibold">Alertas del pedido</h4>

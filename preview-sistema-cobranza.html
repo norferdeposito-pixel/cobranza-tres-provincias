@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vista previa - Sistema de afiliados y cobranza</title>
+    <style>
+      :root { --bg:#f6f8fb; --card:#fff; --text:#172033; --muted:#667085; --border:#d9e0ea; --primary:#0b5cab; --accent:#15947f; --warn:#9a6700; --ok:#23724d; }
+      *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+      .wrap{width:min(1260px,calc(100% - 32px));margin:auto}.top{background:var(--card);border-bottom:1px solid var(--border)}.top .wrap{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 0}
+      .brand{display:flex;gap:12px;align-items:center}.logo{display:grid;place-items:center;width:44px;height:44px;border-radius:7px;background:var(--primary);color:white;font-weight:800}
+      h1,h2,h3,p{margin:0} h1{font-size:24px}.muted{color:var(--muted)}.small{font-size:13px}.btn{display:inline-flex;align-items:center;justify-content:center;height:40px;border:1px solid var(--border);border-radius:7px;background:white;padding:0 13px;font-weight:650;font-size:14px}.primary{background:linear-gradient(135deg,var(--primary),var(--accent));border-color:var(--primary);color:white}
+      main{padding:24px 0 40px}.panel{background:var(--card);border:1px solid var(--border);border-radius:7px;box-shadow:0 18px 55px -34px rgba(23,32,51,.55)}
+      .loader{padding:16px}.loader-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end}label{display:block;margin-bottom:7px;font-size:14px;font-weight:650}input,select,textarea{width:100%;height:40px;border:1px solid var(--border);border-radius:7px;background:white;padding:0 12px;font:inherit}
+      .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}.metric{background:white;border:1px solid var(--border);border-radius:7px;padding:16px}.metric strong{display:block;margin-top:7px;font-size:30px}
+      .nav{display:flex;flex-wrap:wrap;gap:8px;background:white;border:1px solid var(--border);border-radius:7px;padding:8px;margin-top:18px}.nav .active{background:linear-gradient(135deg,var(--primary),var(--accent));color:white;border-color:var(--primary)}
+      .layout{display:grid;grid-template-columns:1fr 360px;gap:18px;margin-top:18px}.section-title{padding:16px;border-bottom:1px solid var(--border)}.filters{padding:14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 170px;gap:10px}
+      .scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:900px;font-size:14px}th{background:#edf2f7;color:var(--muted);font-size:12px;text-transform:uppercase;text-align:left}th,td{border-bottom:1px solid var(--border);padding:12px 14px}.right{text-align:right}
+      .badge{display:inline-flex;border:1px solid;border-radius:7px;padding:4px 8px;font-size:12px;font-weight:750}.ok{border-color:#b8dfcd;background:#eaf7f1;color:var(--ok)}.warn{border-color:#f2d39a;background:#fff6df;color:var(--warn)}
+      .side{display:grid;gap:14px;align-content:start}.card{background:white;border:1px solid var(--border);border-radius:7px;padding:16px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.mini{background:#f2f6f9;border-radius:7px;padding:12px}
+      .form{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px}.transfer{grid-column:1/-1;background:#f2f6f9;border:1px solid var(--border);border-radius:7px;padding:14px}.totals table{min-width:1180px}.rend{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+      @media(max-width:1000px){.top .wrap,.loader-row,.layout,.rend{grid-template-columns:1fr;display:grid}.metrics{grid-template-columns:1fr 1fr}} @media(max-width:640px){.metrics,.form,.grid2,.filters{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <div class="brand"><div class="logo">SC</div><div><h1>Sistema de afiliados y cobranza</h1><p class="muted small">Base de datos · cobranza mensual · recibos · totales · rendicion</p></div></div>
+        <div><span class="btn primary">+ Nuevo afiliado</span> <span class="btn">Importar CSV</span> <span class="btn">Exportar base</span></div>
+      </div>
+    </header>
+    <main class="wrap">
+      <section class="panel loader">
+        <div class="loader-row"><div><label>Planilla original</label><input value="https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5XWJ3Yuy7HHbbT1GKfhgwe_4_--q0/edit" /></div><span class="btn primary">Cargar base</span></div>
+        <p class="muted small" style="margin-top:12px">Base importada: 311 afiliados cargados.</p>
+      </section>
+      <section class="metrics">
+        <div class="metric"><p class="muted small">Afiliados</p><strong>311</strong><p class="muted small">Clientes en base</p></div>
+        <div class="metric"><p class="muted small">Seleccionados</p><strong>167</strong><p class="muted small">Pasan a cobranza mensual</p></div>
+        <div class="metric"><p class="muted small">Tickets mensuales</p><strong>475</strong><p class="muted small">Tickets recibidos</p></div>
+        <div class="metric"><p class="muted small">Total a rendir</p><strong>$3.768.684</strong><p class="muted small">Cobrado menos comision</p></div>
+      </section>
+      <nav class="nav">
+        <span class="btn active">Base de afiliados</span><span class="btn">Cobranza mensual</span><span class="btn">Cobranza</span><span class="btn">Recibos</span><span class="btn">Totales</span><span class="btn">Rendicion</span>
+      </nav>
+      <section class="layout">
+        <div class="panel">
+          <div class="section-title"><h2>Base de afiliados</h2><p class="muted small">Todos los afiliados. El tilde define quien pasa a la planilla mensual.</p></div>
+          <div class="filters"><input placeholder="Buscar por nombre, poliza o plan" /><select><option>Todos los planes</option></select></div>
+          <div class="scroll"><table><thead><tr><th>Seleccionar</th><th>Nombre y apellido</th><th>Poliza</th><th>Plan</th><th class="right">Valor</th><th>Telefono</th><th>Direccion</th><th class="right">Accion</th></tr></thead><tbody>
+            <tr><td><input type="checkbox" checked /></td><td><strong>TAGUA DORALISA</strong></td><td>31774</td><td>A 238</td><td class="right">$13.000</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
+            <tr><td><input type="checkbox" checked /></td><td><strong>AGUIRRE OSCAR</strong></td><td>159327</td><td>A 269</td><td class="right">$29.600</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
+            <tr><td><input type="checkbox" /></td><td><strong>ROMERO EDGARDO</strong></td><td>106792</td><td>Vida</td><td class="right">$2.484</td><td>2664 555 019</td><td>San Luis</td><td class="right"><span class="btn">Editar</span></td></tr>
+          </tbody></table></div>
+        </div>
+        <aside class="side">
+          <div class="card"><h2>Cobranza mensual</h2><p class="muted small">Solo tildados. Aca se carga cantidad de tickets.</p><div class="grid2"><div class="mini"><p class="muted small">AGUIRRE OSCAR</p><strong>4 tickets</strong></div><div class="mini"><p class="muted small">ALCANO MARIA</p><strong>3 tickets</strong></div></div></div>
+          <div class="card"><h2>Cobranza</h2><p class="muted small">Buscar por poliza + plan, cargar tickets cobrados y metodo E/T.</p><div class="grid2"><div class="mini"><p class="muted small">Metodo</p><strong>T</strong></div><div class="mini"><p class="muted small">Se abre</p><strong>Transferencia</strong></div></div></div>
+        </aside>
+      </section>
+      <section class="rend">
+        <div class="panel">
+          <div class="section-title"><h2>Recibos</h2><p class="muted small">Cobros sin tickets, por talonario.</p></div>
+          <div class="form"><div><label>Nombre y apellido</label><input value="GOMEZ GRACIELA" /></div><div><label>Plan</label><select><option>G 238</option></select></div><div><label>Mes que paga</label><input type="month" value="2026-05" /></div><div><label>Cant. meses</label><input value="2" /></div><div><label>Monto mensual</label><input value="$10.000" /></div><div><label>Metodo</label><select><option>T</option><option>E</option></select></div><div class="transfer"><h3>Datos de transferencia</h3><div class="grid2"><input placeholder="N° transaccion" /><input placeholder="Comprobante" /><input type="date" /><input placeholder="Titular" /></div></div></div>
+        </div>
+        <div class="panel totals">
+          <div class="section-title"><h2>Totales por plan</h2></div>
+          <div class="scroll"><table><thead><tr><th>Plan</th><th class="right">Tickets recibidos</th><th class="right">Tickets E</th><th class="right">Importe E</th><th class="right">Tickets T</th><th class="right">Importe T</th><th class="right">No cobrados</th><th class="right">Recibos E</th><th class="right">Recibos T</th></tr></thead><tbody>
+            <tr><td><strong>A 238</strong></td><td class="right">120</td><td class="right">42</td><td class="right">$546.000</td><td class="right">38</td><td class="right">$494.000</td><td class="right">40</td><td class="right">12</td><td class="right">8</td></tr>
+            <tr><td><strong>G 269</strong></td><td class="right">64</td><td class="right">18</td><td class="right">$268.200</td><td class="right">22</td><td class="right">$327.800</td><td class="right">24</td><td class="right">6</td><td class="right">4</td></tr>
+          </tbody></table></div>
+        </div>
+      </section>
+      <section class="panel" style="margin-top:18px">
+        <div class="section-title"><h2>Rendicion final</h2><p class="muted small">Se hace una sola vez al final de la cobranza.</p></div>
+        <div class="metrics" style="margin:0;padding:16px"><div class="mini"><p class="muted small">Cobrado efectivo</p><strong>$1.840.000</strong></div><div class="mini"><p class="muted small">Cobrado transferencia</p><strong>$2.442.595</strong></div><div class="mini"><p class="muted small">Comision 12%</p><strong>$513.911</strong></div><div class="mini"><p class="muted small">Total a rendir</p><strong>$3.768.684</strong></div></div>
+      </section>
+    </main>
+  </body>
+</html>

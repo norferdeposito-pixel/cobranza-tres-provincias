@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import InsuranceCollections from "./pages/InsuranceCollections.tsx";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { UserProfileProvider } from "@/contexts/UserProfileContext";
@@ -18,8 +19,9 @@ const App = () => (
       <BrowserRouter>
         <UserProfileProvider>
           <Routes>
+            <Route path="/" element={<InsuranceCollections />} />
             <Route
-              path="/"
+              path="/compras"
               element={
                 <RequireUserProfile>
                   <Index />
