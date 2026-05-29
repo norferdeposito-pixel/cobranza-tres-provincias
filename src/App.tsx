@@ -19,15 +19,15 @@ const App = () => (
       <BrowserRouter>
         <UserProfileProvider>
           <Routes>
-            <Route path="/" element={<InsuranceCollections />} />
             <Route
-              path="/compras"
+              path="/"
               element={
                 <RequireUserProfile>
                   <Index />
                 </RequireUserProfile>
               }
             />
+            <Route path="/cobranza" element={<InsuranceCollections />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
