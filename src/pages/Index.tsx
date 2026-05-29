@@ -1803,6 +1803,15 @@ const Index = () => {
   const openSellerMessage = () => {
     if (!selectedOrder) return;
     const lines = pedidoItems.map((item, index) => `${index + 1}. ${item.descripcion} – COD ${item.cod_articulo || "F/STOCK"} – ${item.cantidad_pedida} ${item.unidad || ""}`);
+    const novedadesForSeller = pedidoNovedades.filter((novedad) => novedad.visible_vendedor && safeText(novedad.tipo).toLowerCase() !== "descuento");
+    const novedadesText = novedadesForSeller.length > 0
+      ? novedadesForSeller
+          .map((novedad) => `- ${formatDate((novedad.created_at || "").slice(0, 10))} / ${novedad.tipo || "general"}: ${novedad.mensaje}`)
+          .join("\n")
+      : "- SIN NOVEDADES VISIBLES PARA VENDEDOR.";
+    const discountText = latestDiscountPercent > 0
+      ? `\n\nDESCUENTO LOGRADO: ${latestDiscountPercent.toLocaleString("es-AR", { maximumFractionDigits: 2 })}%\nTOTAL CON DESCUENTO: ${totalOcWithDiscount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${totalOcCurrency}`
+      : "";
     const message = `Hola,
 
 Te compartimos el detalle completo desde Gestión OC:
@@ -1823,7 +1832,11 @@ Artículos asignados:
 
 ${lines.join("\n") || "-"}
 
-MONTO TOTAL OC: ${totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${totalOcCurrency}
+MONTO TOTAL OC: ${totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${totalOcCurrency}${discountText}
+
+Novedades del pedido:
+
+${novedadesText}
 
 Saludos,
 
