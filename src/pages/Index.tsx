@@ -2562,6 +2562,33 @@ Equipo NORFER`;
                     </div>
                   );
                 })()}
+                {selectedOrder && isAdmin && pedidoItems.length > 0 && (
+                  <div className="border-b bg-card p-4">
+                    <div className="grid gap-3 rounded-md border bg-surface-subtle p-3 text-sm">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="font-semibold">MONTO TOTAL OC: {totalOcAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}</p>
+                          {latestDiscountPercent > 0 ? (
+                            <p className="mt-1 font-semibold text-success">
+                              DESCUENTO LOGRADO: {latestDiscountPercent.toLocaleString("es-AR", { maximumFractionDigits: 2 })}% · TOTAL CON DESCUENTO: {totalOcWithDiscount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {totalOcCurrency}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-muted-foreground">Sin descuento cargado.</p>
+                          )}
+                        </div>
+                        {latestDiscount && <span className="rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-xs font-semibold text-success">DESCUENTO REGISTRADO</span>}
+                      </div>
+                      {canSendMessages && (
+                        <form className="grid gap-2 md:grid-cols-[180px_auto]" onSubmit={saveDiscount}>
+                          <Input type="number" min="0" step="0.01" value={discountForm} onChange={(event) => setDiscountForm(event.target.value)} placeholder="Descuento %" />
+                          <Button type="submit" variant="command" disabled={isSavingDiscount || safeNumber(discountForm) <= 0}>
+                            {isSavingDiscount ? "Guardando..." : "Guardar descuento"}
+                          </Button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-3 p-3 md:hidden">
                   {!isLoadingItems && pedidoItems.map((item) => {
                     const hasUpcomingAlert = item.cantidad_pendiente > 0 && upcomingAlertItemIds.has(item.id);
@@ -2734,7 +2761,7 @@ Equipo NORFER`;
                         {pedidoNovedades.length === 0 && <p className="rounded-md border bg-surface-subtle p-3 text-sm text-muted-foreground">Sin novedades cargadas.</p>}
                       </div>
                     </div>
-                    {canAddRecepcion && pedidoItems.length > 0 && (
+                    {false && canAddRecepcion && pedidoItems.length > 0 && (
                       <div className="mb-4 grid gap-3 rounded-md border bg-surface-subtle p-3 text-sm">
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
