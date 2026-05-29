@@ -457,6 +457,7 @@ export const Cotizaciones = () => {
           const cots = cotsByItem.get(item.id) || [];
           const estado = computeEstado(cots, item.estado_cotizacion);
           const elegida = cots.find((c) => c.elegida);
+          const diffBase = elegida || cots.find((c) => c.sugerida) || null;
           const meta = getPedidoMeta(item);
           const isExpanded = expanded === item.id;
           const itemBg = estado === "proveedor_elegido" ? "bg-success/5" : estado === "enviado_a_pedido" ? "bg-primary/5" : estado === "pendiente_cotizacion" ? "bg-warning/5" : "";
@@ -515,7 +516,7 @@ export const Cotizaciones = () => {
                         <tr><td className="px-4 py-3 text-muted-foreground" colSpan={9}>Sin cotizaciones cargadas.</td></tr>
                       )}
                       {cots.map((cot) => {
-                        const diff = getPriceDiff(cot, elegida);
+                        const diff = getPriceDiff(cot, diffBase);
                         return (
                         <tr key={cot.id} className={cot.elegida ? "bg-success/10" : cot.sugerida ? "bg-warning/5" : ""}>
                           <td className="px-4 py-2 font-medium">
