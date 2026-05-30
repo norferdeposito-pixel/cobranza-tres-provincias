@@ -114,6 +114,10 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 
+  .grid > * {
+    min-width: 0;
+  }
+
   input:not([type="email"]):not([type="password"]),
   textarea {
     text-transform: uppercase;

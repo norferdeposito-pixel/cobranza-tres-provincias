@@ -2340,7 +2340,7 @@ Equipo NORFER`;
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 flex-col bg-rail text-rail-foreground lg:flex">
+        <aside className="hidden w-64 shrink-0 flex-col bg-rail text-rail-foreground 2xl:flex">
           <div className="border-b border-sidebar-border p-6">
             <div className="flex items-center gap-3">
               <div className="grid h-11 w-11 place-items-center rounded-md bg-command-gradient shadow-command">
@@ -2368,7 +2368,7 @@ Equipo NORFER`;
           </div>
         </aside>
 
-        <section className="flex-1 overflow-hidden">
+        <section className="min-w-0 flex-1 overflow-x-hidden">
           <header className="border-b bg-surface-elevated/80 px-5 py-4 backdrop-blur md:px-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -2394,7 +2394,7 @@ Equipo NORFER`;
                 </Button>
               </div>
             </div>
-            <div className="mt-4 grid gap-2 lg:hidden">
+            <div className="mt-4 grid gap-2 2xl:hidden">
               <Label htmlFor="mobile-section" className="flex items-center gap-2 text-xs uppercase text-muted-foreground">
                 <Menu className="h-4 w-4" />
                 Módulo
@@ -3232,7 +3232,7 @@ Equipo NORFER`;
                     <h3 className="text-lg font-semibold">Crear pedido de NC</h3>
                     <p className="text-sm text-muted-foreground">Carga de solicitud de nota de crédito con cliente automático por código.</p>
                   </div>
-                  <form className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4" onSubmit={saveNotaCredito}>
+                  <form className="grid gap-4 p-5 md:grid-cols-2 2xl:grid-cols-4" onSubmit={saveNotaCredito}>
                     <div className="space-y-2"><Label htmlFor="nc-fecha-carga">Fecha de carga</Label><Input id="nc-fecha-carga" type="date" value={notaCreditoForm.fechaCarga} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, fechaCarga: event.target.value })} required /></div>
                     <div className="space-y-2"><Label htmlFor="nc-codigo">COD.</Label><Input id="nc-codigo" value={notaCreditoForm.codigoCliente} onChange={(event) => updateNotaCreditoCodigo(event.target.value)} required /></div>
                     <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-cliente">Cliente</Label><Input id="nc-cliente" value={notaCreditoForm.cliente} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, cliente: event.target.value })} placeholder={notaCreditoForm.codigoCliente && !notaCreditoCliente ? "Cliente no encontrado, se registra en observaciones" : ""} /></div>
