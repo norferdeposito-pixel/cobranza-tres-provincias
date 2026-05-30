@@ -660,6 +660,7 @@ const Index = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [deletedEditItemIds, setDeletedEditItemIds] = useState<string[]>([]);
   const [supplierForm, setSupplierForm] = useState<SupplierForm>(() => createEmptySupplierForm());
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
@@ -1300,6 +1301,26 @@ const Index = () => {
     setEditItemForms((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
 
+  const removeEditItemForm = (index: number) => {
+    setEditItemForms((current) => {
+      if (current.length <= 1) {
+        toast({ title: "No se puede eliminar", description: "El pedido debe conservar al menos un ítem.", variant: "destructive" });
+        return current;
+      }
+      const item = current[index];
+      if (!item) return current;
+      const original = pedidoItems.find((currentItem) => currentItem.id === item.id);
+      const warning = safeNumber(original?.cantidad_recibida) > 0
+        ? "Este ítem ya tiene cantidades recibidas cargadas. Si lo eliminás también se perderá su historial asociado. ¿Continuar?"
+        : "¿Eliminar este ítem del pedido?";
+      if (!window.confirm(warning)) return current;
+      if (!item.id.startsWith("new-")) {
+        setDeletedEditItemIds((ids) => ids.includes(item.id) ? ids : [...ids, item.id]);
+      }
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
+  };
+
   const confirmNoDuplicateActiveItems = async (
     numeroOcQubigo: string,
     itemsToCheck: Array<Pick<PedidoItemForm, "codArticulo" | "descripcion">>,
@@ -1361,6 +1382,7 @@ const Index = () => {
     if (!selectedOrder) return;
     setIsEditOpen(true);
     setIsLoadingEdit(true);
+    setDeletedEditItemIds([]);
 
     if (isPreviewMode) {
       setEditForm({
@@ -1593,6 +1615,7 @@ const Index = () => {
       } : order));
       setPedidoItems(nextItems);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(selectedOrder.id)]: nextItems }));
+      setDeletedEditItemIds([]);
       setIsSavingEdit(false);
       setIsEditOpen(false);
       toast({ title: "Pedido actualizado en preview", description: "Los cambios se aplicaron localmente." });
@@ -1629,6 +1652,23 @@ const Index = () => {
       toast({ title: "No se pudo actualizar el pedido", description: error.message, variant: "destructive" });
       setIsSavingEdit(false);
       return;
+    }
+
+    if (deletedEditItemIds.length > 0) {
+      const cleanupSteps = [
+        supabase.from("alertas").delete().in("item_id", deletedEditItemIds),
+        supabase.from("recepciones").delete().in("item_id", deletedEditItemIds),
+        supabase.from("cotizaciones_items" as any).delete().in("item_id", deletedEditItemIds),
+        supabase.from("pedido_items").delete().in("id", deletedEditItemIds),
+      ];
+      for (const step of cleanupSteps) {
+        const { error: deleteError } = await step;
+        if (deleteError) {
+          toast({ title: "Pedido actualizado, pero no se pudo eliminar un ítem", description: deleteError.message, variant: "destructive" });
+          setIsSavingEdit(false);
+          return;
+        }
+      }
     }
 
     for (const item of editItemForms.filter((current) => !current.id.startsWith("new-"))) {
@@ -1691,6 +1731,8 @@ const Index = () => {
     const finalRow = (refetched || data) as PurchaseOrderRow | null;
     if (finalRow) setOrders((current) => current.map((order) => order.id === selectedOrder.id ? mapOrderFromSupabase(finalRow) : order));
     setPedidoItems(nextItems);
+    setPedidoAlertas((current) => current.filter((alerta) => !alerta.item_id || !deletedEditItemIds.includes(alerta.item_id)));
+    setDeletedEditItemIds([]);
     setIsSavingEdit(false);
     setIsEditOpen(false);
     toast({ title: "Pedido actualizado", description: "Los cambios fueron guardados." });
@@ -3421,6 +3463,12 @@ Equipo NORFER`;
                 <h4 className="font-semibold">Ítems del pedido</h4>
                 {editItemForms.map((item, index) => (
                   <div key={item.id} className="grid gap-3 rounded-md border bg-surface-subtle p-3 md:grid-cols-3">
+                    <div className="flex items-center justify-between gap-3 md:col-span-3">
+                      <p className="text-sm font-semibold">Ítem {index + 1}</p>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => removeEditItemForm(index)} disabled={editItemForms.length === 1} className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />Eliminar ítem
+                      </Button>
+                    </div>
                     <div className="space-y-2 md:col-span-2"><Label>descripcion</Label><Input ref={(element) => { itemDescriptionRefs.current[item.id] = element; }} value={item.descripcion} onChange={(event) => updateEditItemForm(index, "descripcion", event.target.value)} /></div>
                     <div className="space-y-2"><Label>cantidad_pedida</Label><Input type="number" min="0" step="0.01" value={item.cantidadPedida} onChange={(event) => updateEditItemForm(index, "cantidadPedida", event.target.value)} /></div>
                     <div className="space-y-2"><Label>unidad</Label><Input value={item.unidad} onChange={(event) => updateEditItemForm(index, "unidad", event.target.value)} /></div>
