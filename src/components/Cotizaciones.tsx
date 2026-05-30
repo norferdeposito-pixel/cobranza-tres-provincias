@@ -89,6 +89,9 @@ const getPriceDiff = (cot: Cotizacion, base?: Cotizacion | null) => {
   return { label, className: diff > 0 ? "text-destructive" : "text-success" };
 };
 
+const formatMoney = (amount: number, currency: string) =>
+  `${amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+
 const estadoBadge: Record<string, string> = {
   pendiente_cotizacion: "bg-warning/20 text-warning-foreground border-warning/40",
   cotizado_parcialmente: "bg-secondary text-secondary-foreground border-border",
@@ -461,6 +464,28 @@ export const Cotizaciones = () => {
           const meta = getPedidoMeta(item);
           const isExpanded = expanded === item.id;
           const itemBg = estado === "proveedor_elegido" ? "bg-success/5" : estado === "enviado_a_pedido" ? "bg-primary/5" : estado === "pendiente_cotizacion" ? "bg-warning/5" : "";
+          const pedidoItems = items.filter((row) => row.pedido_id === item.pedido_id);
+          const totalsBySupplier = Array.from(pedidoItems.reduce((map, row) => {
+            const rowCots = cotsByItem.get(row.id) || [];
+            rowCots.forEach((cot) => {
+              if (!cot.proveedor_id || !cot.costo_unitario) return;
+              const current = map.get(cot.proveedor_id) || {
+                proveedorId: cot.proveedor_id,
+                proveedor: getProveedorNombre(cot, suppliers),
+                itemIds: new Set<string>(),
+                totals: new Map<string, number>(),
+              };
+              const currency = upperText(cot.moneda) || "ARS";
+              current.itemIds.add(row.id);
+              current.totals.set(currency, (current.totals.get(currency) || 0) + (Number(row.cantidad_pedida) || 0) * cot.costo_unitario);
+              map.set(cot.proveedor_id, current);
+            });
+            return map;
+          }, new Map<string, { proveedorId: string; proveedor: string; itemIds: Set<string>; totals: Map<string, number> }>()).values()).sort((a, b) => {
+            const coverageDiff = b.itemIds.size - a.itemIds.size;
+            if (coverageDiff !== 0) return coverageDiff;
+            return a.proveedor.localeCompare(b.proveedor, "es");
+          });
 
           return (
             <div key={item.id} className={`p-5 ${itemBg}`}>
@@ -496,8 +521,39 @@ export const Cotizaciones = () => {
               </div>
 
               {isExpanded && (
-                <div className="mt-4 overflow-x-auto rounded-md border">
-                  <table className="w-full text-sm">
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-md border bg-card p-4">
+                    <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-semibold">Totales cotizados por proveedor</p>
+                        <p className="text-xs text-muted-foreground">Pedido {meta.numeroPedido} · {pedidoItems.length} ítem{pedidoItems.length === 1 ? "" : "s"} del pedido</p>
+                      </div>
+                    </div>
+                    {totalsBySupplier.length > 0 ? (
+                      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {totalsBySupplier.map((summary) => (
+                          <div key={summary.proveedorId} className="rounded-md border bg-surface-subtle p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-semibold">{summary.proveedor}</p>
+                              <span className="rounded-md border bg-card px-2 py-0.5 text-xs font-semibold">
+                                {summary.itemIds.size}/{pedidoItems.length} ítems
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-1 text-sm">
+                              {Array.from(summary.totals.entries()).map(([currency, amount]) => (
+                                <p key={currency} className="select-text font-semibold text-primary">{formatMoney(amount, currency)}</p>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="rounded-md border bg-surface-subtle p-3 text-sm text-muted-foreground">Todavía no hay cotizaciones cargadas para sumar.</p>
+                    )}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
                     <thead className="bg-muted/40 text-xs uppercase">
                       <tr>
                         <th className="px-4 py-2 text-left">Proveedor</th>
@@ -554,7 +610,8 @@ export const Cotizaciones = () => {
                         );
                       })}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
