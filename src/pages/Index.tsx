@@ -146,6 +146,8 @@ type NotaCreditoForm = {
   monto: string;
   moneda: string;
   motivo: string;
+  refacturaCodigoCliente: string;
+  refacturaFactura: string;
   vendedor: string;
   observaciones: string;
   estado: string;
@@ -521,6 +523,14 @@ const createEmptyItemForm = (): PedidoItemForm => ({
 
 const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
 const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "comercial" });
+const notaCreditoMotivos = [
+  "ERROR DE MONEDA",
+  "CAMBIO",
+  "DEVOLUCIÓN",
+  "SE REFACTURA A OTRA RAZON SOCIAL",
+  "NO RETIRADO",
+  "DUPLICADO DE FACTURACION",
+];
 const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   fechaCarga: today(),
   codigoCliente: "",
@@ -532,6 +542,8 @@ const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   monto: "",
   moneda: "PESOS",
   motivo: "",
+  refacturaCodigoCliente: "",
+  refacturaFactura: "",
   vendedor: "",
   observaciones: "",
   estado: "pendiente",
@@ -2073,10 +2085,22 @@ Equipo NORFER`;
   const saveNotaCredito = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!safeText(notaCreditoForm.fechaCarga) || !safeText(notaCreditoForm.codigoCliente) || !safeText(notaCreditoForm.tipoComprobante) || !safeText(notaCreditoForm.numeroComprobante)) return;
+    const isRefacturaOtraRazon = upperText(notaCreditoForm.motivo) === "SE REFACTURA A OTRA RAZON SOCIAL";
+    if (isRefacturaOtraRazon && (!safeText(notaCreditoForm.refacturaCodigoCliente) || !safeText(notaCreditoForm.refacturaFactura))) {
+      toast({
+        title: "Faltan datos de refacturación",
+        description: "Completá código de cliente y factura de la nueva razón social.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSavingNotaCredito(true);
     const cliente = notaCreditoCliente;
     const missingClienteNote = cliente ? "" : `CLIENTE NO ENCONTRADO. CODIGO INFORMADO: ${upperText(notaCreditoForm.codigoCliente)}.`;
-    const observaciones = [missingClienteNote, upperText(notaCreditoForm.observaciones)].filter(Boolean).join(" ");
+    const refacturaNote = isRefacturaOtraRazon
+      ? `REFACTURA A OTRA RAZON SOCIAL - COD. CLIENTE: ${upperText(notaCreditoForm.refacturaCodigoCliente)} - FACTURA: ${upperText(notaCreditoForm.refacturaFactura)}.`
+      : "";
+    const observaciones = [missingClienteNote, refacturaNote, upperText(notaCreditoForm.observaciones)].filter(Boolean).join(" ");
     const payload = {
       fecha_carga: optionalDateValue(notaCreditoForm.fechaCarga) || today(),
       codigo_cliente: upperText(notaCreditoForm.codigoCliente),
@@ -3050,7 +3074,33 @@ Equipo NORFER`;
                         </div>
                       )}
                     </div>
-                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="nc-motivo">Motivo</Label><Input id="nc-motivo" value={notaCreditoForm.motivo} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, motivo: event.target.value })} /></div>
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label htmlFor="nc-motivo">Motivo</Label>
+                      <select
+                        id="nc-motivo"
+                        value={notaCreditoForm.motivo}
+                        onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, motivo: event.target.value })}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        required
+                      >
+                        <option value="">Seleccionar motivo</option>
+                        {notaCreditoMotivos.map((motivo) => (
+                          <option key={motivo} value={motivo}>{motivo}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {upperText(notaCreditoForm.motivo) === "SE REFACTURA A OTRA RAZON SOCIAL" && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="nc-refactura-codigo">Cod. cliente nueva razón social</Label>
+                          <Input id="nc-refactura-codigo" value={notaCreditoForm.refacturaCodigoCliente} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, refacturaCodigoCliente: event.target.value })} required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="nc-refactura-factura">Factura nueva razón social</Label>
+                          <Input id="nc-refactura-factura" value={notaCreditoForm.refacturaFactura} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, refacturaFactura: event.target.value })} required />
+                        </div>
+                      </>
+                    )}
                     <div className="space-y-2"><Label htmlFor="nc-vendedor">Vendedor</Label><Input id="nc-vendedor" value={notaCreditoForm.vendedor} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, vendedor: event.target.value })} /></div>
                     <div className="space-y-2 xl:col-span-3"><Label htmlFor="nc-observaciones">Observaciones</Label><Textarea id="nc-observaciones" value={notaCreditoForm.observaciones} onChange={(event) => setNotaCreditoForm({ ...notaCreditoForm, observaciones: event.target.value })} /></div>
                     <div className="flex items-end"><Button type="submit" variant="command" disabled={isSavingNotaCredito}><CheckCircle2 className="h-4 w-4" />{isSavingNotaCredito ? "Guardando..." : "Guardar pedido NC"}</Button></div>
