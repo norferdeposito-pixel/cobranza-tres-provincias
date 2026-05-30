@@ -113,6 +113,14 @@ type ClienteNc = {
   transporte?: string | null;
 };
 
+type ClienteNcForm = {
+  codigo: string;
+  nombre: string;
+  domicilio1: string;
+  domicilio2: string;
+  transporte: string;
+};
+
 type NotaCredito = {
   id: string;
   fecha_carga: string;
@@ -421,6 +429,7 @@ const navItems = [
   { label: "Pedidos", icon: ClipboardList },
   { label: "Crear pedido", icon: FilePlus2 },
   { label: "Notas de crédito", icon: FileText },
+  { label: "Clientes", icon: UserPlus },
   { label: "Proveedores", icon: Factory },
   { label: "Usuarios", icon: UserPlus },
   { label: "Reportes", icon: BarChart3 },
@@ -523,6 +532,7 @@ const createEmptyItemForm = (): PedidoItemForm => ({
 
 const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
 const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "comercial" });
+const createEmptyClienteNcForm = (): ClienteNcForm => ({ codigo: "", nombre: "", domicilio1: "", domicilio2: "", transporte: "" });
 const notaCreditoMotivos = [
   "ERROR DE MONEDA",
   "CAMBIO",
@@ -656,6 +666,10 @@ const Index = () => {
   const [usuarioForm, setUsuarioForm] = useState<UsuarioForm>(() => createEmptyUsuarioForm());
   const [isSavingUsuario, setIsSavingUsuario] = useState(false);
   const [clientesNc, setClientesNc] = useState<ClienteNc[]>([]);
+  const [clienteNcForm, setClienteNcForm] = useState<ClienteNcForm>(() => createEmptyClienteNcForm());
+  const [editingClienteNcId, setEditingClienteNcId] = useState<string | null>(null);
+  const [clienteNcQuery, setClienteNcQuery] = useState("");
+  const [isSavingClienteNc, setIsSavingClienteNc] = useState(false);
   const [notasCredito, setNotasCredito] = useState<NotaCredito[]>([]);
   const [notaCreditoForm, setNotaCreditoForm] = useState<NotaCreditoForm>(() => createEmptyNotaCreditoForm());
   const [notaCreditoItems, setNotaCreditoItems] = useState<NotaCreditoItemForm[]>([{ descripcion: "", monto: "" }]);
@@ -716,6 +730,7 @@ const Index = () => {
   const canSeeUsuarios = isAdminRole;
   const canSeeNotasCredito = isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol);
   const canCloseNotasCredito = isAdminRole || administracionRoles.includes(userRol);
+  const canSeeClientesNc = isAdminRole || administracionRoles.includes(userRol);
   const canCreatePedido = isAdminRole || isVendedor || isDeposito;
   const canSendMessages = isAdminRole || isDeposito;
   const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
@@ -725,6 +740,7 @@ const Index = () => {
     if (item.label === "Reportes") return canSeeReportes;
     if (item.label === "Crear pedido") return canCreatePedido;
     if (item.label === "Notas de crédito") return canSeeNotasCredito;
+    if (item.label === "Clientes") return canSeeClientesNc;
     if (item.label === "Proveedores") return canSeeProveedores;
     if (item.label === "Usuarios") return canSeeUsuarios;
     if (item.label === "Cotizaciones") return canSeeCotizaciones;
@@ -1004,6 +1020,10 @@ const Index = () => {
       return matchesSearch && matchesEstado;
     });
   }, [notasCredito, notaCreditoQuery, notaCreditoEstadoFilter]);
+  const clientesNcFiltered = useMemo(() => {
+    const q = clienteNcQuery.toLowerCase();
+    return clientesNc.filter((cliente) => !q || `${cliente.codigo || ""} ${cliente.nombre || ""} ${cliente.domicilio_1 || ""} ${cliente.domicilio_2 || ""} ${cliente.transporte || ""}`.toLowerCase().includes(q));
+  }, [clientesNc, clienteNcQuery]);
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
   const upcomingAlertItemIds = new Set(
@@ -1980,6 +2000,59 @@ Equipo NORFER`;
   const resetSupplierForm = () => {
     setEditingSupplierId(null);
     setSupplierForm(createEmptySupplierForm());
+  };
+
+  const startEditClienteNc = (cliente: ClienteNc) => {
+    setEditingClienteNcId(cliente.id || null);
+    setClienteNcForm({
+      codigo: cliente.codigo || "",
+      nombre: cliente.nombre || "",
+      domicilio1: cliente.domicilio_1 || "",
+      domicilio2: cliente.domicilio_2 || "",
+      transporte: cliente.transporte || "",
+    });
+  };
+
+  const resetClienteNcForm = () => {
+    setEditingClienteNcId(null);
+    setClienteNcForm(createEmptyClienteNcForm());
+  };
+
+  const saveClienteNc = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!safeText(clienteNcForm.codigo) || !safeText(clienteNcForm.nombre)) return;
+    setIsSavingClienteNc(true);
+    const payload = {
+      codigo: upperText(clienteNcForm.codigo),
+      nombre: upperText(clienteNcForm.nombre),
+      domicilio_1: optionalUpperValue(clienteNcForm.domicilio1),
+      domicilio_2: optionalUpperValue(clienteNcForm.domicilio2),
+      transporte: optionalUpperValue(clienteNcForm.transporte),
+    };
+
+    if (isPreviewMode) {
+      const nextCliente = { id: editingClienteNcId || `preview-cliente-${Date.now()}`, ...payload } as ClienteNc;
+      setClientesNc((current) => editingClienteNcId ? current.map((cliente) => cliente.id === editingClienteNcId ? nextCliente : cliente) : [...current, nextCliente].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      resetClienteNcForm();
+      setIsSavingClienteNc(false);
+      toast({ title: editingClienteNcId ? "Cliente actualizado" : "Cliente creado", description: "Cambio aplicado en preview." });
+      return;
+    }
+
+    const request = editingClienteNcId
+      ? supabase.from("clientes_nc" as any).update(payload).eq("id", editingClienteNcId).select("id, codigo, nombre, domicilio_1, domicilio_2, transporte").maybeSingle()
+      : supabase.from("clientes_nc" as any).insert(payload).select("id, codigo, nombre, domicilio_1, domicilio_2, transporte").maybeSingle();
+    const { data, error } = await request;
+    setIsSavingClienteNc(false);
+    if (error) {
+      toast({ title: "Error al guardar cliente", description: error.message, variant: "destructive" });
+      return;
+    }
+    if (data) {
+      setClientesNc((current) => editingClienteNcId ? current.map((cliente) => cliente.id === editingClienteNcId ? data as ClienteNc : cliente) : [...current, data as ClienteNc].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    }
+    resetClienteNcForm();
+    toast({ title: editingClienteNcId ? "Cliente actualizado" : "Cliente creado", description: "Ya queda disponible para Notas de Crédito." });
   };
 
   const saveSupplier = async (event: FormEvent<HTMLFormElement>) => {
@@ -3008,6 +3081,50 @@ Equipo NORFER`;
                 </div>
               </section>
             </section>}
+            {activeSection === "Clientes" && canSeeClientesNc && (
+              <section className="space-y-6">
+                <div className="rounded-md border bg-card shadow-command">
+                  <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                    <div><h3 className="text-lg font-semibold">Clientes</h3><p className="text-sm text-muted-foreground">Base utilizada para completar Notas de Crédito por código.</p></div>
+                    <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{clientesNc.length}</span>
+                  </div>
+                  <div className="border-b p-5">
+                    <Input value={clienteNcQuery} onChange={(event) => setClienteNcQuery(event.target.value)} placeholder="Buscar por código, cliente, domicilio o transporte" />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-left text-sm">
+                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                        <tr><th className="px-5 py-3 font-semibold">código</th><th className="px-5 py-3 font-semibold">cliente</th><th className="px-5 py-3 font-semibold">domicilio 1</th><th className="px-5 py-3 font-semibold">domicilio 2</th><th className="px-5 py-3 font-semibold">transporte</th><th className="px-5 py-3 font-semibold">acciones</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {clientesNcFiltered.map((cliente) => (
+                          <tr key={cliente.id || cliente.codigo} className="transition hover:bg-surface-subtle/70">
+                            <td className="px-5 py-4 font-semibold">{cliente.codigo || "-"}</td>
+                            <td className="px-5 py-4 font-medium">{cliente.nombre || "-"}</td>
+                            <td className="px-5 py-4">{cliente.domicilio_1 || "-"}</td>
+                            <td className="px-5 py-4">{cliente.domicilio_2 || "-"}</td>
+                            <td className="px-5 py-4">{cliente.transporte || "-"}</td>
+                            <td className="px-5 py-4"><Button type="button" size="sm" variant="outline" onClick={() => startEditClienteNc(cliente)}><Pencil className="h-4 w-4" />Editar</Button></td>
+                          </tr>
+                        ))}
+                        {clientesNcFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={6}>No hay clientes para mostrar.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <section className="rounded-md border bg-card p-5 shadow-command">
+                  <h3 className="font-semibold">{editingClienteNcId ? "Editar cliente" : "Crear cliente"}</h3>
+                  <form className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={saveClienteNc}>
+                    <div className="space-y-2"><Label htmlFor="cliente-codigo">Código</Label><Input id="cliente-codigo" value={clienteNcForm.codigo} onChange={(event) => setClienteNcForm({ ...clienteNcForm, codigo: event.target.value })} required /></div>
+                    <div className="space-y-2 xl:col-span-2"><Label htmlFor="cliente-nombre">Cliente</Label><Input id="cliente-nombre" value={clienteNcForm.nombre} onChange={(event) => setClienteNcForm({ ...clienteNcForm, nombre: event.target.value })} required /></div>
+                    <div className="space-y-2"><Label htmlFor="cliente-domicilio-1">Domicilio 1</Label><Input id="cliente-domicilio-1" value={clienteNcForm.domicilio1} onChange={(event) => setClienteNcForm({ ...clienteNcForm, domicilio1: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="cliente-domicilio-2">Domicilio 2</Label><Input id="cliente-domicilio-2" value={clienteNcForm.domicilio2} onChange={(event) => setClienteNcForm({ ...clienteNcForm, domicilio2: event.target.value })} /></div>
+                    <div className="space-y-2"><Label htmlFor="cliente-transporte">Transporte</Label><Input id="cliente-transporte" value={clienteNcForm.transporte} onChange={(event) => setClienteNcForm({ ...clienteNcForm, transporte: event.target.value })} /></div>
+                    <div className="flex items-end gap-3"><Button type="submit" variant="command" disabled={isSavingClienteNc}>{isSavingClienteNc ? "Guardando..." : editingClienteNcId ? "Guardar cambios" : "Crear cliente"}</Button>{editingClienteNcId && <Button type="button" variant="outline" onClick={resetClienteNcForm}>Cancelar</Button>}</div>
+                  </form>
+                </section>
+              </section>
+            )}
             {activeSection === "Proveedores" && (
               <section className="space-y-6">
                 <div className="rounded-md border bg-card shadow-command">
