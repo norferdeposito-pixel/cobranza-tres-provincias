@@ -875,7 +875,7 @@ const Index = () => {
       if (!canSeeNotasCredito || isPreviewMode) return;
       try {
         const [{ data: clientesData }, { data: notasData }] = await Promise.all([
-          supabase.from("clientes_nc" as any).select("id, codigo, nombre, domicilio_1, domicilio_2, transporte").order("nombre", { ascending: true }),
+          supabase.from("clientes_nc" as any).select("id, codigo, nombre, domicilio_1, domicilio_2, transporte").order("nombre", { ascending: true }).range(0, 9999),
           supabase.from("notas_credito" as any).select("*").order("fecha_carga", { ascending: false }),
         ]);
         setClientesNc((clientesData || []) as any);
@@ -2063,6 +2063,16 @@ Equipo NORFER`;
   const saveClienteNc = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!safeText(clienteNcForm.codigo) || !safeText(clienteNcForm.nombre)) return;
+    const existingCliente = clientesNc.find((cliente) => safeText(cliente.codigo) === safeText(clienteNcForm.codigo) && String(cliente.id || "") !== String(editingClienteNcId || ""));
+    if (existingCliente) {
+      startEditClienteNc(existingCliente);
+      toast({
+        title: "Código de cliente existente",
+        description: "Ese código ya está cargado. Abrí el registro existente para editarlo.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSavingClienteNc(true);
     const payload = {
       codigo: upperText(clienteNcForm.codigo),
@@ -2087,6 +2097,19 @@ Equipo NORFER`;
     const { data, error } = await request;
     setIsSavingClienteNc(false);
     if (error) {
+      if (error.message.includes("clientes_nc_codigo_key") || error.message.includes("duplicate key")) {
+        const { data: existingData } = await supabase
+          .from("clientes_nc" as any)
+          .select("id, codigo, nombre, domicilio_1, domicilio_2, transporte")
+          .eq("codigo", upperText(clienteNcForm.codigo))
+          .maybeSingle();
+        if (existingData) {
+          startEditClienteNc(existingData as ClienteNc);
+          setClientesNc((current) => current.some((cliente) => cliente.id === (existingData as any).id) ? current : [...current, existingData as ClienteNc].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        }
+        toast({ title: "Código de cliente existente", description: "Ese código ya está cargado. Se abrió el registro existente para editarlo.", variant: "destructive" });
+        return;
+      }
       toast({ title: "Error al guardar cliente", description: error.message, variant: "destructive" });
       return;
     }
