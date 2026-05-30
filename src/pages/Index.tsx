@@ -540,6 +540,7 @@ const notaCreditoMotivos = [
   "SE REFACTURA A OTRA RAZON SOCIAL",
   "NO RETIRADO",
   "DUPLICADO DE FACTURACION",
+  "ERROR EN EL/LOS MONTO/S FACTURADO/S",
 ];
 const createEmptyNotaCreditoForm = (): NotaCreditoForm => ({
   fechaCarga: today(),
