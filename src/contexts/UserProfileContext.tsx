@@ -11,6 +11,8 @@ type UserProfileContextValue = {
   email: string | null;
   loading: boolean;
   isAuthenticated: boolean;
+  mustUpdatePassword: boolean;
+  clearPasswordRecovery: () => void;
   signOut: () => Promise<void>;
 };
 
@@ -19,6 +21,8 @@ const UserProfileContext = createContext<UserProfileContextValue>({
   email: null,
   loading: true,
   isAuthenticated: false,
+  mustUpdatePassword: false,
+  clearPasswordRecovery: () => {},
   signOut: async () => {},
 });
 
@@ -29,6 +33,7 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [mustUpdatePassword, setMustUpdatePassword] = useState(false);
 
   const loadProfile = async (userEmail: string | null) => {
     setEmail(userEmail);
@@ -62,13 +67,17 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
     setCurrentUserProfile(null);
     setEmail(null);
     setIsAuthenticated(false);
+    setMustUpdatePassword(false);
   };
+
+  const clearPasswordRecovery = () => setMustUpdatePassword(false);
 
   useEffect(() => {
     let mounted = true;
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
+      if (event === "PASSWORD_RECOVERY") setMustUpdatePassword(true);
       loadProfile(session?.user?.email ?? null);
     });
 
@@ -84,7 +93,7 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <UserProfileContext.Provider value={{ currentUserProfile, email, loading, isAuthenticated, signOut }}>
+    <UserProfileContext.Provider value={{ currentUserProfile, email, loading, isAuthenticated, mustUpdatePassword, clearPasswordRecovery, signOut }}>
       {children}
     </UserProfileContext.Provider>
   );

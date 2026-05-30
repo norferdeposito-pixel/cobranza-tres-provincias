@@ -1,10 +1,11 @@
 import { ReactNode } from "react";
 import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 import { LoginScreen } from "@/components/LoginScreen";
+import { PasswordRecoveryScreen } from "@/components/PasswordRecoveryScreen";
 import { Button } from "@/components/ui/button";
 
 export const RequireUserProfile = ({ children }: { children: ReactNode }) => {
-  const { currentUserProfile, loading, isAuthenticated, signOut } = useCurrentUserProfile();
+  const { currentUserProfile, loading, isAuthenticated, mustUpdatePassword, signOut } = useCurrentUserProfile();
 
   if (loading) {
     return (
@@ -16,6 +17,10 @@ export const RequireUserProfile = ({ children }: { children: ReactNode }) => {
 
   if (!isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  if (mustUpdatePassword) {
+    return <PasswordRecoveryScreen />;
   }
 
   if (!currentUserProfile) {
