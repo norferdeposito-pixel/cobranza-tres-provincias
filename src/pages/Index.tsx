@@ -2198,13 +2198,28 @@ Equipo NORFER`;
     });
   };
 
-  const updateNotaCreditoCodigo = (codigoCliente: string) => {
+  const updateNotaCreditoCodigo = async (codigoCliente: string) => {
     const cliente = clientesNc.find((item) => safeText(item.codigo) === safeText(codigoCliente));
     setNotaCreditoForm((current) => ({
       ...current,
       codigoCliente,
       cliente: cliente?.nombre || "",
     }));
+    if (cliente || !safeText(codigoCliente) || isPreviewMode) return;
+
+    const { data } = await supabase
+      .from("clientes_nc" as any)
+      .select("id, codigo, nombre, domicilio_1, domicilio_2, transporte")
+      .eq("codigo", upperText(codigoCliente))
+      .maybeSingle();
+
+    if (!data) return;
+    const foundCliente = data as ClienteNc;
+    setClientesNc((current) => current.some((item) => item.id === foundCliente.id) ? current : [...current, foundCliente].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setNotaCreditoForm((current) => {
+      if (safeText(current.codigoCliente) !== safeText(codigoCliente)) return current;
+      return { ...current, cliente: foundCliente.nombre || "" };
+    });
   };
 
   const updateNotaCreditoItem = (index: number, field: keyof NotaCreditoItemForm, value: string) => {
