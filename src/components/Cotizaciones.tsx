@@ -92,6 +92,13 @@ const getPriceDiff = (cot: Cotizacion, base?: Cotizacion | null) => {
 const formatMoney = (amount: number, currency: string) =>
   `${amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 
+const getTotalSavingsDiff = (amount: number, maxAmount?: number | null) => {
+  if (!maxAmount || !amount || maxAmount <= amount) return null;
+  const diff = ((maxAmount - amount) / maxAmount) * 100;
+  if (Math.abs(diff) < 0.05) return null;
+  return `-${diff.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+};
+
 const estadoBadge: Record<string, string> = {
   pendiente_cotizacion: "bg-warning/20 text-warning-foreground border-warning/40",
   cotizado_parcialmente: "bg-secondary text-secondary-foreground border-border",
@@ -486,6 +493,19 @@ export const Cotizaciones = () => {
             if (coverageDiff !== 0) return coverageDiff;
             return a.proveedor.localeCompare(b.proveedor, "es");
           });
+          const completeTotalsBySupplier = totalsBySupplier.filter((summary) => summary.itemIds.size === pedidoItems.length);
+          const totalBaselineSource = completeTotalsBySupplier.length > 0 ? completeTotalsBySupplier : totalsBySupplier;
+          const totalComparisons = totalBaselineSource.reduce((map, summary) => {
+            summary.totals.forEach((amount, currency) => {
+              const current = map.get(currency) || [];
+              current.push(amount);
+              map.set(currency, current);
+            });
+            return map;
+          }, new Map<string, number[]>());
+          totalComparisons.forEach((amounts, currency) => {
+            totalComparisons.set(currency, Array.from(new Set(amounts)).sort((a, b) => a - b));
+          });
 
           return (
             <div key={item.id} className={`p-5 ${itemBg}`}>
@@ -540,9 +560,17 @@ export const Cotizaciones = () => {
                               </span>
                             </div>
                             <div className="mt-2 space-y-1 text-sm">
-                              {Array.from(summary.totals.entries()).map(([currency, amount]) => (
-                                <p key={currency} className="select-text font-semibold text-primary">{formatMoney(amount, currency)}</p>
-                              ))}
+                              {Array.from(summary.totals.entries()).map(([currency, amount]) => {
+                                const comparisons = totalComparisons.get(currency) || [];
+                                const maxAmount = comparisons[comparisons.length - 1];
+                                const savingsDiff = getTotalSavingsDiff(amount, maxAmount);
+                                return (
+                                  <div key={currency}>
+                                    <p className="select-text font-semibold text-primary">{formatMoney(amount, currency)}</p>
+                                    {savingsDiff && <p className="text-xs font-semibold text-success">Dif. vs mayor: {savingsDiff}</p>}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         ))}

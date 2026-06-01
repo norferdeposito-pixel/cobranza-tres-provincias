@@ -43,12 +43,14 @@ type Affiliate = {
 };
 
 type MonthlyItem = {
+  month: string;
   affiliateId: string;
   tickets: number;
 };
 
 type TicketCollection = {
   id: string;
+  month: string;
   affiliateId: string;
   ticketsCharged: number;
   paymentMethod: PaymentMethod;
@@ -57,6 +59,7 @@ type TicketCollection = {
 
 type ReceiptCollection = {
   id: string;
+  collectionMonth: string;
   receiptNumber: string;
   fullName: string;
   plan: PlanType;
@@ -84,6 +87,7 @@ const renditionStorageKey = "insurance-rendition-v2";
 
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
+const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 const demoAffiliates: Affiliate[] = [
   { id: "31774-A238", fullName: "TAGUA DORALISA", policyNumber: "31774", plan: "A 238", value: 13000, phone: "", address: "", selectedForMonthly: true },
@@ -207,6 +211,7 @@ const emptyTransferForm = emptyTransfer;
 
 const InsuranceCollections = () => {
   const [activeSection, setActiveSection] = useState<Section>("Base");
+  const [activeMonth, setActiveMonth] = useState(currentMonth);
   const [affiliates, setAffiliates] = useState<Affiliate[]>(() => loadStorage(affiliatesStorageKey, demoAffiliates));
   const [monthlyItems, setMonthlyItems] = useState<MonthlyItem[]>(() => loadStorage(monthlyStorageKey, []));
   const [ticketCollections, setTicketCollections] = useState<TicketCollection[]>(() => loadStorage(ticketCollectionsStorageKey, []));
@@ -252,25 +257,25 @@ const InsuranceCollections = () => {
       .filter((item) => item.selectedForMonthly)
       .map((affiliate) => ({
         affiliate,
-        monthly: monthlyItems.find((item) => item.affiliateId === affiliate.id) || { affiliateId: affiliate.id, tickets: 0 },
+        monthly: monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id) || { month: activeMonth, affiliateId: affiliate.id, tickets: 0 },
       }));
-  }, [affiliates, monthlyItems]);
+  }, [activeMonth, affiliates, monthlyItems]);
 
   const selectedMonthlyAffiliate = useMemo(() => {
     return affiliates.find((item) => item.policyNumber === collectionPolicy.trim() && item.plan === collectionPlan) || null;
   }, [affiliates, collectionPlan, collectionPolicy]);
 
-  const selectedMonthlyItem = selectedMonthlyAffiliate ? monthlyItems.find((item) => item.affiliateId === selectedMonthlyAffiliate.id) : null;
+  const selectedMonthlyItem = selectedMonthlyAffiliate ? monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id) : null;
   const alreadyChargedTickets = selectedMonthlyAffiliate
-    ? ticketCollections.filter((item) => item.affiliateId === selectedMonthlyAffiliate.id).reduce((sum, item) => sum + item.ticketsCharged, 0)
+    ? ticketCollections.filter((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id).reduce((sum, item) => sum + item.ticketsCharged, 0)
     : 0;
   const ticketsToCharge = Math.max((selectedMonthlyItem?.tickets || 0) - alreadyChargedTickets, 0);
 
   const totalsByPlan = useMemo(() => {
     return plans.map((plan) => {
       const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
-      const collectionsForPlan = ticketCollections.filter((item) => affiliatesById.get(item.affiliateId)?.plan === plan);
-      const receiptsForPlan = receipts.filter((item) => item.plan === plan);
+      const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && affiliatesById.get(item.affiliateId)?.plan === plan);
+      const receiptsForPlan = receipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return (affiliate?.value || 0) * collection.ticketsCharged;
@@ -298,7 +303,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [affiliatesById, monthlyRows, receipts, ticketCollections]);
+  }, [activeMonth, affiliatesById, monthlyRows, receipts, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -379,14 +384,14 @@ const InsuranceCollections = () => {
 
   const toggleMonthly = (affiliateId: string, checked: boolean) => {
     setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, selectedForMonthly: checked } : item));
-    if (checked) setMonthlyItems((current) => current.some((item) => item.affiliateId === affiliateId) ? current : [...current, { affiliateId, tickets: 0 }]);
-    else setMonthlyItems((current) => current.filter((item) => item.affiliateId !== affiliateId));
+    if (checked) setMonthlyItems((current) => current.some((item) => item.month === activeMonth && item.affiliateId === affiliateId) ? current : [...current, { month: activeMonth, affiliateId, tickets: 0 }]);
+    else setMonthlyItems((current) => current.filter((item) => !(item.month === activeMonth && item.affiliateId === affiliateId)));
   };
 
   const updateMonthlyTickets = (affiliateId: string, tickets: number) => {
-    setMonthlyItems((current) => current.some((item) => item.affiliateId === affiliateId)
-      ? current.map((item) => item.affiliateId === affiliateId ? { ...item, tickets } : item)
-      : [...current, { affiliateId, tickets }]);
+    setMonthlyItems((current) => current.some((item) => item.month === activeMonth && item.affiliateId === affiliateId)
+      ? current.map((item) => item.month === activeMonth && item.affiliateId === affiliateId ? { ...item, tickets } : item)
+      : [...current, { month: activeMonth, affiliateId, tickets }]);
   };
 
   const saveTicketCollection = (event: FormEvent) => {
@@ -396,6 +401,7 @@ const InsuranceCollections = () => {
     if (tickets <= 0) return;
     setTicketCollections((current) => [...current, {
       id: `ticket-${Date.now()}`,
+      month: activeMonth,
       affiliateId: selectedMonthlyAffiliate.id,
       ticketsCharged: tickets,
       paymentMethod: collectionMethod,
@@ -410,6 +416,7 @@ const InsuranceCollections = () => {
     event.preventDefault();
     setReceipts((current) => [...current, {
       id: `receipt-${Date.now()}`,
+      collectionMonth: activeMonth,
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
       plan: receiptForm.plan,
@@ -468,6 +475,10 @@ const InsuranceCollections = () => {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <div className="flex h-10 items-center gap-2 rounded-md border bg-background px-3">
+              <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Mes</Label>
+              <Input id="active-month" type="month" value={activeMonth} onChange={(event) => setActiveMonth(event.target.value || currentMonth())} className="h-8 w-36 border-0 p-0 shadow-none focus-visible:ring-0" />
+            </div>
             <Button type="button" variant="command" onClick={() => openAffiliateForm()}>
               <Plus className="h-4 w-4" />
               Nuevo afiliado
@@ -504,7 +515,7 @@ const InsuranceCollections = () => {
           {[
             ["Afiliados", affiliates.length, "Clientes en base"],
             ["Seleccionados", affiliates.filter((item) => item.selectedForMonthly).length, "Pasan a cobranza mensual"],
-            ["Tickets mensuales", monthlyItems.reduce((sum, item) => sum + item.tickets, 0), "Tickets recibidos"],
+            ["Tickets mensuales", monthlyItems.filter((item) => item.month === activeMonth).reduce((sum, item) => sum + item.tickets, 0), "Tickets recibidos"],
             ["Total a rendir", currency.format(totalToRender), "Cobrado menos comisión"],
           ].map(([label, value, helper]) => (
             <div key={String(label)} className="rounded-md border bg-card p-4 shadow-command">
@@ -569,7 +580,7 @@ const InsuranceCollections = () => {
           <section className="rounded-md border bg-card">
             <div className="border-b p-4">
               <h2 className="font-semibold">Planilla de cobranza mensual</h2>
-              <p className="text-sm text-muted-foreground">Aparecen solo los afiliados tildados en la base. Acá se carga la cantidad de tickets.</p>
+              <p className="text-sm text-muted-foreground">Período {activeMonth}. Aparecen solo los afiliados tildados en la base. Acá se carga la cantidad de tickets.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] text-sm">
@@ -624,7 +635,7 @@ const InsuranceCollections = () => {
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               <div className="mt-4 flex justify-end"><Button type="submit" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0}>Guardar cobro</Button></div>
             </form>
-            <RecentTicketCollections collections={ticketCollections} affiliatesById={affiliatesById} />
+            <RecentTicketCollections collections={ticketCollections.filter((item) => item.month === activeMonth)} affiliatesById={affiliatesById} />
           </section>
         )}
 
@@ -644,7 +655,7 @@ const InsuranceCollections = () => {
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
               <div className="mt-4 flex justify-end"><Button type="submit" variant="command">Guardar recibo</Button></div>
             </form>
-            <RecentReceipts receipts={receipts} />
+            <RecentReceipts receipts={receipts.filter((item) => item.collectionMonth === activeMonth)} />
           </section>
         )}
 
