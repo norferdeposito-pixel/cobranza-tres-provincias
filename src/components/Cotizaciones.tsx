@@ -92,6 +92,9 @@ const getPriceDiff = (cot: Cotizacion, base?: Cotizacion | null) => {
 const formatMoney = (amount: number, currency: string) =>
   `${amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 
+const escapeHtml = (value: string | number | null | undefined) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char] || char));
+
 const getTotalSavingsDiff = (amount: number, maxAmount?: number | null) => {
   if (!maxAmount || !amount || maxAmount <= amount) return null;
   const diff = ((maxAmount - amount) / maxAmount) * 100;
@@ -180,6 +183,117 @@ export const Cotizaciones = () => {
       });
     });
   }, [items, cotsByItem, filterMonth, filterYear, statusFilter]);
+  const cotizacionesInReportPeriod = useMemo(() => {
+    return cotizaciones.filter((cot) => {
+      const fecha = cot.fecha_cotizacion || "";
+      const [year, month] = fecha.split("-").map(Number);
+      if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+      if (year !== filterYear) return false;
+      if (filterMonth === 0) return true;
+      return month === filterMonth;
+    });
+  }, [cotizaciones, filterMonth, filterYear]);
+  const cotizacionesReport = useMemo(() => {
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const totals = ["ARS", "USD"].reduce((acc, currency) => {
+      acc[currency] = { totalCotizado: 0, totalElegido: 0, ahorro: 0 };
+      return acc;
+    }, {} as Record<string, { totalCotizado: number; totalElegido: number; ahorro: number }>);
+    const detailRows = cotizacionesInReportPeriod.map((cot) => {
+      const item = itemById.get(cot.item_id);
+      const quantity = Number(item?.cantidad_pedida) || 0;
+      const currency = upperText(cot.moneda) || "ARS";
+      const total = quantity * (Number(cot.costo_unitario) || 0);
+      if (currency === "ARS" || currency === "USD") {
+        totals[currency].totalCotizado += total;
+        if (cot.elegida) totals[currency].totalElegido += total;
+      }
+      return {
+        pedido: item ? getPedidoMeta(item).numeroPedido : "-",
+        cliente: item ? getPedidoMeta(item).cliente : "-",
+        item: item?.descripcion || item?.cod_articulo || cot.item_id,
+        proveedor: getProveedorNombre(cot, suppliers),
+        cantidad: quantity,
+        precio: Number(cot.costo_unitario) || 0,
+        moneda: currency,
+        total,
+        elegida: cot.elegida ? "SI" : "NO",
+        fecha: cot.fecha_cotizacion || "-",
+      };
+    });
+    const periodCotsByItem = cotizacionesInReportPeriod.reduce((map, cot) => {
+      const list = map.get(cot.item_id) || [];
+      list.push(cot);
+      map.set(cot.item_id, list);
+      return map;
+    }, new Map<string, Cotizacion[]>());
+    const savingsRows: Array<{ pedido: string; item: string; moneda: string; proveedorElegido: string; totalMayor: number; totalElegido: number; ahorro: number }> = [];
+    periodCotsByItem.forEach((list, itemId) => {
+      const item = itemById.get(itemId);
+      if (!item) return;
+      const quantity = Number(item.cantidad_pedida) || 0;
+      ["ARS", "USD"].forEach((currency) => {
+        const sameCurrency = list.filter((cot) => upperText(cot.moneda) === currency && Number(cot.costo_unitario) > 0);
+        const chosen = sameCurrency.find((cot) => cot.elegida);
+        if (!chosen) return;
+        const maxUnit = Math.max(...sameCurrency.map((cot) => Number(cot.costo_unitario) || 0));
+        const chosenUnit = Number(chosen.costo_unitario) || 0;
+        const ahorro = Math.max(maxUnit - chosenUnit, 0) * quantity;
+        if (ahorro <= 0) return;
+        totals[currency].ahorro += ahorro;
+        savingsRows.push({
+          pedido: getPedidoMeta(item).numeroPedido,
+          item: item.descripcion || item.cod_articulo || item.id,
+          moneda: currency,
+          proveedorElegido: getProveedorNombre(chosen, suppliers),
+          totalMayor: maxUnit * quantity,
+          totalElegido: chosenUnit * quantity,
+          ahorro,
+        });
+      });
+    });
+    return {
+      cantidadCotizaciones: cotizacionesInReportPeriod.length,
+      cantidadItems: new Set(cotizacionesInReportPeriod.map((cot) => cot.item_id)).size,
+      totals,
+      detailRows,
+      savingsRows,
+    };
+  }, [cotizacionesInReportPeriod, items, suppliers]);
+  const reportPeriodLabel = filterMonth === 0
+    ? `Todo ${filterYear}`
+    : `${["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"][filterMonth - 1]} ${filterYear}`;
+
+  const downloadCotizacionesReport = () => {
+    const table = (title: string, headers: string[], rows: Array<Array<string | number>>) => `
+      <h2>${escapeHtml(title)}</h2>
+      <table border="1">
+        <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.length > 0 ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">Sin datos</td></tr>`}</tbody>
+      </table>
+    `;
+    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body>
+      <h1>Reporte de cotizaciones - ${escapeHtml(reportPeriodLabel)}</h1>
+      ${table("Resumen", ["Concepto", "ARS", "USD"], [
+        ["Cotizaciones realizadas", cotizacionesReport.cantidadCotizaciones, cotizacionesReport.cantidadCotizaciones],
+        ["Items cotizados", cotizacionesReport.cantidadItems, cotizacionesReport.cantidadItems],
+        ["Monto cotizado", cotizacionesReport.totals.ARS.totalCotizado, cotizacionesReport.totals.USD.totalCotizado],
+        ["Monto elegido", cotizacionesReport.totals.ARS.totalElegido, cotizacionesReport.totals.USD.totalElegido],
+        ["Ahorro estimado", cotizacionesReport.totals.ARS.ahorro, cotizacionesReport.totals.USD.ahorro],
+      ])}
+      ${table("Detalle de cotizaciones", ["Pedido", "Cliente", "Item", "Proveedor", "Cantidad", "Precio unitario", "Moneda", "Total", "Elegida", "Fecha"], cotizacionesReport.detailRows.map((row) => [row.pedido, row.cliente, row.item, row.proveedor, row.cantidad, row.precio, row.moneda, row.total, row.elegida, row.fecha]))}
+      ${table("Ahorro por item", ["Pedido", "Item", "Moneda", "Proveedor elegido", "Total mayor", "Total elegido", "Ahorro"], cotizacionesReport.savingsRows.map((row) => [row.pedido, row.item, row.moneda, row.proveedorElegido, row.totalMayor, row.totalElegido, row.ahorro]))}
+    </body></html>`;
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reporte-cotizaciones-${reportPeriodLabel.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const editingItem = editing ? items.find((row) => row.id === editing.itemId) : null;
   const editingMeta = editingItem ? getPedidoMeta(editingItem) : null;
@@ -456,7 +570,42 @@ export const Cotizaciones = () => {
               <option value="enviado_a_pedido">Enviado a pedido</option>
             </select>
           </div>
+          <Button type="button" variant="outline" onClick={downloadCotizacionesReport}>
+            Exportar reporte
+          </Button>
         </div>
+      </div>
+
+      <div className="grid gap-3 border-b bg-surface-subtle/40 p-5 lg:grid-cols-[1.2fr_1fr_1fr]">
+        <div className="rounded-md border bg-card p-4">
+          <p className="text-sm font-semibold">Reporte {reportPeriodLabel}</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Cotizaciones realizadas</p>
+              <p className="text-2xl font-semibold">{cotizacionesReport.cantidadCotizaciones}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Ítems cotizados</p>
+              <p className="text-2xl font-semibold">{cotizacionesReport.cantidadItems}</p>
+            </div>
+          </div>
+        </div>
+        {["ARS", "USD"].map((currency) => {
+          const totals = cotizacionesReport.totals[currency];
+          return (
+            <div key={currency} className="rounded-md border bg-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">{currency}</p>
+                <span className="rounded-md border bg-surface-subtle px-2 py-0.5 text-xs font-semibold">Ahorro</span>
+              </div>
+              <p className="mt-2 text-2xl font-semibold text-success">{formatMoney(totals.ahorro, currency)}</p>
+              <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                <p>Monto cotizado: <span className="font-semibold text-foreground">{formatMoney(totals.totalCotizado, currency)}</span></p>
+                <p>Monto elegido: <span className="font-semibold text-foreground">{formatMoney(totals.totalElegido, currency)}</span></p>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="divide-y">
