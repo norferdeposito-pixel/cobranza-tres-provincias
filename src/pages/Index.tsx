@@ -96,6 +96,8 @@ type ReportPedidoItem = {
   cantidad_pendiente?: number | null;
   estado_entrega?: string | null;
   fecha_recibido?: string | null;
+  costo_unitario?: number | null;
+  moneda?: string | null;
 };
 
 type ReportCotizacion = {
@@ -774,7 +776,7 @@ const Index = () => {
           .select("pedido_id, fecha_recepcion"),
         supabase
           .from("pedido_items")
-          .select("id, pedido_id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, estado_entrega, fecha_recibido"),
+          .select("id, pedido_id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, estado_entrega, fecha_recibido, costo_unitario, moneda"),
         supabase
           .from("cotizaciones_items" as any)
           .select("id, item_id, fecha_cotizacion"),
@@ -1231,6 +1233,39 @@ const Index = () => {
     const allowedSuppliers = new Set(ordersInReportMonth.map((o) => o.supplier));
     return purchaseTotalsBySupplier.filter((p) => allowedSuppliers.has(p.proveedor));
   }, [purchaseTotalsBySupplier, ordersInReportMonth]);
+  const discountSavingsReport = useMemo(() => {
+    const orderIds = new Set(ordersInReportMonth.map((order) => String(order.id)));
+    const latestDiscountByOrder = new Map<string, number>();
+    allPedidoNovedades.forEach((novedad) => {
+      const orderId = String(novedad.pedido_id);
+      if (!orderIds.has(orderId) || latestDiscountByOrder.has(orderId) || safeText(novedad.tipo).toLowerCase() !== "descuento") return;
+      const percent = safeNumber((novedad.mensaje || "").match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", "."));
+      if (percent > 0) latestDiscountByOrder.set(orderId, percent);
+    });
+    const totals = new Map<string, { moneda: string; montoOriginal: number; montoFinal: number; ahorro: number; cantidadOc: number }>();
+    const currenciesByOrder = new Map<string, Set<string>>();
+    reportItemsInPeriod.forEach((item) => {
+      const orderId = String(item.pedido_id);
+      const discountPercent = latestDiscountByOrder.get(orderId);
+      if (!discountPercent || !item.costo_unitario) return;
+      const moneda = optionalValue(item.moneda) || "ARS";
+      const original = safeNumber(item.cantidad_pedida) * safeNumber(item.costo_unitario);
+      const ahorro = original * discountPercent / 100;
+      const current = totals.get(moneda) || { moneda, montoOriginal: 0, montoFinal: 0, ahorro: 0, cantidadOc: 0 };
+      current.montoOriginal += original;
+      current.ahorro += ahorro;
+      current.montoFinal += original - ahorro;
+      totals.set(moneda, current);
+      const orderCurrencies = currenciesByOrder.get(orderId) || new Set<string>();
+      orderCurrencies.add(moneda);
+      currenciesByOrder.set(orderId, orderCurrencies);
+    });
+    currenciesByOrder.forEach((currencies) => currencies.forEach((currency) => {
+      const current = totals.get(currency);
+      if (current) current.cantidadOc += 1;
+    }));
+    return Array.from(totals.values()).sort((a, b) => a.moneda.localeCompare(b.moneda));
+  }, [ordersInReportMonth, reportItemsInPeriod, allPedidoNovedades]);
   const reportPeriodLabel = reportFilterMode === "rango"
     ? `${reportFechaDesde || "inicio"} a ${reportFechaHasta || "hoy"}`
     : `${String(reportMonth).padStart(2, "0")}-${reportYear}`;
@@ -1268,6 +1303,7 @@ const Index = () => {
           <h1>Reporte OC</h1>
           <p>Periodo: ${escapeHtml(reportPeriodLabel)}</p>
           ${table("Indicadores", ["Indicador", "Cantidad", "Porcentaje"], reportSummaryRows)}
+          ${table("Ahorro por descuentos en OC", ["Moneda", "OC con descuento", "Monto original", "Monto final", "Ahorro"], discountSavingsReport.map((item) => [item.moneda, item.cantidadOc, item.montoOriginal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), item.montoFinal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), item.ahorro.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })]))}
           ${reportSections.estados ? table("Pedidos por estado", ["Estado", "Cantidad"], ordersByStatusReport.map((item) => [item.estado, item.count])) : ""}
           ${reportSections.proveedores ? table("Total por proveedor", ["Proveedor", "Moneda", "Total"], purchaseTotalsBySupplierReport.map((item) => [item.proveedor, item.moneda, item.total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })])) : ""}
           ${reportSections.alertas ? table("Alertas activas", ["Proveedor", "Pedido", "OC Qubigo", "Tipo", "Fecha aviso"], reportAlertas.map((alerta) => [alerta.proveedor, alerta.numeroPedido, alerta.numeroOcQubigo, alerta.tipo, formatDate(alerta.fechaAviso)])) : ""}
@@ -3511,6 +3547,28 @@ Equipo NORFER`;
                       </div>
                     </div>
                   ))}
+                </div>
+                <div className="rounded-md border bg-card p-5 shadow-command">
+                  <div>
+                    <h3 className="font-semibold">Ahorro por descuentos en OC</h3>
+                    <p className="text-sm text-muted-foreground">Monto original menos el total final luego del descuento logrado.</p>
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {discountSavingsReport.map((item) => (
+                      <div key={item.moneda} className="rounded-md border bg-surface-subtle p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold">{item.moneda}</p>
+                          <span className="rounded-md border bg-card px-2 py-0.5 text-xs font-semibold">{item.cantidadOc} OC</span>
+                        </div>
+                        <p className="mt-3 text-2xl font-semibold text-success">{item.ahorro.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</p>
+                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          <p>Monto original: <strong className="text-foreground">{item.montoOriginal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></p>
+                          <p>Monto final: <strong className="text-foreground">{item.montoFinal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.moneda}</strong></p>
+                        </div>
+                      </div>
+                    ))}
+                    {discountSavingsReport.length === 0 && <p className="text-sm text-muted-foreground">No hay descuentos cargados en las OC del período seleccionado.</p>}
+                  </div>
                 </div>
                 <div className="grid gap-6 lg:grid-cols-2">
                   <div className="rounded-md border bg-card p-5 shadow-command"><h3 className="font-semibold">Pedidos by estado</h3><div className="mt-4 space-y-3">{ordersByStatusReport.map((item) => (<div key={item.estado} className="flex items-center justify-between rounded-md bg-surface-subtle p-3"><span>{item.estado}</span><strong>{item.count}</strong></div>))}{ordersByStatusReport.length === 0 && <p className="text-sm text-muted-foreground">Sin pedidos en el período.</p>}</div></div>
