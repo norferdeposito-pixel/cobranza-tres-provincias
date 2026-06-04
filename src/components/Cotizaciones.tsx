@@ -92,6 +92,11 @@ const getPriceDiff = (cot: Cotizacion, base?: Cotizacion | null) => {
 const formatMoney = (amount: number, currency: string) =>
   `${amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 
+const formatSavingsPercent = (saving: number, highestTotal: number) =>
+  highestTotal > 0
+    ? `${((saving / highestTotal) * 100).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+    : "0,0%";
+
 const escapeHtml = (value: string | number | null | undefined) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char] || char));
 
@@ -204,10 +209,6 @@ export const Cotizaciones = () => {
       const quantity = Number(item?.cantidad_pedida) || 0;
       const currency = upperText(cot.moneda) || "ARS";
       const total = quantity * (Number(cot.costo_unitario) || 0);
-      if (currency === "ARS" || currency === "USD") {
-        totals[currency].totalCotizado += total;
-        if (cot.elegida) totals[currency].totalElegido += total;
-      }
       return {
         pedido: item ? getPedidoMeta(item).numeroPedido : "-",
         cliente: item ? getPedidoMeta(item).cliente : "-",
@@ -239,7 +240,8 @@ export const Cotizaciones = () => {
         const maxUnit = Math.max(...sameCurrency.map((cot) => Number(cot.costo_unitario) || 0));
         const chosenUnit = Number(chosen.costo_unitario) || 0;
         const ahorro = Math.max(maxUnit - chosenUnit, 0) * quantity;
-        if (ahorro <= 0) return;
+        totals[currency].totalCotizado += maxUnit * quantity;
+        totals[currency].totalElegido += chosenUnit * quantity;
         totals[currency].ahorro += ahorro;
         savingsRows.push({
           pedido: getPedidoMeta(item).numeroPedido,
@@ -255,6 +257,7 @@ export const Cotizaciones = () => {
     return {
       cantidadCotizaciones: cotizacionesInReportPeriod.length,
       cantidadItems: new Set(cotizacionesInReportPeriod.map((cot) => cot.item_id)).size,
+      cantidadItemsComparados: new Set(savingsRows.map((row) => `${row.pedido}-${row.item}-${row.moneda}`)).size,
       totals,
       detailRows,
       savingsRows,
@@ -277,9 +280,11 @@ export const Cotizaciones = () => {
       ${table("Resumen", ["Concepto", "ARS", "USD"], [
         ["Cotizaciones realizadas", cotizacionesReport.cantidadCotizaciones, cotizacionesReport.cantidadCotizaciones],
         ["Items cotizados", cotizacionesReport.cantidadItems, cotizacionesReport.cantidadItems],
-        ["Monto cotizado", cotizacionesReport.totals.ARS.totalCotizado, cotizacionesReport.totals.USD.totalCotizado],
-        ["Monto elegido", cotizacionesReport.totals.ARS.totalElegido, cotizacionesReport.totals.USD.totalElegido],
-        ["Ahorro estimado", cotizacionesReport.totals.ARS.ahorro, cotizacionesReport.totals.USD.ahorro],
+        ["Items comparados", cotizacionesReport.cantidadItemsComparados, cotizacionesReport.cantidadItemsComparados],
+        ["Total con proveedor de mayor valor", cotizacionesReport.totals.ARS.totalCotizado, cotizacionesReport.totals.USD.totalCotizado],
+        ["Total con proveedor elegido", cotizacionesReport.totals.ARS.totalElegido, cotizacionesReport.totals.USD.totalElegido],
+        ["Ahorro logrado", cotizacionesReport.totals.ARS.ahorro, cotizacionesReport.totals.USD.ahorro],
+        ["Ahorro porcentual", formatSavingsPercent(cotizacionesReport.totals.ARS.ahorro, cotizacionesReport.totals.ARS.totalCotizado), formatSavingsPercent(cotizacionesReport.totals.USD.ahorro, cotizacionesReport.totals.USD.totalCotizado)],
       ])}
       ${table("Detalle de cotizaciones", ["Pedido", "Cliente", "Item", "Proveedor", "Cantidad", "Precio unitario", "Moneda", "Total", "Elegida", "Fecha"], cotizacionesReport.detailRows.map((row) => [row.pedido, row.cliente, row.item, row.proveedor, row.cantidad, row.precio, row.moneda, row.total, row.elegida, row.fecha]))}
       ${table("Ahorro por item", ["Pedido", "Item", "Moneda", "Proveedor elegido", "Total mayor", "Total elegido", "Ahorro"], cotizacionesReport.savingsRows.map((row) => [row.pedido, row.item, row.moneda, row.proveedorElegido, row.totalMayor, row.totalElegido, row.ahorro]))}
@@ -579,7 +584,7 @@ export const Cotizaciones = () => {
       <div className="grid gap-3 border-b bg-surface-subtle/40 p-5 lg:grid-cols-[1.2fr_1fr_1fr]">
         <div className="rounded-md border bg-card p-4">
           <p className="text-sm font-semibold">Reporte {reportPeriodLabel}</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Cotizaciones realizadas</p>
               <p className="text-2xl font-semibold">{cotizacionesReport.cantidadCotizaciones}</p>
@@ -587,6 +592,10 @@ export const Cotizaciones = () => {
             <div>
               <p className="text-xs text-muted-foreground">Ítems cotizados</p>
               <p className="text-2xl font-semibold">{cotizacionesReport.cantidadItems}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Ítems comparados</p>
+              <p className="text-2xl font-semibold">{cotizacionesReport.cantidadItemsComparados}</p>
             </div>
           </div>
         </div>
@@ -599,9 +608,10 @@ export const Cotizaciones = () => {
                 <span className="rounded-md border bg-surface-subtle px-2 py-0.5 text-xs font-semibold">Ahorro</span>
               </div>
               <p className="mt-2 text-2xl font-semibold text-success">{formatMoney(totals.ahorro, currency)}</p>
+              <p className="mt-1 text-xs font-semibold text-success">{formatSavingsPercent(totals.ahorro, totals.totalCotizado)} de ahorro</p>
               <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                <p>Monto cotizado: <span className="font-semibold text-foreground">{formatMoney(totals.totalCotizado, currency)}</span></p>
-                <p>Monto elegido: <span className="font-semibold text-foreground">{formatMoney(totals.totalElegido, currency)}</span></p>
+                <p>Total proveedor de mayor valor: <span className="font-semibold text-foreground">{formatMoney(totals.totalCotizado, currency)}</span></p>
+                <p>Total proveedor elegido: <span className="font-semibold text-foreground">{formatMoney(totals.totalElegido, currency)}</span></p>
               </div>
             </div>
           );
