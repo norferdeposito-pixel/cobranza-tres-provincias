@@ -19,7 +19,14 @@ const App = () => (
       <BrowserRouter>
         <UserProfileProvider>
           <Routes>
-            <Route path="/" element={<InsuranceCollections />} />
+            <Route
+              path="/"
+              element={
+                <RequireUserProfile>
+                  <Index />
+                </RequireUserProfile>
+              }
+            />
             <Route
               path="/compras"
               element={
