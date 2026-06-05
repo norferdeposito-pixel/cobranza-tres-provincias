@@ -32,29 +32,29 @@
     <main class="wrap">
       <section class="panel loader">
         <div class="loader-row"><div><label>Planilla original</label><input value="https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5XWJ3Yuy7HHbbT1GKfhgwe_4_--q0/edit" /></div><span class="btn primary">Cargar base</span></div>
-        <p class="muted small" style="margin-top:12px">Base importada: 311 afiliados cargados.</p>
+        <p class="muted small" style="margin-top:12px">Base importada: 311 afiliados cargados en Dependencia 001 para junio 2026.</p>
       </section>
       <section class="metrics">
         <div class="metric"><p class="muted small">Afiliados</p><strong>311</strong><p class="muted small">Clientes en base</p></div>
-        <div class="metric"><p class="muted small">Seleccionados</p><strong>167</strong><p class="muted small">Pasan a cobranza mensual</p></div>
+        <div class="metric"><p class="muted small">Seleccionados</p><strong>311</strong><p class="muted small">Pasan a cobranza mensual</p></div>
         <div class="metric"><p class="muted small">Tickets mensuales</p><strong>475</strong><p class="muted small">Tickets recibidos</p></div>
         <div class="metric"><p class="muted small">Total a rendir</p><strong>$3.768.684</strong><p class="muted small">Cobrado menos comision</p></div>
       </section>
       <nav class="nav">
-        <span class="btn active">Base de afiliados</span><span class="btn">Cobranza mensual</span><span class="btn">Cobranza</span><span class="btn">Recibos</span><span class="btn">Totales</span><span class="btn">Rendicion</span>
+        <span class="btn active">Base de afiliados</span><span class="btn">Cobranza mensual junio</span><span class="btn">Cobranza</span><span class="btn">Recibos</span><span class="btn">Totales</span><span class="btn">Rendicion</span>
       </nav>
       <section class="layout">
         <div class="panel">
-          <div class="section-title"><h2>Base de afiliados</h2><p class="muted small">Todos los afiliados. El tilde define quien pasa a la planilla mensual.</p></div>
-          <div class="filters"><input placeholder="Buscar por nombre, poliza o plan" /><select><option>Todos los planes</option></select></div>
-          <div class="scroll"><table><thead><tr><th>Seleccionar</th><th>Nombre y apellido</th><th>Poliza</th><th>Plan</th><th class="right">Valor</th><th>Telefono</th><th>Direccion</th><th class="right">Accion</th></tr></thead><tbody>
-            <tr><td><input type="checkbox" checked /></td><td><strong>TAGUA DORALISA</strong></td><td>31774</td><td>A 238</td><td class="right">$13.000</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
-            <tr><td><input type="checkbox" checked /></td><td><strong>AGUIRRE OSCAR</strong></td><td>159327</td><td>A 269</td><td class="right">$29.600</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
-            <tr><td><input type="checkbox" /></td><td><strong>ROMERO EDGARDO</strong></td><td>106792</td><td>Vida</td><td class="right">$2.484</td><td>2664 555 019</td><td>San Luis</td><td class="right"><span class="btn">Editar</span></td></tr>
+          <div class="section-title"><h2>Base de afiliados</h2><p class="muted small">Listado general importado desde la planilla. Todos quedan asignados a Dependencia 001 y tildados para junio.</p></div>
+          <div class="filters"><input placeholder="Buscar por nombre, poliza o plan" /><select><option>Dependencia 001</option></select></div>
+          <div class="scroll"><table><thead><tr><th>Seleccionar</th><th>Nombre y apellido</th><th>Poliza</th><th>Plan</th><th>Dependencia</th><th class="right">Valor</th><th class="right">Tickets base</th><th>Telefono</th><th>Direccion</th><th class="right">Accion</th></tr></thead><tbody>
+            <tr><td><input type="checkbox" checked /></td><td><strong>TAGUA DORALISA</strong></td><td>31774</td><td>A 238</td><td>001</td><td class="right">$13.000</td><td class="right">1</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
+            <tr><td><input type="checkbox" checked /></td><td><strong>AGUIRRE OSCAR</strong></td><td>159327</td><td>A 238</td><td>001</td><td class="right">$29.600</td><td class="right">4</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
+            <tr><td><input type="checkbox" checked /></td><td><strong>ROMERO EDGARDO</strong></td><td>106792</td><td>Vida</td><td>001</td><td class="right">$2.484</td><td class="right">1</td><td>-</td><td>-</td><td class="right"><span class="btn">Editar</span></td></tr>
           </tbody></table></div>
         </div>
         <aside class="side">
-          <div class="card"><h2>Cobranza mensual</h2><p class="muted small">Solo tildados. Aca se carga cantidad de tickets.</p><div class="grid2"><div class="mini"><p class="muted small">AGUIRRE OSCAR</p><strong>4 tickets</strong></div><div class="mini"><p class="muted small">ALCANO MARIA</p><strong>3 tickets</strong></div></div></div>
+          <div class="card"><h2>Cobranza mensual junio</h2><p class="muted small">311 afiliados tildados. Los tickets se cargan desde la planilla original.</p><div class="grid2"><div class="mini"><p class="muted small">Dependencia</p><strong>001</strong></div><div class="mini"><p class="muted small">Tickets</p><strong>475</strong></div></div></div>
           <div class="card"><h2>Cobranza</h2><p class="muted small">Buscar por poliza + plan, cargar tickets cobrados y metodo E/T.</p><div class="grid2"><div class="mini"><p class="muted small">Metodo</p><strong>T</strong></div><div class="mini"><p class="muted small">Se abre</p><strong>Transferencia</strong></div></div></div>
         </aside>
       </section>

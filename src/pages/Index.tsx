@@ -2291,6 +2291,13 @@ Equipo NORFER`;
     return validItems.map((item, index) => `${index + 1}. ${upperText(item.descripcion) || "ITEM"} - ${safeNumber(item.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join("\n");
   };
 
+  const notaCreditoDetalleResumen = (nota: NotaCredito) => {
+    const detalle = safeText(nota.detalle);
+    if (!detalle) return "-";
+    if (detalle.toUpperCase() === "TOTAL") return "TOTAL";
+    return detalle.split(/\n+/).map((line) => line.trim()).filter(Boolean).join(" / ");
+  };
+
   const saveNotaCredito = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!safeText(notaCreditoForm.fechaCarga) || !safeText(notaCreditoForm.codigoCliente) || !safeText(notaCreditoForm.tipoComprobante) || !safeText(notaCreditoForm.numeroComprobante)) return;
@@ -3405,11 +3412,11 @@ Equipo NORFER`;
                     </select>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-left text-sm">
-                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Realizó</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Acción</th></tr></thead>
+                    <table className="w-full min-w-[1250px] text-left text-sm">
+                      <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Items / Total</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Realizó</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Acción</th></tr></thead>
                       <tbody className="divide-y">
-                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4">{nota.realizo || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td><td className="px-5 py-4">{canCloseNotasCredito && nota.estado !== "generada" ? <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoCierre(nota)}>Completar NC</Button> : "-"}</td></tr>)}
-                        {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={12}>No hay notas de crédito para mostrar.</td></tr>}
+                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="max-w-[260px] truncate px-5 py-4" title={nota.detalle || ""}>{notaCreditoDetalleResumen(nota)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4">{nota.realizo || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td><td className="px-5 py-4">{canCloseNotasCredito && nota.estado !== "generada" ? <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoCierre(nota)}>Completar NC</Button> : "-"}</td></tr>)}
+                        {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={13}>No hay notas de crédito para mostrar.</td></tr>}
                       </tbody>
                     </table>
                   </div>

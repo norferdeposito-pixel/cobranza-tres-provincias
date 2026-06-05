@@ -19,8 +19,9 @@ const App = () => (
       <BrowserRouter>
         <UserProfileProvider>
           <Routes>
+            <Route path="/" element={<InsuranceCollections />} />
             <Route
-              path="/"
+              path="/compras"
               element={
                 <RequireUserProfile>
                   <Index />

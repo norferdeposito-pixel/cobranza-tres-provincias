@@ -211,7 +211,7 @@ def build_pdf():
     story.append(card_table([
         ("Base unica", "Listado general de afiliados con poliza, plan, valor, telefono, direccion, dependencia o cobrador."),
         ("Cobranza mensual", "Seleccion de afiliados, carga de tickets, aumento porcentual y base para el mes siguiente."),
-        ("App movil", "Busqueda por poliza, registro de tickets cobrados, recibos y novedades libres."),
+        ("App movil y escaner", "Busqueda por poliza o codigo de barras, registro de tickets cobrados, recibos y novedades libres."),
         ("Control final", "Totales por plan, efectivo, transferencia, comision del 12% y rendicion final."),
     ]))
     story.append(PageBreak())
@@ -224,6 +224,7 @@ def build_pdf():
         ("Recibos", "Cobros sin tickets con numero de recibo, nombre, poliza, plan, mes cobrado, monto y modo E/T."),
         ("Novedades libres", "Observaciones del cobrador sin categorias obligatorias: domicilio incorrecto, cambio de telefono, no encontrado, etc."),
         ("Totales y rendicion", "Control por plan, medio de pago, importes, tickets no cobrados, comision del 12% y total a rendir."),
+        ("Lector de codigos de barras", "Permite recibir, identificar y asignar tickets o recibos con la camara del celular, evitando carga manual y duplicados."),
     ]
     story.append(card_table(modules))
     story.append(Spacer(1, 14))
@@ -252,7 +253,7 @@ def build_pdf():
     story.append(p("La experiencia movil esta orientada a la carga rapida en calle. El cobrador solo ve los tickets o afiliados asignados a su dependencia/cobrador.", "Bodyx"))
     story.append(Spacer(1, 8))
     for text in [
-        "Busca al asegurado por numero de poliza.",
+        "Busca al asegurado por numero de poliza o escanea el codigo de barras del ticket.",
         "Visualiza nombre, plan, tickets disponibles, monto por ticket y total posible.",
         "Carga cantidad de tickets cobrados y selecciona E efectivo o T transferencia.",
         "Si selecciona T, registra numero de comprobante.",
@@ -270,7 +271,22 @@ def build_pdf():
     ]))
     story.append(PageBreak())
 
-    story.append(section_title("4. Control, Totales Y Rendicion"))
+    story.append(section_title("4. Lector De Codigos De Barras"))
+    story.append(p("La plataforma puede utilizar la camara del celular como lector de codigos de barras para agilizar la recepcion, distribucion y cobranza de tickets y recibos fisicos.", "Bodyx"))
+    story.append(Spacer(1, 10))
+    story.append(card_table([
+        ("Ingreso de tickets", "Administracion selecciona el mes y escanea consecutivamente los tickets recibidos, sin cargar cantidades manualmente."),
+        ("Asignacion a cobradores", "Antes de escanear se selecciona dependencia o cobrador. Cada ticket queda asignado automaticamente donde corresponde."),
+        ("Cobro por escaneo", "El cobrador escanea el ticket, visualiza afiliado, poliza, plan, importe y registra el pago E o T."),
+        ("Recibos manuales", "El codigo de barras del talonario identifica el numero unico y abre el formulario de cobro con recibo."),
+        ("Controles automaticos", "Detecta duplicados, tickets ya asignados, tickets de otro periodo o codigos que no existen en la base."),
+        ("Trazabilidad", "Registra quien escaneo, asigno, cobro o rindio cada ticket o recibo y en que fecha."),
+    ]))
+    story.append(Spacer(1, 14))
+    story.append(p("<b>Flujo:</b> escanear ticket recibido - identificar afiliado - asignar cobrador o dependencia - registrar cobro - controlar totales - rendir.", "Bodyx"))
+    story.append(PageBreak())
+
+    story.append(section_title("5. Control, Totales Y Rendicion"))
     story.append(p("El sistema calcula automaticamente los totales mensuales por plan, separando cantidades e importes por efectivo y transferencia.", "Bodyx"))
     story.append(Spacer(1, 10))
     totals = [
@@ -296,13 +312,15 @@ def build_pdf():
     story.append(p("La rendicion se realiza una sola vez al finalizar el periodo. Permite cargar monto rendido en efectivo y transferencias rendidas con fecha, monto y comprobante.", "Bodyx"))
     story.append(PageBreak())
 
-    story.append(section_title("5. Beneficios Y Potencial Comercial"))
+    story.append(section_title("6. Beneficios Y Potencial Comercial"))
     for text in [
         "Reemplaza planillas dispersas por una base unica y trazable.",
         "Reduce errores de carga, duplicaciones y perdida de informacion.",
         "Ordena el trabajo de cobradores desde una app movil simple.",
         "Permite controlar efectivo, transferencias, recibos y tickets no cobrados.",
         "Registra novedades reales desde el territorio.",
+        "Reduce la carga manual mediante el escaneo de tickets y recibos.",
+        "Evita duplicados y permite rastrear cada documento fisico.",
         "Escala a distintas organizaciones con afiliados, cuotas o cobranzas periodicas.",
     ]:
         story.append(bullet(text))
@@ -311,7 +329,7 @@ def build_pdf():
         ("Propuesta de valor", "Una herramienta integral para administrar cobranzas periodicas con control mensual y rendicion automatica."),
         ("Cliente objetivo", "Seguros, mutuales, servicios por afiliados, cobranzas domiciliarias y organizaciones con cobradores externos."),
         ("Modelo escalable", "Puede crecer por cantidad de afiliados, cobradores, dependencias o planes activos."),
-        ("Diferencial", "Integra administracion, cobrador movil, novedades, totales y rendicion en un mismo flujo."),
+        ("Diferencial", "Integra administracion, lector de codigos de barras, cobrador movil, novedades, totales y rendicion en un mismo flujo."),
     ]))
     story.append(Spacer(1, 18))
     story.append(p("<b>En una frase:</b> una plataforma movil y administrativa para organizar la cobranza mensual de afiliados, controlar tickets y recibos, registrar pagos y novedades, y cerrar la rendicion con totales automaticos por plan, medio de pago, cobrador y periodo.", "Bodyx"))
