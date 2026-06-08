@@ -1179,7 +1179,9 @@ const Index = () => {
     safeText(item.estado_entrega).toLowerCase() === "recibido_total" ||
     safeNumber(item.cantidad_pendiente) <= 0 ||
     (safeNumber(item.cantidad_pedida) > 0 && safeNumber(item.cantidad_recibida) >= safeNumber(item.cantidad_pedida));
-  const finishedReportItems = reportItemsInPeriod.filter(isFinishedReportItem);
+  const isFinishedReportItemByOrder = (item: ReportPedidoItem, order?: PurchaseOrder) =>
+    isFinishedReportItem(item) || isClosedPedidoStatus(order?.rawStatus);
+  const finishedReportItems = reportItemsInPeriod.filter((item) => isFinishedReportItemByOrder(item, orderByIdForReport.get(String(item.pedido_id))));
   const fulfilledFinishedReportItems = finishedReportItems.filter((item) => {
     const order = orderByIdForReport.get(String(item.pedido_id));
     const eta = safeDateForDisplay(order?.eta);
@@ -1199,7 +1201,7 @@ const Index = () => {
     () => reportItems.filter((item) => orderByIdForCurrentMonth.has(String(item.pedido_id))),
     [reportItems, orderByIdForCurrentMonth],
   );
-  const finishedItemsInCurrentMonth = reportItemsInCurrentMonth.filter(isFinishedReportItem);
+  const finishedItemsInCurrentMonth = reportItemsInCurrentMonth.filter((item) => isFinishedReportItemByOrder(item, orderByIdForCurrentMonth.get(String(item.pedido_id))));
   const fulfilledItemsInCurrentMonth = finishedItemsInCurrentMonth.filter((item) => {
     const order = orderByIdForCurrentMonth.get(String(item.pedido_id));
     const eta = safeDateForDisplay(order?.eta);

@@ -10,7 +10,7 @@ const server = await createServer({
   configFile: false,
   server: {
     host: "127.0.0.1",
-    port: 8080,
+    port: Number(process.env.PORT || 8090),
     strictPort: true,
     hmr: {
       overlay: false,

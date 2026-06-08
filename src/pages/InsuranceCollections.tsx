@@ -96,6 +96,14 @@ type AffiliateImportPreview = {
   duplicatedCount: number;
 };
 
+type LastIncrease = {
+  id: string;
+  month: string;
+  percent: number;
+  appliedAt: string;
+  previousValues: Array<{ affiliateId: string; value: number }>;
+};
+
 const plans: PlanType[] = ["A 238", "A 269", "G 238", "09", "G 269", "C", "Vida"];
 const defaultSheetUrl = "https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5XWJ3Yuy7HHbbT1GKfhgwe_4_--q0/edit?usp=sharing";
 const affiliatesStorageKey = "insurance-affiliates-v2";
@@ -105,6 +113,7 @@ const receiptsStorageKey = "insurance-receipts-v2";
 const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
+const lastIncreaseStorageKey = "insurance-last-increase-v2";
 
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -226,6 +235,12 @@ const saveStorage = (key: string, value: unknown) => {
 
 const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : method === "T" ? "Transferencia" : "Sin definir";
 
+const isDemoAffiliateBase = (rows: Affiliate[]) => {
+  if (rows.length !== demoAffiliates.length) return false;
+  const demoIds = new Set(demoAffiliates.map((item) => item.id));
+  return rows.every((item) => demoIds.has(item.id));
+};
+
 const buildAffiliateImportPreview = (rows: Affiliate[], current: Affiliate[], source: string, duplicatedCount: number): AffiliateImportPreview => {
   const currentById = new Map(current.map((item) => [item.id, item]));
   const newRows: Affiliate[] = [];
@@ -286,9 +301,12 @@ const InsuranceCollections = () => {
   });
   const [query, setQuery] = useState("");
   const [pendingFilter, setPendingFilter] = useState("todos");
+  const [increasePercent, setIncreasePercent] = useState("");
+  const [lastIncrease, setLastIncrease] = useState<LastIncrease | null>(() => loadStorage(lastIncreaseStorageKey, null));
   const [collectorWhatsapp, setCollectorWhatsapp] = useState(() => loadStorage(collectorWhatsappStorageKey, ""));
   const [sheetUrl, setSheetUrl] = useState(defaultSheetUrl);
   const [importMessage, setImportMessage] = useState("Base demo cargada. Podés importar la planilla original.");
+  const [autoImportTried, setAutoImportTried] = useState(false);
   const [affiliateImportPreview, setAffiliateImportPreview] = useState<AffiliateImportPreview | null>(null);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [affiliateDialogOpen, setAffiliateDialogOpen] = useState(false);
@@ -321,6 +339,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
+  useEffect(() => saveStorage(lastIncreaseStorageKey, lastIncrease), [lastIncrease]);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
 
@@ -514,7 +533,7 @@ const InsuranceCollections = () => {
     reader.readAsText(file);
   };
 
-  const importGoogleSheet = async () => {
+  const importGoogleSheet = async (applyImmediately = false) => {
     setIsLoadingSheet(true);
     setImportMessage("Leyendo Google Sheets...");
     try {
@@ -522,13 +541,20 @@ const InsuranceCollections = () => {
       if (!response.ok) throw new Error("No se pudo leer la planilla.");
       const parsed = parseAffiliatesCsv(await response.text());
       if (parsed.affiliates.length === 0) throw new Error("La planilla no tiene afiliados válidos.");
-      previewAffiliates(parsed.affiliates, "Google Sheets", parsed.duplicatedCount);
+      if (applyImmediately) importAffiliates(parsed.affiliates);
+      else previewAffiliates(parsed.affiliates, "Google Sheets", parsed.duplicatedCount);
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : "No se pudo importar la planilla.");
     } finally {
       setIsLoadingSheet(false);
     }
   };
+
+  useEffect(() => {
+    if (autoImportTried || !isDemoAffiliateBase(affiliates)) return;
+    setAutoImportTried(true);
+    void importGoogleSheet(true);
+  }, [affiliates, autoImportTried]);
 
   const toggleMonthly = (affiliateId: string, checked: boolean) => {
     setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, selectedForMonthly: checked } : item));
@@ -557,6 +583,41 @@ const InsuranceCollections = () => {
     setMonthlyItems((current) => current.some((item) => item.month === activeMonth && item.affiliateId === affiliateId)
       ? current.map((item) => item.month === activeMonth && item.affiliateId === affiliateId ? { ...item, tickets } : item)
       : [...current, { month: activeMonth, affiliateId, tickets }]);
+  };
+
+  const applyMonthlyIncrease = () => {
+    const percent = parseNumber(increasePercent);
+    if (percent <= 0) {
+      alert("Ingresá un porcentaje de aumento mayor a 0.");
+      return;
+    }
+    const affectedIds = new Set(monthlyRows.map(({ affiliate }) => affiliate.id));
+    if (affectedIds.size === 0) {
+      alert("No hay afiliados seleccionados en la planilla mensual.");
+      return;
+    }
+    const confirmed = window.confirm(`Se aplicará un aumento del ${percent}% a ${affectedIds.size} afiliados de ${activeMonth}. El nuevo valor quedará como base para los próximos meses. ¿Confirmás?`);
+    if (!confirmed) return;
+    setLastIncrease({
+      id: `increase-${Date.now()}`,
+      month: activeMonth,
+      percent,
+      appliedAt: new Date().toISOString(),
+      previousValues: monthlyRows.map(({ affiliate }) => ({ affiliateId: affiliate.id, value: affiliate.value })),
+    });
+    setAffiliates((current) => current.map((item) => affectedIds.has(item.id)
+      ? { ...item, value: Math.round(item.value * (1 + percent / 100)) }
+      : item));
+    setIncreasePercent("");
+  };
+
+  const undoLastIncrease = () => {
+    if (!lastIncrease) return;
+    const confirmed = window.confirm(`Se restauraran los valores anteriores al aumento del ${lastIncrease.percent}% aplicado en ${lastIncrease.month}. Confirmas?`);
+    if (!confirmed) return;
+    const previousById = new Map(lastIncrease.previousValues.map((item) => [item.affiliateId, item.value]));
+    setAffiliates((current) => current.map((item) => previousById.has(item.id) ? { ...item, value: previousById.get(item.id) || item.value } : item));
+    setLastIncrease(null);
   };
 
   const saveTicketCollection = (event: FormEvent) => {
@@ -682,7 +743,7 @@ const InsuranceCollections = () => {
               <Label htmlFor="sheet-url">Planilla original</Label>
               <Input id="sheet-url" value={sheetUrl} onChange={(event) => setSheetUrl(event.target.value)} />
             </div>
-            <Button type="button" variant="command" onClick={importGoogleSheet} disabled={isLoadingSheet}>
+            <Button type="button" variant="command" onClick={() => importGoogleSheet()} disabled={isLoadingSheet}>
               <FileSpreadsheet className="h-4 w-4" />
               {isLoadingSheet ? "Cargando..." : "Cargar base"}
             </Button>
@@ -851,6 +912,24 @@ const InsuranceCollections = () => {
           <section className="rounded-md border bg-card">
             <div className="border-b p-4">
               <h2 className="font-semibold">Planilla de cobranza mensual</h2>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="w-full space-y-1 sm:w-44">
+                  <Label htmlFor="increase-percent">Aumento %</Label>
+                  <Input
+                    id="increase-percent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={increasePercent}
+                    onChange={(event) => setIncreasePercent(event.target.value)}
+                    placeholder="Ej: 10"
+                  />
+                </div>
+                <Button type="button" variant="command" onClick={applyMonthlyIncrease}>Aplicar aumento</Button>
+                {lastIncrease && (
+                  <Button type="button" variant="outline" onClick={undoLastIncrease}>Deshacer ultimo aumento</Button>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">Período {activeMonth}. Aparecen solo los afiliados tildados en la base. Acá se carga la cantidad de tickets.</p>
             </div>
             <div className="overflow-x-auto">
