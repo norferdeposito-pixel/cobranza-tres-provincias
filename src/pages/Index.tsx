@@ -1201,16 +1201,26 @@ const Index = () => {
     () => reportItems.filter((item) => orderByIdForCurrentMonth.has(String(item.pedido_id))),
     [reportItems, orderByIdForCurrentMonth],
   );
-  const finishedItemsInCurrentMonth = reportItemsInCurrentMonth.filter((item) => isFinishedReportItemByOrder(item, orderByIdForCurrentMonth.get(String(item.pedido_id))));
+  const getItemCompletionDate = (item: ReportPedidoItem) => safeDateForDisplay(item.fecha_recibido) || getLastReceptionDate(item.pedido_id);
+  const finishedOrdersInCurrentMonth = ordersInCurrentMonth.filter((order) => isClosedPedidoStatus(order.rawStatus));
+  const fulfilledOrdersInCurrentMonth = finishedOrdersInCurrentMonth.filter((order) => {
+    const eta = safeDateForDisplay(order.eta);
+    const receivedDate = getLastReceptionDate(order.id);
+    return !!eta && !!receivedDate && receivedDate <= eta;
+  });
+  const unfulfilledOrdersInCurrentMonth = finishedOrdersInCurrentMonth.length - fulfilledOrdersInCurrentMonth.length;
+  const finishedItemsInCurrentMonth = reportItemsInCurrentMonth.filter((item) => {
+    const order = orderByIdForCurrentMonth.get(String(item.pedido_id));
+    return !!order && isClosedPedidoStatus(order.rawStatus) && isFinishedReportItemByOrder(item, order);
+  });
   const fulfilledItemsInCurrentMonth = finishedItemsInCurrentMonth.filter((item) => {
     const order = orderByIdForCurrentMonth.get(String(item.pedido_id));
     const eta = safeDateForDisplay(order?.eta);
-    const receivedDate = safeDateForDisplay(item.fecha_recibido) || getLastReceptionDate(item.pedido_id);
+    const receivedDate = getItemCompletionDate(item);
     return !!eta && !!receivedDate && receivedDate <= eta;
   });
   const unfulfilledItemsInCurrentMonth = finishedItemsInCurrentMonth.length - fulfilledItemsInCurrentMonth.length;
-  const finishedOrdersInCurrentMonth = ordersInCurrentMonth.filter((order) => isClosedPedidoStatus(order.rawStatus));
-  const currentMonthFulfillmentPct = formatPercent(fulfilledItemsInCurrentMonth.length, finishedItemsInCurrentMonth.length);
+  const currentMonthFulfillmentPct = formatPercent(fulfilledOrdersInCurrentMonth.length, finishedOrdersInCurrentMonth.length);
   const currentMonthLabel = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(`${currentMonthPrefix}-01T12:00:00`));
   const reportKpiRows = [
     { label: "Cantidad de OC", quantity: ordersInReportMonth.length, percent: "100%" },
@@ -2498,17 +2508,19 @@ Equipo NORFER`;
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <h3 className="text-lg font-semibold">Mes en curso</h3>
-                        <p className="text-sm text-muted-foreground">Pedidos cargados en {currentMonthLabel} y cumplimiento de sus ítems.</p>
+                        <p className="text-sm text-muted-foreground">OC emitidas en {currentMonthLabel} y cumplimiento de sus plazos de entrega.</p>
                       </div>
                       <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{currentMonthFulfillmentPct}</span>
                     </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
                       {[
-                        { label: "OC cargadas", value: ordersInCurrentMonth.length, detail: `${reportItemsInCurrentMonth.length} ítems`, icon: ClipboardList },
+                        { label: "OC emitidas", value: ordersInCurrentMonth.length, detail: "en el mes", icon: ClipboardList },
+                        { label: "Items", value: reportItemsInCurrentMonth.length, detail: "de OC emitidas", icon: ClipboardList },
                         { label: "OC terminadas", value: finishedOrdersInCurrentMonth.length, detail: formatPercent(finishedOrdersInCurrentMonth.length, ordersInCurrentMonth.length), icon: PackageCheck },
-                        { label: "Ítems terminados", value: finishedItemsInCurrentMonth.length, detail: formatPercent(finishedItemsInCurrentMonth.length, reportItemsInCurrentMonth.length), icon: CheckCircle2 },
-                        { label: "Ítems cumplidos", value: fulfilledItemsInCurrentMonth.length, detail: formatPercent(fulfilledItemsInCurrentMonth.length, finishedItemsInCurrentMonth.length), icon: CheckCircle2 },
-                        { label: "Ítems no cumplidos", value: unfulfilledItemsInCurrentMonth, detail: formatPercent(unfulfilledItemsInCurrentMonth, finishedItemsInCurrentMonth.length), icon: AlertTriangle },
+                        { label: "OC cumplidas", value: fulfilledOrdersInCurrentMonth.length, detail: formatPercent(fulfilledOrdersInCurrentMonth.length, finishedOrdersInCurrentMonth.length), icon: CheckCircle2 },
+                        { label: "OC no cumplidas", value: unfulfilledOrdersInCurrentMonth, detail: formatPercent(unfulfilledOrdersInCurrentMonth, finishedOrdersInCurrentMonth.length), icon: AlertTriangle },
+                        { label: "Items cumplidos", value: fulfilledItemsInCurrentMonth.length, detail: formatPercent(fulfilledItemsInCurrentMonth.length, finishedItemsInCurrentMonth.length), icon: CheckCircle2 },
+                        { label: "Items no cumplidos", value: unfulfilledItemsInCurrentMonth, detail: formatPercent(unfulfilledItemsInCurrentMonth, finishedItemsInCurrentMonth.length), icon: AlertTriangle },
                       ].map((metric) => (
                         <article key={metric.label} className="rounded-md border bg-surface-subtle/40 p-4">
                           <div className="flex items-start justify-between gap-3">
