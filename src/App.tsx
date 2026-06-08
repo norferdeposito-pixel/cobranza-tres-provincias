@@ -21,7 +21,11 @@ const App = () => (
           <Routes>
             <Route
               path="/"
-              element={<InsuranceCollections />}
+              element={
+                <RequireUserProfile>
+                  <Index />
+                </RequireUserProfile>
+              }
             />
             <Route
               path="/compras"
