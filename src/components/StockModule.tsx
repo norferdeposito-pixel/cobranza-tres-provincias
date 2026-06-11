@@ -104,7 +104,13 @@ const parseCsv = (text: string) => {
   const delimiter = lines[0].includes(";") ? ";" : lines[0].includes("\t") ? "\t" : ",";
   const headerIndex = lines.findIndex((line) => {
     const normalized = splitDelimitedLine(line, delimiter).map(normalizeKey);
-    return normalized.includes("cod_articulo") || normalized.includes("codigo") || normalized.includes("codigo_articulo");
+    const joined = normalized.join(" ");
+    return (
+      normalized.includes("cod_articulo") ||
+      normalized.includes("codigo") ||
+      normalized.includes("codigo_articulo") ||
+      (joined.includes("articulo") && (joined.includes("descripcion") || joined.includes("existencias")))
+    );
   });
   if (headerIndex < 0) return [];
   const headers = splitDelimitedLine(lines[headerIndex], delimiter).map(normalizeKey);
@@ -119,7 +125,9 @@ const parseCsv = (text: string) => {
 
 const getFirstValue = (row: Record<string, string>, keys: string[]) => {
   const normalizedKeys = keys.map(normalizeKey);
-  const found = normalizedKeys.find((key) => row[key]);
+  const rowKeys = Object.keys(row);
+  const found = normalizedKeys.find((key) => row[key])
+    || rowKeys.find((rowKey) => normalizedKeys.some((key) => rowKey === key || rowKey.includes(key) || key.includes(rowKey)));
   return found ? row[found] : "";
 };
 
@@ -288,14 +296,14 @@ export const StockModule = () => {
     setProcessing(true);
     const rows = parseCsv(await file.text());
     const articlePayloads = rows.map((row) => ({
-      codigo: upperText(getFirstValue(row, ["codigo", "cod_articulo", "articulo"])),
-      descripcion: upperText(getFirstValue(row, ["descripcion", "detalle", "articulo_descripcion"])),
+      codigo: upperText(getFirstValue(row, ["codigo", "cod_articulo", "c_d_articulo", "articulo"])),
+      descripcion: upperText(getFirstValue(row, ["descripcion", "descripci_n", "detalle", "articulo_descripcion"])),
       familia: upperText(getFirstValue(row, ["familia", "linea", "rubro"])) || "MOTORES",
       unidad: upperText(getFirstValue(row, ["unidad"])) || "UNI",
       proveedor_habitual: upperText(getFirstValue(row, ["proveedor", "proveedor_habitual", "proveedor_proveedores", "marca"])) || null,
       lead_time_nacional_dias: safeNumber(getFirstValue(row, ["lead_time_nacional", "lead_time_nacional_dias"])),
       lead_time_importacion_dias: safeNumber(getFirstValue(row, ["lead_time_importacion", "lead_time_importacion_dias"])),
-      stock_seguridad: safeNumber(getFirstValue(row, ["stock_seguridad", "seguridad"])),
+      stock_seguridad: safeNumber(getFirstValue(row, ["stock_seguridad", "stock_de_seguridad", "seguridad"])),
       punto_pedido: safeNumber(getFirstValue(row, ["punto_pedido", "punto_de_pedido"])),
       activo: true,
       stock: safeNumber(getFirstValue(row, ["stock", "stock_actual", "existencias", "cantidad"])),
