@@ -1854,6 +1854,29 @@ const Index = () => {
     toast({ title: "Ítem enviado a cotizar", description: proveedorId ? "Se cargó al proveedor sugerido en Cotizaciones." : "Disponible en el módulo Cotizaciones." });
   };
 
+  const addReceptionToStock = async (item: PedidoItem, quantity: number) => {
+    const code = optionalUpperValue(item.cod_articulo);
+    if (!code || code === "F/STOCK") return { updated: false, message: "El ítem no tiene código de artículo para actualizar stock." };
+
+    const { data: stockData, error: stockError } = await supabase
+      .from("stock_actual" as any)
+      .select("codigo_articulo, stock_actual")
+      .eq("codigo_articulo", code)
+      .maybeSingle();
+
+    if (stockError) return { updated: false, message: stockError.message };
+    if (!stockData) return { updated: false, message: `El código ${code} no existe en Stock.` };
+
+    const nextStock = safeNumber((stockData as any).stock_actual) + quantity;
+    const { error: updateError } = await supabase
+      .from("stock_actual" as any)
+      .update({ stock_actual: nextStock, fecha_ultima_actualizacion: today() })
+      .eq("codigo_articulo", code);
+
+    if (updateError) return { updated: false, message: updateError.message };
+    return { updated: true, message: `Stock ${code} actualizado: ${nextStock}.` };
+  };
+
   const addReception = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedItem = pedidoItems.find((item) => item.id === receptionForm.itemId);
@@ -1939,10 +1962,15 @@ const Index = () => {
         setPedidoAlertas((current) => current.map((alerta) => alerta.item_id === selectedItem.id ? { ...alerta, fecha_estimada: nextEta, fecha_aviso: getAvisoDate(nextEta) || alerta.fecha_aviso } : alerta));
       }
     }
+    const stockResult = isQuantityReception ? await addReceptionToStock(selectedItem, receivedQuantity) : null;
     if (isQuantityReception) setPedidoItems(updatedItems);
     setReceptionForm((current) => ({ ...current, quantity: "", date: today(), newEta: "", notes: "" }));
     setIsSavingReception(false);
-    toast({ title: "Recepción cargada", description: "Las cantidades del ítem fueron actualizadas." });
+    toast({
+      title: "Recepción cargada",
+      description: stockResult ? stockResult.message : "Las cantidades del ítem fueron actualizadas.",
+      variant: stockResult && !stockResult.updated ? "destructive" : undefined,
+    });
   };
 
   const openWhatsAppMessage = (order: PurchaseOrder) => {
