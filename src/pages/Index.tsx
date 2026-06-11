@@ -702,6 +702,8 @@ const Index = () => {
   });
   const [sellerMessage, setSellerMessage] = useState("");
   const [isSellerMessageOpen, setIsSellerMessageOpen] = useState(false);
+  const [notaCreditoMessage, setNotaCreditoMessage] = useState("");
+  const [isNotaCreditoMessageOpen, setIsNotaCreditoMessageOpen] = useState(false);
   const [editForm, setEditForm] = useState<PedidoForm>(() => createEmptyOrderForm());
   const [editItemForms, setEditItemForms] = useState<PedidoItemEditForm[]>([]);
   const itemDescriptionRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -2411,6 +2413,46 @@ Equipo NORFER`;
     toast({ title: "NC completada", description: "La solicitud quedó marcada como generada." });
   };
 
+  const openNotaCreditoWhatsAppMessage = (nota: NotaCredito) => {
+    const detalle = notaCreditoDetalleResumen(nota);
+    const monto = nota.monto != null
+      ? `${safeNumber(nota.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${nota.moneda || ""}`.trim()
+      : "-";
+    const message = `Hola,
+
+Te compartimos la información de la Nota de Crédito generada:
+
+* Cliente: ${nota.cliente || "-"}
+* Código cliente: ${nota.codigo_cliente || "-"}
+* Comprobante: ${nota.tipo_comprobante || "-"} ${nota.numero_comprobante || ""}
+* Fecha comprobante: ${formatDate(nota.fecha_comprobante)}
+* Motivo: ${nota.motivo || "-"}
+* Items / Total: ${detalle}
+* Monto: ${monto}
+
+* N° NC: ${nota.numero_nc || "-"}
+* Fecha generada NC: ${formatDate(nota.fecha_generada_nc)}
+* Realizó: ${nota.realizo || "-"}
+* Vendedor/Solicitante: ${nota.vendedor || "-"}
+
+Observaciones:
+${nota.observaciones || "-"}
+
+Saludos,
+Equipo NORFER`;
+    setNotaCreditoMessage(message);
+    setIsNotaCreditoMessageOpen(true);
+  };
+
+  const copyNotaCreditoMessage = async () => {
+    await navigator.clipboard.writeText(notaCreditoMessage);
+    toast({ title: "Mensaje copiado", description: "Listo para pegar en WhatsApp." });
+  };
+
+  const openNotaCreditoWhatsApp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(notaCreditoMessage)}`, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
@@ -3429,7 +3471,7 @@ Equipo NORFER`;
                     <table className="w-full min-w-[1250px] text-left text-sm">
                       <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Fecha carga</th><th className="px-5 py-3">COD.</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Comprobante</th><th className="px-5 py-3">Fecha comprobante</th><th className="px-5 py-3">Items / Total</th><th className="px-5 py-3">Días</th><th className="px-5 py-3">Motivo</th><th className="px-5 py-3">Vendedor</th><th className="px-5 py-3">N° NC</th><th className="px-5 py-3">Realizó</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Acción</th></tr></thead>
                       <tbody className="divide-y">
-                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="max-w-[260px] truncate px-5 py-4" title={nota.detalle || ""}>{notaCreditoDetalleResumen(nota)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4">{nota.realizo || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td><td className="px-5 py-4">{canCloseNotasCredito && nota.estado !== "generada" ? <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoCierre(nota)}>Completar NC</Button> : "-"}</td></tr>)}
+                        {notaCreditoFiltered.map((nota) => <tr key={nota.id} className="transition hover:bg-surface-subtle/70"><td className="px-5 py-4">{formatDate(nota.fecha_carga)}</td><td className="px-5 py-4 font-medium">{nota.codigo_cliente || "-"}</td><td className="px-5 py-4">{nota.cliente || "-"}</td><td className="px-5 py-4">{nota.tipo_comprobante || "-"} {nota.numero_comprobante || ""}</td><td className="px-5 py-4">{formatDate(nota.fecha_comprobante)}</td><td className="max-w-[260px] truncate px-5 py-4" title={nota.detalle || ""}>{notaCreditoDetalleResumen(nota)}</td><td className="px-5 py-4 font-semibold">{nota.dias_transcurridos ?? "-"}</td><td className="px-5 py-4">{nota.motivo || "-"}</td><td className="px-5 py-4">{nota.vendedor || "-"}</td><td className="px-5 py-4">{nota.numero_nc || "-"}</td><td className="px-5 py-4">{nota.realizo || "-"}</td><td className="px-5 py-4"><span className="rounded-md border bg-surface-subtle px-2.5 py-1 text-xs font-semibold">{nota.estado}</span></td><td className="px-5 py-4"><div className="flex flex-wrap gap-2">{canCloseNotasCredito && nota.estado !== "generada" && <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoCierre(nota)}>Completar NC</Button>}{nota.estado === "generada" && <Button type="button" size="sm" variant="outline" onClick={() => openNotaCreditoWhatsAppMessage(nota)}><MessageCircle className="h-4 w-4" />WhatsApp</Button>}{(!canCloseNotasCredito || nota.estado === "generada") && nota.estado !== "generada" ? "-" : null}</div></td></tr>)}
                         {notaCreditoFiltered.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={13}>No hay notas de crédito para mostrar.</td></tr>}
                       </tbody>
                     </table>
@@ -3685,6 +3727,22 @@ Equipo NORFER`;
               <Button type="submit" variant="command" disabled={isSavingNotaCreditoCierre}>{isSavingNotaCreditoCierre ? "Guardando..." : "Guardar NC"}</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isNotaCreditoMessageOpen} onOpenChange={setIsNotaCreditoMessageOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mensaje WhatsApp NC</DialogTitle>
+          </DialogHeader>
+          <Textarea value={notaCreditoMessage} onChange={(event) => setNotaCreditoMessage(event.target.value)} className="min-h-[420px] font-mono text-sm" />
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setIsNotaCreditoMessageOpen(false)}>Cerrar</Button>
+            <Button type="button" variant="outline" onClick={openNotaCreditoWhatsApp}>
+              <MessageCircle className="h-4 w-4" />
+              Abrir WhatsApp
+            </Button>
+            <Button type="button" variant="command" onClick={copyNotaCreditoMessage}>Copiar mensaje</Button>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={isSellerMessageOpen} onOpenChange={setIsSellerMessageOpen}>
