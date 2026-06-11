@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, Menu, MessageCircle, PackageCheck, Pencil, Plus, Printer, Search, Send, Trash2, UserPlus } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
+import { StockModule } from "@/components/StockModule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -430,6 +431,7 @@ const navItems = [
   { label: "Cotizaciones", icon: FileText },
   { label: "Pedidos", icon: ClipboardList },
   { label: "Crear pedido", icon: FilePlus2 },
+  { label: "Stock", icon: PackageCheck },
   { label: "Notas de crédito", icon: FileText },
   { label: "Clientes", icon: UserPlus },
   { label: "Proveedores", icon: Factory },
@@ -740,6 +742,7 @@ const Index = () => {
   const canCreatePedido = isAdminRole || isVendedor || isDeposito;
   const canSendMessages = isAdminRole || isDeposito;
   const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
+  const canSeeStock = isAdminRole || isDeposito;
   const currentSeller = currentUserProfile?.nombre || "María";
   const visibleNavItems = navItems.filter((item) => {
     if (item.label === "Alertas") return canSeeAlertas;
@@ -750,6 +753,7 @@ const Index = () => {
     if (item.label === "Proveedores") return canSeeProveedores;
     if (item.label === "Usuarios") return canSeeUsuarios;
     if (item.label === "Cotizaciones") return canSeeCotizaciones;
+    if (item.label === "Stock") return canSeeStock;
     if (item.label === "Dashboard") return isAdminRole;
     if (item.label === "Pedidos") return canSeePedidos;
     return true;
@@ -1124,13 +1128,16 @@ const Index = () => {
     if (!canCreatePedido && activeSection === "Crear pedido") {
       setActiveSection(canSeePedidos ? "Pedidos" : "Notas de crédito");
     }
+    if (!canSeeStock && activeSection === "Stock") {
+      setActiveSection(canSeePedidos ? "Pedidos" : "Notas de crédito");
+    }
     if (!canSeeNotasCredito && activeSection === "Notas de crédito") {
       setActiveSection("Pedidos");
     }
     if (!canSeePedidos && activeSection === "Pedidos") {
       setActiveSection(canSeeNotasCredito ? "Notas de crédito" : "Cotizaciones");
     }
-  }, [isAdminRole, canCreatePedido, canSeeNotasCredito, canSeePedidos, canSeeReportes, activeSection]);
+  }, [isAdminRole, canCreatePedido, canSeeNotasCredito, canSeePedidos, canSeeReportes, canSeeStock, activeSection]);
 
   // Reportes filter — supports month/year or custom date range. Uses pedido.fecha (YYYY-MM-DD).
   const isInReportPeriod = (fecha: string | null | undefined) => {
@@ -2735,6 +2742,8 @@ Equipo NORFER`;
               </section>}
 
               {activeSection === "Cotizaciones" && canSeeCotizaciones && <Cotizaciones />}
+
+              {activeSection === "Stock" && canSeeStock && <StockModule />}
 
               {activeSection === "Pedidos" && <section className="rounded-md border bg-card shadow-command">
                 <div className="flex flex-col gap-4 border-b p-5 md:flex-row md:items-center md:justify-between">
