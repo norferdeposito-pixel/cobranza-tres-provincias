@@ -338,6 +338,60 @@ export const StockModule = () => {
     toast({ title: "Carga inicial importada", description: `${articlePayloads.length} artículos procesados.` });
   };
 
+  const processReorderCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setProcessing(true);
+    const rows = parseCsv(await file.text());
+    const articlePayloads = rows.map((row) => {
+      const codigo = upperText(getFirstValue(row, ["codigo", "cod_articulo", "c_d_articulo", "articulo"]));
+      const descripcion = upperText(getFirstValue(row, ["descripcion", "descripci_n", "detalle", "articulo_descripcion"]));
+      return {
+        codigo,
+        descripcion,
+        familia: upperText(getFirstValue(row, ["familia", "linea", "rubro"])) || "MOTORES",
+        unidad: upperText(getFirstValue(row, ["unidad"])) || "UNI",
+        proveedor_habitual: upperText(getFirstValue(row, ["proveedor", "proveedor_habitual", "proveedor_proveedores", "marca"])) || null,
+        punto_pedido: safeNumber(getFirstValue(row, ["punto_pedido", "punto_de_pedido", "punto pedido", "pto_pedido", "pedido", "reposicion", "punto_reposicion"])),
+        cantidad_a_pedir: safeNumber(getFirstValue(row, ["cantidad_a_pedir", "cant_a_pedir", "cant. a pedir", "cant a pedir", "cantidad_pedir", "pedido_sugerido"])),
+        activo: true,
+      };
+    }).filter((row) => row.codigo);
+
+    if (articlePayloads.length === 0) {
+      setProcessing(false);
+      toast({ title: "Archivo sin datos vÃ¡lidos", description: "Necesita al menos columna CÃ³digo, Punto de pedido y Cant. a pedir.", variant: "destructive" });
+      return;
+    }
+
+    const payload = articlePayloads.map((row) => {
+      const currentArticle = articles.find((article) => upperText(article.codigo) === row.codigo);
+      return {
+        codigo: row.codigo,
+        descripcion: row.descripcion || currentArticle?.descripcion || "ARTÃCULO SIN DESCRIPCIÃ“N",
+        familia: row.familia || currentArticle?.familia || "MOTORES",
+        unidad: row.unidad || currentArticle?.unidad || "UNI",
+        proveedor_habitual: row.proveedor_habitual || currentArticle?.proveedor_habitual || null,
+        lead_time_nacional_dias: currentArticle?.lead_time_nacional_dias ?? null,
+        lead_time_importacion_dias: currentArticle?.lead_time_importacion_dias ?? null,
+        stock_seguridad: currentArticle?.stock_seguridad ?? 0,
+        punto_pedido: row.punto_pedido,
+        cantidad_a_pedir: row.cantidad_a_pedir,
+        activo: currentArticle?.activo ?? row.activo,
+      };
+    });
+
+    const { error } = await supabase.from("stock_articulos" as any).upsert(payload, { onConflict: "codigo" });
+    setProcessing(false);
+    if (error) {
+      toast({ title: "No se pudieron importar puntos de pedido", description: error.message, variant: "destructive" });
+      return;
+    }
+    await loadStock();
+    toast({ title: "Puntos de pedido importados", description: `${payload.length} artÃ­culos actualizados sin modificar stock.` });
+  };
+
   const processBillingCsv = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -412,6 +466,10 @@ export const StockModule = () => {
             <div className="space-y-1">
               <Label htmlFor="stock-inicial">Carga inicial CSV</Label>
               <Input id="stock-inicial" type="file" accept=".csv,.txt" onChange={processInitialCsv} disabled={processing} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="stock-puntos">Puntos de pedido CSV</Label>
+              <Input id="stock-puntos" type="file" accept=".csv,.txt" onChange={processReorderCsv} disabled={processing} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="stock-facturacion">Facturación diaria CSV</Label>
