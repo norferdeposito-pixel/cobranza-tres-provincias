@@ -9,6 +9,7 @@ create table if not exists public.stock_articulos (
   lead_time_importacion_dias numeric,
   stock_seguridad numeric not null default 0,
   punto_pedido numeric not null default 0,
+  cantidad_a_pedir numeric not null default 0,
   activo boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -27,6 +28,9 @@ create index if not exists stock_actual_fecha_idx on public.stock_actual (fecha_
 
 alter table public.stock_articulos enable row level security;
 alter table public.stock_actual enable row level security;
+
+alter table public.stock_articulos
+add column if not exists cantidad_a_pedir numeric not null default 0;
 
 drop policy if exists "stock articulos acceso autorizado" on public.stock_articulos;
 drop policy if exists "stock actual acceso autorizado" on public.stock_actual;

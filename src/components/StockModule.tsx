@@ -18,6 +18,7 @@ type StockArticle = {
   lead_time_importacion_dias: number | null;
   stock_seguridad: number | null;
   punto_pedido: number | null;
+  cantidad_a_pedir: number | null;
   activo: boolean | null;
 };
 
@@ -37,6 +38,7 @@ type StockForm = {
   leadTimeImportacion: string;
   stockSeguridad: string;
   puntoPedido: string;
+  cantidadAPedir: string;
   stockActual: string;
   activo: boolean;
 };
@@ -60,6 +62,7 @@ const emptyForm = (): StockForm => ({
   leadTimeImportacion: "",
   stockSeguridad: "",
   puntoPedido: "",
+  cantidadAPedir: "",
   stockActual: "",
   activo: true,
 });
@@ -237,6 +240,7 @@ export const StockModule = () => {
       leadTimeImportacion: article.lead_time_importacion_dias != null ? String(article.lead_time_importacion_dias) : "",
       stockSeguridad: article.stock_seguridad != null ? String(article.stock_seguridad) : "",
       puntoPedido: article.punto_pedido != null ? String(article.punto_pedido) : "",
+      cantidadAPedir: article.cantidad_a_pedir != null ? String(article.cantidad_a_pedir) : "",
       stockActual: stock?.stock_actual != null ? String(stock.stock_actual) : "",
       activo: article.activo !== false,
     });
@@ -261,6 +265,7 @@ export const StockModule = () => {
       lead_time_importacion_dias: form.leadTimeImportacion ? safeNumber(form.leadTimeImportacion) : null,
       stock_seguridad: form.stockSeguridad ? safeNumber(form.stockSeguridad) : 0,
       punto_pedido: form.puntoPedido ? safeNumber(form.puntoPedido) : 0,
+      cantidad_a_pedir: form.cantidadAPedir ? safeNumber(form.cantidadAPedir) : 0,
       activo: form.activo,
     };
     const articleRes = editingCode
@@ -304,7 +309,8 @@ export const StockModule = () => {
       lead_time_nacional_dias: safeNumber(getFirstValue(row, ["lead_time_nacional", "lead_time_nacional_dias"])),
       lead_time_importacion_dias: safeNumber(getFirstValue(row, ["lead_time_importacion", "lead_time_importacion_dias"])),
       stock_seguridad: safeNumber(getFirstValue(row, ["stock_seguridad", "stock_de_seguridad", "seguridad"])),
-      punto_pedido: safeNumber(getFirstValue(row, ["punto_pedido", "punto_de_pedido"])),
+      punto_pedido: safeNumber(getFirstValue(row, ["punto_pedido", "punto_de_pedido", "punto pedido", "pto_pedido", "pedido", "reposicion", "punto_reposicion"])),
+      cantidad_a_pedir: safeNumber(getFirstValue(row, ["cantidad_a_pedir", "cant_a_pedir", "cant. a pedir", "cant a pedir", "cantidad_pedir", "pedido_sugerido"])),
       activo: true,
       stock: safeNumber(getFirstValue(row, ["stock", "stock_actual", "existencias", "cantidad"])),
     })).filter((row) => row.codigo && row.descripcion);
@@ -436,7 +442,7 @@ export const StockModule = () => {
           <Button type="button" variant="outline" onClick={loadStock}><Download className="h-4 w-4" />Actualizar</Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-sm">
+          <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-5 py-3">Código</th>
@@ -444,6 +450,7 @@ export const StockModule = () => {
                 <th className="px-5 py-3">Familia</th>
                 <th className="px-5 py-3">Stock actual</th>
                 <th className="px-5 py-3">Punto pedido</th>
+                <th className="px-5 py-3">Cant. a pedir</th>
                 <th className="px-5 py-3">Stock seguridad</th>
                 <th className="px-5 py-3">Estado</th>
                 <th className="px-5 py-3">Actualizado</th>
@@ -458,13 +465,14 @@ export const StockModule = () => {
                   <td className="px-5 py-4">{article.familia || "-"}</td>
                   <td className="px-5 py-4 font-semibold">{stock?.stock_actual ?? 0} {article.unidad || ""}</td>
                   <td className="px-5 py-4">{article.punto_pedido ?? 0}</td>
+                  <td className="px-5 py-4 font-semibold">{article.cantidad_a_pedir ?? 0}</td>
                   <td className="px-5 py-4">{article.stock_seguridad ?? 0}</td>
                   <td className="px-5 py-4"><span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClass[status]}`}>{statusLabel[status]}</span></td>
                   <td className="px-5 py-4">{stock?.fecha_ultima_actualizacion || "-"}</td>
                   <td className="px-5 py-4"><Button type="button" size="sm" variant="outline" onClick={() => startEdit(article)}><Pencil className="h-4 w-4" />Editar</Button></td>
                 </tr>
               ))}
-              {filteredSummaries.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={9}>No hay artículos para mostrar.</td></tr>}
+              {filteredSummaries.length === 0 && <tr><td className="px-5 py-8 text-center text-muted-foreground" colSpan={10}>No hay artículos para mostrar.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -480,6 +488,7 @@ export const StockModule = () => {
           <div className="space-y-2"><Label htmlFor="stock-proveedor">Proveedor habitual</Label><Input id="stock-proveedor" value={form.proveedorHabitual} onChange={(event) => setForm({ ...form, proveedorHabitual: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="stock-actual">Stock actual</Label><Input id="stock-actual" type="number" step="0.01" value={form.stockActual} onChange={(event) => setForm({ ...form, stockActual: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="stock-punto">Punto de pedido</Label><Input id="stock-punto" type="number" step="0.01" value={form.puntoPedido} onChange={(event) => setForm({ ...form, puntoPedido: event.target.value })} /></div>
+          <div className="space-y-2"><Label htmlFor="stock-cant-pedir">Cant. a pedir</Label><Input id="stock-cant-pedir" type="number" step="0.01" value={form.cantidadAPedir} onChange={(event) => setForm({ ...form, cantidadAPedir: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="stock-seguridad">Stock seguridad</Label><Input id="stock-seguridad" type="number" step="0.01" value={form.stockSeguridad} onChange={(event) => setForm({ ...form, stockSeguridad: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="stock-lt-nacional">Lead Time Nacional</Label><Input id="stock-lt-nacional" type="number" step="1" value={form.leadTimeNacional} onChange={(event) => setForm({ ...form, leadTimeNacional: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="stock-lt-importacion">Lead Time Importación</Label><Input id="stock-lt-importacion" type="number" step="1" value={form.leadTimeImportacion} onChange={(event) => setForm({ ...form, leadTimeImportacion: event.target.value })} /></div>
@@ -496,7 +505,7 @@ export const StockModule = () => {
 
       <section className="rounded-md border bg-card p-5 shadow-command">
         <h3 className="font-semibold">Formato de importación</h3>
-        <p className="mt-1 text-sm text-muted-foreground">El CSV puede estar separado por coma, punto y coma o tabulación. Columnas recomendadas: Código, Descripción, Stock actual para carga inicial; Código y Cantidad para facturación diaria.</p>
+        <p className="mt-1 text-sm text-muted-foreground">El CSV puede estar separado por coma, punto y coma o tabulación. Columnas recomendadas para carga inicial: Código, Descripción, Stock actual, Punto de pedido y Cant. a pedir. Para facturación diaria: Código y Cantidad.</p>
       </section>
     </section>
   );
