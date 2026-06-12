@@ -141,6 +141,8 @@ const getFirstValue = (row: Record<string, string>, keys: string[]) => {
 
 const getStockStatus = (article: StockArticle, stock?: StockRow): StockStatus => {
   const current = safeNumber(stock?.stock_actual);
+  const hasReorderConfig = safeNumber(article.punto_pedido) > 0 || safeNumber(article.cantidad_a_pedir) > 0 || safeNumber(article.stock_seguridad) > 0;
+  if (!hasReorderConfig) return "ok";
   if (current <= 0) return "sin_stock";
   if (current <= safeNumber(article.stock_seguridad)) return "seguridad";
   if (current <= safeNumber(article.punto_pedido)) return "punto_pedido";
@@ -170,6 +172,7 @@ export const StockModule = () => {
   const [query, setQuery] = useState("");
   const [familyFilter, setFamilyFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("criticos");
+  const [reorderOnly, setReorderOnly] = useState(false);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [form, setForm] = useState<StockForm>(emptyForm());
   const [lastImportResult, setLastImportResult] = useState<{ updated: number; ignored: string[] } | null>(null);
@@ -194,13 +197,14 @@ export const StockModule = () => {
         const matchesSearch = !search || `${article.codigo} ${article.descripcion} ${article.familia || ""} ${article.proveedor_habitual || ""}`.toLowerCase().includes(search);
         const matchesFamily = familyFilter === "todos" || (article.familia || "SIN FAMILIA") === familyFilter;
         const matchesStatus = statusFilter === "todos" || (statusFilter === "criticos" ? status !== "ok" : status === statusFilter);
-        return matchesSearch && matchesFamily && matchesStatus;
+        const matchesReorder = !reorderOnly || safeNumber(article.punto_pedido) > 0 || safeNumber(article.cantidad_a_pedir) > 0;
+        return matchesSearch && matchesFamily && matchesStatus && matchesReorder;
       })
       .sort((a, b) => {
         const severity = { sin_stock: 0, seguridad: 1, punto_pedido: 2, ok: 3 };
         return severity[a.status] - severity[b.status] || a.article.codigo.localeCompare(b.article.codigo);
       });
-  }, [stockSummaries, query, familyFilter, statusFilter]);
+  }, [stockSummaries, query, familyFilter, statusFilter, reorderOnly]);
 
   const criticalSummaries = useMemo(() => {
     const severity = { sin_stock: 0, seguridad: 1, punto_pedido: 2, ok: 3 };
@@ -536,7 +540,7 @@ export const StockModule = () => {
             {lastImportResult.ignored.length > 0 && <p className="mt-1 text-muted-foreground">No encontrados: {lastImportResult.ignored.slice(0, 30).join(", ")}{lastImportResult.ignored.length > 30 ? "..." : ""}</p>}
           </div>
         )}
-        <div className="grid gap-3 border-b p-5 md:grid-cols-4">
+        <div className="grid gap-3 border-b p-5 md:grid-cols-5">
           <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código, descripción o proveedor" />
           <select value={familyFilter} onChange={(event) => setFamilyFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
             <option value="todos">Todas las familias</option>
@@ -550,6 +554,10 @@ export const StockModule = () => {
             <option value="sin_stock">Sin stock</option>
             <option value="ok">OK</option>
           </select>
+          <label className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium">
+            <input type="checkbox" checked={reorderOnly} onChange={(event) => setReorderOnly(event.target.checked)} />
+            Solo reposicion
+          </label>
           <Button type="button" variant="outline" onClick={loadStock}><Download className="h-4 w-4" />Actualizar</Button>
         </div>
         <div className="overflow-x-auto">
