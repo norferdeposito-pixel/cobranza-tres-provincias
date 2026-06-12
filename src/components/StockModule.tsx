@@ -104,17 +104,22 @@ const splitDelimitedLine = (line: string, delimiter: string) => {
 const parseCsv = (text: string) => {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length < 2) return [];
-  const delimiter = lines[0].includes(";") ? ";" : lines[0].includes("\t") ? "\t" : ",";
-  const headerIndex = lines.findIndex((line) => {
-    const normalized = splitDelimitedLine(line, delimiter).map(normalizeKey);
-    const joined = normalized.join(" ");
-    return (
-      normalized.includes("cod_articulo") ||
-      normalized.includes("codigo") ||
-      normalized.includes("codigo_articulo") ||
-      (joined.includes("articulo") && (joined.includes("descripcion") || joined.includes("existencias")))
-    );
-  });
+  const delimiters = [";", "\t", ","];
+  let delimiter = ";";
+  const headerIndex = lines.findIndex((line) =>
+    delimiters.some((candidate) => {
+      const normalized = splitDelimitedLine(line, candidate).map(normalizeKey);
+      const joined = normalized.join(" ");
+      const isHeader = (
+        normalized.includes("cod_articulo") ||
+        normalized.includes("codigo") ||
+        normalized.includes("codigo_articulo") ||
+        (joined.includes("articulo") && (joined.includes("descripcion") || joined.includes("existencias") || joined.includes("punto")))
+      );
+      if (isHeader) delimiter = candidate;
+      return isHeader;
+    })
+  );
   if (headerIndex < 0) return [];
   const headers = splitDelimitedLine(lines[headerIndex], delimiter).map(normalizeKey);
   return lines.slice(headerIndex + 1).map((line) => {
@@ -346,7 +351,7 @@ export const StockModule = () => {
     const rows = parseCsv(await file.text());
     const articlePayloads = rows.map((row) => {
       const codigo = upperText(getFirstValue(row, ["codigo", "cod_articulo", "c_d_articulo", "articulo"]));
-      const descripcion = upperText(getFirstValue(row, ["descripcion", "descripci_n", "detalle", "articulo_descripcion"]));
+      const descripcion = upperText(getFirstValue(row, ["descripcion", "descripcion_articulo", "descripci_n", "detalle", "articulo_descripcion"]));
       return {
         codigo,
         descripcion,
