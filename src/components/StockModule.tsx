@@ -202,6 +202,13 @@ export const StockModule = () => {
       });
   }, [stockSummaries, query, familyFilter, statusFilter]);
 
+  const criticalSummaries = useMemo(() => {
+    const severity = { sin_stock: 0, seguridad: 1, punto_pedido: 2, ok: 3 };
+    return stockSummaries
+      .filter((item) => item.status !== "ok")
+      .sort((a, b) => severity[a.status] - severity[b.status] || a.article.codigo.localeCompare(b.article.codigo));
+  }, [stockSummaries]);
+
   const summary = {
     controlled: stockSummaries.length,
     reorder: stockSummaries.filter((item) => item.status === "punto_pedido").length,
@@ -460,6 +467,47 @@ export const StockModule = () => {
           </article>
         ))}
       </section>
+
+      {criticalSummaries.length > 0 && (
+        <section className="rounded-md border border-warning/40 bg-warning/10 shadow-command">
+          <div className="flex flex-col gap-2 border-b border-warning/30 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Alertas de reposición</h3>
+              <p className="text-sm text-muted-foreground">Artículos con stock actual igual o menor al punto de pedido.</p>
+            </div>
+            <span className="rounded-md border border-warning/40 bg-background px-3 py-1 text-sm font-semibold">{criticalSummaries.length}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead className="bg-surface-subtle text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-3">Alerta</th>
+                  <th className="px-5 py-3">Código</th>
+                  <th className="px-5 py-3">Descripción</th>
+                  <th className="px-5 py-3">Stock actual</th>
+                  <th className="px-5 py-3">Punto pedido</th>
+                  <th className="px-5 py-3">Cant. a pedir</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {criticalSummaries.slice(0, 30).map(({ article, stock, status }) => (
+                  <tr key={`alerta-${article.codigo}`} className="bg-card/70">
+                    <td className="px-5 py-4"><span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClass[status]}`}>{statusLabel[status]}</span></td>
+                    <td className="px-5 py-4 font-semibold">{article.codigo}</td>
+                    <td className="px-5 py-4">{article.descripcion}</td>
+                    <td className="px-5 py-4 font-semibold">{stock?.stock_actual ?? 0} {article.unidad || ""}</td>
+                    <td className="px-5 py-4">{article.punto_pedido ?? 0}</td>
+                    <td className="px-5 py-4 font-semibold text-primary">{article.cantidad_a_pedir ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {criticalSummaries.length > 30 && (
+            <p className="border-t border-warning/30 p-4 text-sm text-muted-foreground">Se muestran las primeras 30 alertas. Usá el filtro “Solo críticos” para ver el listado completo.</p>
+          )}
+        </section>
+      )}
 
       <section className="rounded-md border bg-card shadow-command">
         <div className="flex flex-col gap-3 border-b p-5 lg:flex-row lg:items-end lg:justify-between">
