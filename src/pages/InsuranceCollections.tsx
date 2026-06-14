@@ -475,6 +475,8 @@ const InsuranceCollections = () => {
   const [collectorToRename, setCollectorToRename] = useState("");
   const [collectorRenameValue, setCollectorRenameValue] = useState("");
   const [collectorPhoneValue, setCollectorPhoneValue] = useState("");
+  const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
+  const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
   const [dependencyToRename, setDependencyToRename] = useState("");
   const [dependencyRenameValue, setDependencyRenameValue] = useState("");
@@ -969,6 +971,27 @@ const InsuranceCollections = () => {
       setCollectorRenameValue("");
       setCollectorPhoneValue("");
     }
+  };
+
+  const mergeCollectors = () => {
+    const from = collectorMergeFrom.trim();
+    const to = collectorMergeTo.trim();
+    if (!from || !to || from === to) return;
+    const destinationPhone = collectorPhoneByName.get(to) || collectorPhoneByName.get(from) || "";
+    setAffiliates((current) => current.map((item) => (item.collector || "OFICINA") === from ? { ...item, collector: to } : item));
+    setCollectorRecords((current) => normalizeCollectorRecords([
+      ...current.filter((item) => item.name !== from && item.name !== to),
+      { name: to, phone: destinationPhone },
+    ]));
+    if (collectorFilter === from) setCollectorFilter(to);
+    if (mobileCollector === from) setMobileCollector(to);
+    if (collectorToRename === from) {
+      setCollectorToRename("");
+      setCollectorRenameValue("");
+      setCollectorPhoneValue("");
+    }
+    setCollectorMergeFrom("");
+    setCollectorMergeTo("");
   };
 
   const addDependency = () => {
@@ -1508,6 +1531,27 @@ const InsuranceCollections = () => {
                     <Input id="collector-phone-value" value={collectorPhoneValue} onChange={(event) => setCollectorPhoneValue(event.target.value)} placeholder="549..." />
                   </div>
                   <Button type="button" variant="outline" className="self-end" onClick={renameCollector}>Modificar</Button>
+                </div>
+                <div className="mt-4 rounded-md border bg-background p-3">
+                  <h4 className="font-semibold">Combinar cobradores duplicados</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Pasa toda la cartera del duplicado al cobrador correcto y elimina el nombre duplicado.</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                    <div className="space-y-1">
+                      <Label htmlFor="collector-merge-from">Duplicado a eliminar</Label>
+                      <select id="collector-merge-from" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorMergeFrom} onChange={(event) => setCollectorMergeFrom(event.target.value)}>
+                        <option value="">Seleccionar</option>
+                        {collectors.filter((collector) => collector !== "OFICINA").map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="collector-merge-to">Cobrador correcto</Label>
+                      <select id="collector-merge-to" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorMergeTo} onChange={(event) => setCollectorMergeTo(event.target.value)}>
+                        <option value="">Seleccionar</option>
+                        {collectors.filter((collector) => collector !== collectorMergeFrom).map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                      </select>
+                    </div>
+                    <Button type="button" variant="command" className="self-end" disabled={!collectorMergeFrom || !collectorMergeTo || collectorMergeFrom === collectorMergeTo} onClick={mergeCollectors}>Combinar</Button>
+                  </div>
                 </div>
               </div>
 
