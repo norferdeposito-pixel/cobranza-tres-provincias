@@ -240,12 +240,26 @@ const getCollectionPlanData = (rawPlan: string) => {
   if (coded) return { plan: `${coded[1]} ${coded[2]}`, dependency: coded[2] };
   const suffixed = normalized.match(/^([AG])[-\s]?(\d+)$/);
   if (suffixed) return { plan: `${suffixed[1]} ${suffixed[2]}`, dependency: suffixed[2] };
+  const cSuffixed = normalized.match(/^C[-\s]?(\d+)$/);
+  if (cSuffixed) return { plan: `C ${cSuffixed[1]}`, dependency: cSuffixed[1] };
+  const vidaSuffixed = normalized.match(/^VIDA\s*[-\s]\s*(\d+)$/);
+  if (vidaSuffixed) return { plan: `Vida ${vidaSuffixed[1]}`, dependency: vidaSuffixed[1] };
   if (normalized === "A") return { plan: "A 327", dependency: "327" };
   if (normalized === "G") return { plan: "G 327", dependency: "327" };
   if (normalized === "C") return { plan: "C", dependency: "327" };
   if (normalized === "VIDA" || normalized === "V") return { plan: "Vida", dependency: "268" };
   if (normalized === "09") return { plan: "09", dependency: "OFICINA" };
   return { plan: normalizePlan(rawPlan), dependency: "SIN DEFINIR" };
+};
+
+const isCollectionPlanCode = (rawPlan: string) => {
+  const normalized = rawPlan.trim().toLocaleUpperCase("es-AR").replace(/\s+/g, " ");
+  const compact = normalized.replace(/[-\s]/g, "");
+  return /^([AG])C[AG]\d+$/.test(compact)
+    || /^([AG])[-\s]?\d+$/.test(normalized)
+    || /^C[-\s]?\d+$/.test(normalized)
+    || /^VIDA\s*[-\s]\s*\d+$/.test(normalized)
+    || ["A", "G", "C", "VIDA", "V", "09"].includes(normalized);
 };
 
 const looksLikeTresProvinciasCollection = (rows: string[][]) => {
@@ -269,15 +283,17 @@ const parseTresProvinciasCollectionRows = (rows: string[][]) => {
   const firstNameColumn = findColumn(["NOMBRE"]);
   const amountColumn = findColumn(["MONTO CUOTA", "MONTO", "CUOTA"]);
   const collectorColumn = findColumn(["COBRADOR"]);
+  const ticketsColumn = findColumn(["CANTIDAD", "TICKETS"]);
   const seen = new Set<string>();
   let duplicatedCount = 0;
 
   const affiliates = rows.slice(headerIndex + 1).flatMap((row, index): Affiliate[] => {
-    const policyNumber = (row[policyColumn] || "").trim();
+    const rawPolicyNumber = (row[policyColumn] || "").trim();
+    const policyNumber = rawPolicyNumber.replace(/\D/g, "").trim();
     const rawPlan = (row[planColumn] || "").trim();
     const lastName = (row[lastNameColumn] || "").trim();
     const firstName = (row[firstNameColumn] || "").trim();
-    if (!/^\d+$/.test(policyNumber) || !rawPlan || (!lastName && !firstName)) return [];
+    if (!/^\d{1,3}(\.\d{3})*$|^\d+$/.test(rawPolicyNumber) || !/^\d+$/.test(policyNumber) || Number(policyNumber) <= 0 || !isCollectionPlanCode(rawPlan) || (!lastName && !firstName)) return [];
     const { plan, dependency } = getCollectionPlanData(rawPlan);
     const id = `${policyNumber}-${plan}`;
     if (seen.has(id)) {
@@ -298,7 +314,7 @@ const parseTresProvinciasCollectionRows = (rows: string[][]) => {
       request: "",
       latestNews: "",
       selectedForMonthly: true,
-      sourceTickets: 1,
+      sourceTickets: Math.max(0, ticketsColumn >= 0 ? parseNumber(row[ticketsColumn]) : 1),
     }];
   });
 
@@ -829,7 +845,7 @@ const InsuranceCollections = () => {
         .filter((item) => item.selectedForMonthly)
         .map((item) => ({ month: activeMonth, affiliateId: item.id, tickets: Math.max(0, item.sourceTickets || 0) })),
     ]);
-    setImportMessage(`Base importada: ${merged.length} afiliados cargados en Dependencia 001 para ${activeMonth}.`);
+    setImportMessage(`Base importada: ${merged.length} afiliados cargados por dependencia y cobrador para ${activeMonth}.`);
     setAffiliateImportPreview(null);
   };
 
