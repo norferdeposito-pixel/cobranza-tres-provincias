@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/lib/supabase";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
@@ -105,6 +106,19 @@ type CollectorRecord = {
   phone: string;
 };
 
+type CloudSnapshot = {
+  affiliates: Affiliate[];
+  monthlyItems: MonthlyItem[];
+  ticketCollections: TicketCollection[];
+  receipts: ReceiptCollection[];
+  notes: AffiliateNote[];
+  rendition: Rendition;
+  collectorRecords: CollectorRecord[];
+  customDependencies: string[];
+  collectorWhatsapp: string;
+  activeMonth: string;
+};
+
 const plans: PlanType[] = ["A 238", "A 269", "G 238", "09", "G 269", "C", "Vida"];
 const defaultSheetUrl = "https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5XWJ3Yuy7HHbbT1GKfhgwe_4_--q0/edit?usp=sharing";
 const affiliatesStorageKey = "insurance-affiliates-v2";
@@ -116,6 +130,7 @@ const renditionStorageKey = "insurance-rendition-v2";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
+const cloudSnapshotKey = "cobranza-tres-provincias";
 
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -473,6 +488,8 @@ const InsuranceCollections = () => {
   });
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
+  const [cloudStatus, setCloudStatus] = useState("Modo local activo");
+  const [cloudBusy, setCloudBusy] = useState(false);
 
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
@@ -483,6 +500,67 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
   useEffect(() => saveStorage(dependenciesStorageKey, customDependencies), [customDependencies]);
+
+  const buildCloudSnapshot = (): CloudSnapshot => ({
+    affiliates,
+    monthlyItems,
+    ticketCollections,
+    receipts,
+    notes,
+    rendition,
+    collectorRecords,
+    customDependencies,
+    collectorWhatsapp,
+    activeMonth,
+  });
+
+  const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>) => {
+    setAffiliates(Array.isArray(snapshot.affiliates) ? snapshot.affiliates : demoAffiliates);
+    setMonthlyItems(Array.isArray(snapshot.monthlyItems) ? snapshot.monthlyItems : []);
+    setTicketCollections(Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections : []);
+    setReceipts(Array.isArray(snapshot.receipts) ? snapshot.receipts : []);
+    setNotes(Array.isArray(snapshot.notes) ? snapshot.notes : []);
+    setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
+    setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
+    setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
+    setCollectorWhatsapp(String(snapshot.collectorWhatsapp || ""));
+    if (snapshot.activeMonth) setActiveMonth(snapshot.activeMonth);
+  };
+
+  const saveCloudSnapshot = async () => {
+    setCloudBusy(true);
+    setCloudStatus("Guardando en la base online...");
+    const { error } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(), updated_at: new Date().toISOString() }, { onConflict: "key" });
+    setCloudBusy(false);
+    if (error) {
+      setCloudStatus(`No se pudo guardar online: ${error.message}`);
+      return;
+    }
+    setCloudStatus(`Guardado online ${new Date().toLocaleString("es-AR")}`);
+  };
+
+  const loadCloudSnapshot = async () => {
+    setCloudBusy(true);
+    setCloudStatus("Cargando datos online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    setCloudBusy(false);
+    if (error) {
+      setCloudStatus(`No se pudo cargar online: ${error.message}`);
+      return;
+    }
+    if (!data?.data) {
+      setCloudStatus("Todavia no hay datos guardados online.");
+      return;
+    }
+    applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
+    setCloudStatus(`Datos online cargados. Ultima actualizacion: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
+  };
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
 
@@ -956,8 +1034,15 @@ const InsuranceCollections = () => {
               <Download className="h-4 w-4" />
               Exportar base
             </Button>
+            <Button type="button" variant="outline" onClick={loadCloudSnapshot} disabled={cloudBusy}>
+              Cargar online
+            </Button>
+            <Button type="button" variant="command" onClick={saveCloudSnapshot} disabled={cloudBusy}>
+              Guardar online
+            </Button>
           </div>
         </div>
+        <div className="px-5 pb-3 text-xs text-muted-foreground">{cloudStatus}</div>
       </div>
 
       <div className="grid w-full gap-5 px-5 py-6 lg:grid-cols-[220px_minmax(0,1fr)]">

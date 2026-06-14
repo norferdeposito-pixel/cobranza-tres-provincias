@@ -1,5 +1,11 @@
 create extension if not exists pgcrypto;
 
+create table if not exists public.app_snapshots (
+  key text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.dependencies (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
@@ -157,3 +163,14 @@ create policy "authenticated users can manage rendition cash"
 
 create policy "authenticated users can manage rendition transfers"
   on public.rendition_transfers for all to authenticated using (true) with check (true);
+
+alter table public.app_snapshots enable row level security;
+
+create policy "public users can read app snapshots"
+  on public.app_snapshots for select to anon, authenticated using (true);
+
+create policy "public users can write app snapshots"
+  on public.app_snapshots for insert to anon, authenticated with check (true);
+
+create policy "public users can update app snapshots"
+  on public.app_snapshots for update to anon, authenticated using (true) with check (true);
