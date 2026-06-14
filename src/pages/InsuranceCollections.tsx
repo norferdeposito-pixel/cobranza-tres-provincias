@@ -1006,62 +1006,62 @@ const InsuranceCollections = () => {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="border-b bg-card">
-        <div className="flex w-full flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-full flex-col gap-4 px-3 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-md bg-primary text-primary-foreground">
-              <ShieldCheck className="h-6 w-6" />
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground sm:h-11 sm:w-11">
+              <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold">Sistema de afiliados y cobranza</h1>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold leading-tight sm:text-2xl">Sistema de afiliados y cobranza</h1>
               <p className="text-sm text-muted-foreground">Base de datos, cobranza mensual, recibos, totales y rendición</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="flex h-10 items-center gap-2 rounded-md border bg-background px-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <div className="col-span-2 flex h-10 items-center gap-2 rounded-md border bg-background px-3 sm:col-span-1">
               <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Mes</Label>
               <Input id="active-month" type="month" value={activeMonth} onChange={(event) => setActiveMonth(event.target.value || currentMonth())} className="h-8 w-36 border-0 p-0 shadow-none focus-visible:ring-0" />
             </div>
-            <Button type="button" variant="command" onClick={() => openAffiliateForm()}>
+            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => openAffiliateForm()}>
               <Plus className="h-4 w-4" />
               Nuevo afiliado
             </Button>
-            <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+            <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground sm:w-auto sm:px-4">
               <Upload className="h-4 w-4" />
               Importar CSV cobranza
               <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
             </label>
-            <Button type="button" variant="outline" onClick={exportAffiliatesCsv}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportAffiliatesCsv}>
               <Download className="h-4 w-4" />
               Exportar base
             </Button>
-            <Button type="button" variant="outline" onClick={loadCloudSnapshot} disabled={cloudBusy}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
               Cargar online
             </Button>
-            <Button type="button" variant="command" onClick={saveCloudSnapshot} disabled={cloudBusy}>
+            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={saveCloudSnapshot} disabled={cloudBusy}>
               Guardar online
             </Button>
           </div>
         </div>
-        <div className="px-5 pb-3 text-xs text-muted-foreground">{cloudStatus}</div>
+        <div className="px-3 pb-3 text-xs text-muted-foreground sm:px-5">{cloudStatus}</div>
       </div>
 
-      <div className="grid w-full gap-5 px-5 py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="rounded-md border bg-card p-4 lg:sticky lg:top-4 lg:self-start">
-          <div>
+      <div className="grid w-full gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="rounded-md border bg-card p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start">
+          <div className="flex items-center justify-between gap-3 lg:block">
             <p className="text-xs font-semibold uppercase text-muted-foreground">Módulo</p>
-            <h2 className="mt-1 text-lg font-semibold">Cobranza Tres Provincias</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Cartera, cobradores, tickets y rendición.</p>
+            <h2 className="text-base font-semibold sm:text-lg lg:mt-1">Cobranza Tres Provincias</h2>
+            <p className="hidden text-xs text-muted-foreground sm:block lg:mt-1">Cartera, cobradores, tickets y rendición.</p>
           </div>
         </aside>
 
-        <div className="grid gap-5">
-        <section className="rounded-md border bg-card p-4">
+        <div className="grid min-w-0 gap-4 sm:gap-5">
+        <section className="rounded-md border bg-card p-3 sm:p-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
             <div className="space-y-2">
               <Label htmlFor="sheet-url">Planilla original</Label>
               <Input id="sheet-url" value={sheetUrl} onChange={(event) => setSheetUrl(event.target.value)} />
             </div>
-            <Button type="button" variant="command" onClick={() => importGoogleSheet()} disabled={isLoadingSheet}>
+            <Button type="button" className="w-full lg:w-auto" variant="command" onClick={() => importGoogleSheet()} disabled={isLoadingSheet}>
               <FileSpreadsheet className="h-4 w-4" />
               {isLoadingSheet ? "Cargando..." : "Cargar base"}
             </Button>
@@ -1117,7 +1117,7 @@ const InsuranceCollections = () => {
           )}
         </section>
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
             ["Afiliados", affiliates.length, "Clientes en base"],
             ["Seleccionados", affiliates.filter((item) => item.selectedForMonthly).length, "Pasan a cobranza mensual"],
@@ -1125,17 +1125,17 @@ const InsuranceCollections = () => {
             ["Novedades", notes.filter((item) => item.month === activeMonth).length, "Cargadas en el mes"],
             ["Total a rendir", currency.format(totalToRender), "Cobrado menos comisión"],
           ].map(([label, value, helper]) => (
-            <div key={String(label)} className="rounded-md border bg-card p-4 shadow-command">
+            <div key={String(label)} className="rounded-md border bg-card p-3 shadow-command sm:p-4">
               <p className="text-sm font-medium text-muted-foreground">{String(label)}</p>
-              <p className="mt-2 text-3xl font-semibold">{String(value)}</p>
+              <p className="mt-2 text-2xl font-semibold sm:text-3xl">{String(value)}</p>
               <p className="mt-2 text-xs text-muted-foreground">{String(helper)}</p>
             </div>
           ))}
         </section>
 
-        <nav className="flex flex-wrap gap-2 rounded-md border bg-card p-2">
+        <nav className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 sm:flex sm:flex-wrap">
           {navItems.map(({ id, label, icon: Icon }) => (
-            <Button key={id} type="button" variant={activeSection === id ? "command" : "ghost"} onClick={() => setActiveSection(id)}>
+            <Button key={id} type="button" className="justify-start sm:justify-center" variant={activeSection === id ? "command" : "ghost"} onClick={() => setActiveSection(id)}>
               <Icon className="h-4 w-4" />
               {label}
             </Button>
@@ -1143,10 +1143,10 @@ const InsuranceCollections = () => {
         </nav>
 
         {activeSection === "Base" && (
-          <section className="rounded-md border bg-card">
-            <div className="border-b p-4">
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div className="relative max-w-lg flex-1">
+                <div className="relative w-full flex-1 lg:max-w-lg">
                   <Label htmlFor="base-search" className="sr-only">Buscar</Label>
                   <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input id="base-search" className="pl-9" placeholder="Buscar por nombre, póliza o plan" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -1193,18 +1193,19 @@ const InsuranceCollections = () => {
                     {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={() => setAllFilteredMonthly(true)}>Tildar todos</Button>
-                  <Button type="button" variant="outline" onClick={() => setAllFilteredMonthly(false)}>Destildar todos</Button>
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                  <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={() => setAllFilteredMonthly(true)}>Tildar todos</Button>
+                  <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={() => setAllFilteredMonthly(false)}>Destildar todos</Button>
                 </div>
               </div>
             </div>
+            <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para ver todas las columnas.</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1500px] text-sm">
+              <table className="w-full min-w-[1180px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="w-16 px-2 py-3 text-center">Sel.</th>
-                    <th className="w-64 px-3 py-3 text-left">Nombre y apellido</th>
+                    <th className="w-56 px-3 py-3 text-left">Nombre y apellido</th>
                     <th className="px-4 py-3 text-left">Póliza</th>
                     <th className="w-20 px-3 py-3 text-left">Plan</th>
                     <th className="w-24 px-3 py-3 text-left">Dep.</th>
@@ -1212,8 +1213,8 @@ const InsuranceCollections = () => {
                     <th className="w-28 px-3 py-3 text-right">Valor</th>
                     <th className="w-20 px-2 py-3 text-center">Tickets mes</th>
                     <th className="w-24 px-2 py-3 text-center">Pendientes</th>
-                    <th className="w-64 px-3 py-3 text-left">Pedido</th>
-                    <th className="w-64 px-3 py-3 text-left">Novedad</th>
+                    <th className="w-52 px-3 py-3 text-left">Pedido</th>
+                    <th className="w-52 px-3 py-3 text-left">Novedad</th>
                     <th className="px-4 py-3 text-right">Acción</th>
                   </tr>
                 </thead>
@@ -1221,7 +1222,7 @@ const InsuranceCollections = () => {
                   {filteredAffiliates.map((item) => (
                     <tr key={item.id}>
                       <td className="w-16 px-2 py-3 text-center"><input type="checkbox" checked={item.selectedForMonthly} onChange={(event) => toggleMonthly(item.id, event.target.checked)} className="h-4 w-4" /></td>
-                      <td className="w-64 px-3 py-3 font-medium">{item.fullName}</td>
+                      <td className="w-56 px-3 py-3 font-medium leading-tight">{item.fullName}</td>
                       <td className="px-4 py-3">{item.policyNumber || "-"}</td>
                       <td className="w-20 px-3 py-3">{item.plan}</td>
                       <td className="w-24 px-2 py-3">
@@ -1237,8 +1238,8 @@ const InsuranceCollections = () => {
                       <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
                       <td className="w-20 px-2 py-3 text-center">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
                       <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
-                      <td className="w-64 px-3 py-3"><Input className="h-8" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" /></td>
-                      <td className="w-64 px-3 py-3"><Input className="h-8" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
+                      <td className="w-52 px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" /></td>
+                      <td className="w-52 px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -1265,12 +1266,12 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Cobradores" && (
-          <section className="rounded-md border bg-card">
-            <div className="border-b p-4">
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4">
               <h2 className="font-semibold">Cobradores</h2>
               <p className="text-sm text-muted-foreground">Resumen de cartera por cobrador para el período {activeMonth}.</p>
             </div>
-            <div className="grid gap-4 border-b p-4 xl:grid-cols-2">
+            <div className="grid gap-4 border-b p-3 sm:p-4 xl:grid-cols-2">
               <div className="rounded-md border bg-surface-subtle p-3">
                 <h3 className="font-semibold">Agregar / modificar cobrador</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
@@ -1329,8 +1330,9 @@ const InsuranceCollections = () => {
                 </div>
               </div>
             </div>
+            <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para ver el resumen completo.</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1040px] text-sm">
+              <table className="w-full min-w-[920px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 text-left">Cobrador</th>
@@ -1383,13 +1385,14 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Mensual" && (
-          <section className="rounded-md border bg-card">
-            <div className="border-b p-4">
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4">
               <h2 className="font-semibold">Planilla de cobranza mensual</h2>
               <p className="text-sm text-muted-foreground">Período {activeMonth}. Aparecen solo los afiliados tildados en la base. Acá se carga la cantidad de tickets.</p>
             </div>
+            <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para editar tickets y totales.</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
+              <table className="w-full min-w-[760px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 text-left">Nombre</th>
@@ -1421,8 +1424,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Cobranza" && (
-          <section className="grid gap-5 lg:grid-cols-[1fr_420px]">
-            <form className="rounded-md border bg-card p-4" onSubmit={saveTicketCollection}>
+          <section className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_420px]">
+            <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveTicketCollection}>
               <h2 className="font-semibold">Registrar cobranza por tickets</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => setCollectionPolicy(event.target.value)} /></div>
@@ -1456,7 +1459,7 @@ const InsuranceCollections = () => {
               </div>
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
-              <div className="mt-4 flex justify-end"><Button type="submit" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button></div>
+              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button></div>
             </form>
             <div className="space-y-5">
               <RecentTicketCollections collections={ticketCollections.filter((item) => item.month === activeMonth)} affiliatesById={affiliatesById} />
@@ -1466,8 +1469,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Recibos" && (
-          <section className="grid gap-5 lg:grid-cols-[1fr_420px]">
-            <form className="rounded-md border bg-card p-4" onSubmit={saveReceipt}>
+          <section className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_420px]">
+            <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveReceipt}>
               <h2 className="font-semibold">Registrar recibo sin ticket</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value })} /></div>
@@ -1479,20 +1482,21 @@ const InsuranceCollections = () => {
                 <div className="space-y-2"><Label>Método de pago</Label><select value={receiptForm.paymentMethod} onChange={(event) => setReceiptForm({ ...receiptForm, paymentMethod: event.target.value as PaymentMethod })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
-              <div className="mt-4 flex justify-end"><Button type="submit" variant="command">Guardar recibo</Button></div>
+              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command">Guardar recibo</Button></div>
             </form>
             <RecentReceipts receipts={receipts.filter((item) => item.collectionMonth === activeMonth)} />
           </section>
         )}
 
         {activeSection === "Novedades" && (
-          <section className="rounded-md border bg-card">
-            <div className="border-b p-4">
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4">
               <h2 className="font-semibold">Novedades del mes</h2>
               <p className="text-sm text-muted-foreground">Texto libre cargado por afiliado o ticket. Período {activeMonth}.</p>
             </div>
+            <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para leer todas las novedades.</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[860px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 text-left">Fecha</th>
@@ -1527,10 +1531,11 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Totales" && (
-          <section className="rounded-md border bg-card">
-            <div className="border-b p-4"><h2 className="font-semibold">Totales por plan</h2></div>
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4"><h2 className="font-semibold">Totales por plan</h2></div>
+            <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para ver importes y cantidades.</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1280px] text-sm">
+              <table className="w-full min-w-[1120px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-3 py-3 text-left">Plan</th>
@@ -1569,8 +1574,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Rendicion" && (
-          <section className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-md border bg-card p-4">
+          <section className="grid gap-4 sm:gap-5 lg:grid-cols-2">
+            <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Rendición final</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <SummaryBox label="Cobrado efectivo" value={currency.format(totalCashCollected)} />
@@ -1582,7 +1587,7 @@ const InsuranceCollections = () => {
                 <SummaryBox label="Resta por rendir" value={currency.format(totalToRender - totalRendered)} />
               </div>
             </div>
-            <div className="rounded-md border bg-card p-4">
+            <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Monto rendido</h2>
               <div className="mt-4 flex items-center justify-between">
                 <h3 className="font-semibold">Efectivo rendido</h3>
