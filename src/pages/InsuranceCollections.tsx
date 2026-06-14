@@ -944,11 +944,31 @@ const InsuranceCollections = () => {
     if (!from) return;
     const finalName = to || from;
     setAffiliates((current) => current.map((item) => (item.collector || "OFICINA") === from ? { ...item, collector: finalName } : item));
-    setCollectorRecords((current) => normalizeCollectorRecords(current.map((item) => item.name === from ? { name: finalName, phone: collectorPhoneValue.trim() } : item).concat({ name: finalName, phone: collectorPhoneValue.trim() })));
+    setCollectorRecords((current) => normalizeCollectorRecords([
+      ...current.filter((item) => item.name !== from),
+      { name: finalName, phone: collectorPhoneValue.trim() },
+    ]));
     if (collectorFilter === from) setCollectorFilter(finalName);
+    if (mobileCollector === from) setMobileCollector(finalName);
     setCollectorToRename("");
     setCollectorRenameValue("");
     setCollectorPhoneValue("");
+  };
+
+  const removeCollector = (collector: string) => {
+    const assigned = affiliates.some((item) => (item.collector || "OFICINA") === collector);
+    if (assigned) {
+      alert("Este cobrador tiene afiliados asignados. Primero combiná o reasigná su cartera.");
+      return;
+    }
+    setCollectorRecords((current) => normalizeCollectorRecords(current.filter((item) => item.name !== collector)));
+    if (collectorFilter === collector) setCollectorFilter("todos");
+    if (mobileCollector === collector) setMobileCollector("todos");
+    if (collectorToRename === collector) {
+      setCollectorToRename("");
+      setCollectorRenameValue("");
+      setCollectorPhoneValue("");
+    }
   };
 
   const addDependency = () => {
@@ -1559,6 +1579,9 @@ const InsuranceCollections = () => {
                           >
                             Ver cartera
                           </Button>
+                          {row.affiliates === 0 && row.collector !== "OFICINA" && (
+                            <Button type="button" size="sm" variant="outline" onClick={() => removeCollector(row.collector)}>Quitar</Button>
+                          )}
                         </div>
                       </td>
                     </tr>
