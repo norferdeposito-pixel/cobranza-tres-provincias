@@ -1105,20 +1105,9 @@ const InsuranceCollections = () => {
         </aside>
 
         <div className="grid min-w-0 gap-4 sm:gap-5">
-        <section className="rounded-md border bg-card p-3 sm:p-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="sheet-url">Planilla original</Label>
-              <Input id="sheet-url" value={sheetUrl} onChange={(event) => setSheetUrl(event.target.value)} />
-            </div>
-            <Button type="button" className="w-full lg:w-auto" variant="command" onClick={() => importGoogleSheet()} disabled={isLoadingSheet}>
-              <FileSpreadsheet className="h-4 w-4" />
-              {isLoadingSheet ? "Cargando..." : "Cargar base"}
-            </Button>
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">{importMessage}</p>
+        <section className={`${affiliateImportPreview ? "" : "hidden"} rounded-md border bg-card p-3 sm:p-4`}>
           {affiliateImportPreview && (
-            <div className="mt-4 rounded-md border bg-surface-subtle p-4">
+            <div className="rounded-md border bg-surface-subtle p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="font-semibold">Previsualización de importación</h2>
