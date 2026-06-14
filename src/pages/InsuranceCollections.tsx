@@ -1105,8 +1105,8 @@ const InsuranceCollections = () => {
         </aside>
 
         <div className="grid min-w-0 gap-4 sm:gap-5">
-        <section className={`${affiliateImportPreview ? "" : "hidden"} rounded-md border bg-card p-3 sm:p-4`}>
-          {affiliateImportPreview && (
+        {affiliateImportPreview && (
+          <section className="rounded-md border bg-card p-3 sm:p-4">
             <div className="rounded-md border bg-surface-subtle p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -1153,8 +1153,8 @@ const InsuranceCollections = () => {
                 <Button type="button" variant="command" onClick={() => importAffiliates(affiliateImportPreview.rows)}>Aplicar importación</Button>
               </div>
             </div>
-          )}
-        </section>
+          </section>
+        )}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
