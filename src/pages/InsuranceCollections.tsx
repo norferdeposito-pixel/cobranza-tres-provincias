@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Download,
   FileSpreadsheet,
+  Smartphone,
   Users,
   Plus,
   ReceiptText,
@@ -22,7 +23,7 @@ import { supabase } from "@/lib/supabase";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
-type Section = "Base" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion";
+type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion";
 
 type TransferData = {
   transactionNumber: string;
@@ -476,6 +477,10 @@ const InsuranceCollections = () => {
   const [collectionTickets, setCollectionTickets] = useState("1");
   const [collectionMethod, setCollectionMethod] = useState<PaymentMethod>("E");
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
+  const [mobileCollector, setMobileCollector] = useState("todos");
+  const [mobileSearch, setMobileSearch] = useState("");
+  const [mobileSelectedAffiliateId, setMobileSelectedAffiliateId] = useState("");
+  const [mobileNoteText, setMobileNoteText] = useState("");
   const [receiptForm, setReceiptForm] = useState({
     receiptNumber: "",
     fullName: "",
@@ -645,6 +650,48 @@ const InsuranceCollections = () => {
     : 0;
   const ticketsToCharge = Math.max((selectedMonthlyItem?.tickets || 0) - alreadyChargedTickets, 0);
   const hasUnansweredRequest = !!selectedMonthlyAffiliate?.request?.trim() && !selectedMonthlyAffiliate?.latestNews?.trim();
+  const mobileCollectorRows = useMemo(() => {
+    const normalized = mobileSearch.trim().toLocaleUpperCase("es-AR");
+    return monthlyRows
+      .map(({ affiliate, monthly }) => ({
+        affiliate,
+        monthly,
+        pending: getPendingTickets(affiliate.id),
+      }))
+      .filter((row) => row.pending > 0)
+      .filter((row) => mobileCollector === "todos" || (row.affiliate.collector || "OFICINA") === mobileCollector)
+      .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .sort((a, b) => b.pending - a.pending || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
+  }, [activeMonth, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
+
+  const mobileSelectedAffiliate = useMemo(() => {
+    return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
+  }, [affiliates, mobileSelectedAffiliateId, selectedMonthlyAffiliate]);
+
+  const openMobileCollection = (affiliate: Affiliate) => {
+    setMobileSelectedAffiliateId(affiliate.id);
+    setCollectionPolicy(affiliate.policyNumber);
+    setCollectionPlan(affiliate.plan);
+    setCollectionTickets(String(Math.max(1, getPendingTickets(affiliate.id))));
+    setCollectionMethod("E");
+    setCollectionTransfer(emptyTransfer());
+  };
+
+  const saveMobileNote = () => {
+    const affiliate = mobileSelectedAffiliate;
+    if (!affiliate || !mobileNoteText.trim()) return;
+    setNotes((current) => [
+      {
+        id: `note-${Date.now()}`,
+        affiliateId: affiliate.id,
+        month: activeMonth,
+        date: new Date().toISOString(),
+        text: mobileNoteText.trim(),
+      },
+      ...current,
+    ]);
+    setMobileNoteText("");
+  };
 
   const getWhatsappUrl = (affiliate: Affiliate) => {
     const phone = (collectorPhoneByName.get(affiliate.collector || "OFICINA") || collectorWhatsapp).replace(/\D/g, "");
@@ -937,6 +984,8 @@ const InsuranceCollections = () => {
     setCollectionTickets("1");
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
+    setMobileSelectedAffiliateId("");
+    setMobileNoteText("");
   };
 
   const saveReceipt = (event: FormEvent) => {
@@ -994,6 +1043,7 @@ const InsuranceCollections = () => {
 
   const navItems: Array<{ id: Section; label: string; icon: typeof ClipboardList }> = [
     { id: "Base", label: "Base de afiliados", icon: ClipboardList },
+    { id: "CobradorMovil", label: "Vista cobrador", icon: Smartphone },
     { id: "Cobradores", label: "Cobradores", icon: Users },
     { id: "Mensual", label: "Cobranza mensual", icon: CheckSquare },
     { id: "Cobranza", label: "Cobranza", icon: Banknote },
@@ -1262,6 +1312,136 @@ const InsuranceCollections = () => {
                 </tbody>
               </table>
             </div>
+          </section>
+        )}
+
+        {activeSection === "CobradorMovil" && (
+          <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="rounded-md border bg-card">
+              <div className="border-b p-3 sm:p-4">
+                <h2 className="font-semibold">Vista cobrador</h2>
+                <p className="text-sm text-muted-foreground">Búsqueda rápida de tickets pendientes para cobrar desde el celular.</p>
+              </div>
+              <div className="grid gap-3 border-b p-3 sm:grid-cols-[1fr_1fr] sm:p-4">
+                <div className="space-y-1">
+                  <Label htmlFor="mobile-collector">Cobrador</Label>
+                  <select
+                    id="mobile-collector"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={mobileCollector}
+                    onChange={(event) => setMobileCollector(event.target.value)}
+                  >
+                    <option value="todos">Todos</option>
+                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="mobile-search">Buscar</Label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="mobile-search"
+                      className="pl-9"
+                      value={mobileSearch}
+                      onChange={(event) => setMobileSearch(event.target.value)}
+                      placeholder="Póliza, nombre o plan"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 p-3 sm:p-4">
+                {mobileCollectorRows.slice(0, 40).map(({ affiliate, pending }) => {
+                  const selected = mobileSelectedAffiliateId === affiliate.id || selectedMonthlyAffiliate?.id === affiliate.id;
+                  return (
+                    <button
+                      key={affiliate.id}
+                      type="button"
+                      className={`rounded-md border p-3 text-left transition hover:bg-accent ${selected ? "border-primary bg-primary/5" : "bg-background"}`}
+                      onClick={() => openMobileCollection(affiliate)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold leading-tight">{affiliate.fullName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Póliza {affiliate.policyNumber} · {affiliate.plan} · Dep. {affiliate.dependency || "-"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Cobrador: {affiliate.collector || "OFICINA"}</p>
+                        </div>
+                        <div className="shrink-0 rounded-md bg-surface-subtle px-3 py-2 text-center">
+                          <p className="text-xl font-semibold">{pending}</p>
+                          <p className="text-[10px] uppercase text-muted-foreground">pend.</p>
+                        </div>
+                      </div>
+                      {affiliate.request?.trim() && (
+                        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">Pedido: {affiliate.request}</p>
+                      )}
+                    </button>
+                  );
+                })}
+                {mobileCollectorRows.length === 0 && (
+                  <div className="rounded-md border bg-surface-subtle p-4 text-center text-sm text-muted-foreground">
+                    No hay tickets pendientes para este filtro.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <form className="rounded-md border bg-card p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start" onSubmit={saveTicketCollection}>
+              <h2 className="font-semibold">Cobro rápido</h2>
+              {mobileSelectedAffiliate ? (
+                <div className="mt-3 rounded-md border bg-surface-subtle p-3 text-sm">
+                  <strong>{mobileSelectedAffiliate.fullName}</strong>
+                  <p className="mt-1 text-muted-foreground">Póliza {mobileSelectedAffiliate.policyNumber} · {mobileSelectedAffiliate.plan}</p>
+                  <p className="mt-1 text-muted-foreground">Pendientes: {ticketsToCharge} · Ticket: {currency.format(mobileSelectedAffiliate.value)}</p>
+                </div>
+              ) : (
+                <p className="mt-3 rounded-md border bg-surface-subtle p-3 text-sm text-muted-foreground">Seleccioná un afiliado de la lista para cargar el cobro.</p>
+              )}
+
+              {selectedMonthlyAffiliate?.request?.trim() && (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p className="font-semibold">Pedido obligatorio</p>
+                  <p className="mt-1">{selectedMonthlyAffiliate.request}</p>
+                  <div className="mt-3 space-y-1">
+                    <Label htmlFor="mobile-request-answer">Respuesta del cobrador</Label>
+                    <Input
+                      id="mobile-request-answer"
+                      value={selectedMonthlyAffiliate.latestNews || ""}
+                      onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
+                      placeholder="Dato informado o motivo"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-3">
+                <div className="space-y-1">
+                  <Label>Tickets cobrados</Label>
+                  <Input type="number" min="0" max={ticketsToCharge} value={collectionTickets} onChange={(event) => setCollectionTickets(event.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Forma de pago</Label>
+                  <select value={collectionMethod} onChange={(event) => setCollectionMethod(event.target.value as PaymentMethod)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    <option value="E">E - efectivo</option>
+                    <option value="T">T - transferencia</option>
+                  </select>
+                </div>
+              </div>
+              {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
+
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="mobile-note">Novedad libre</Label>
+                <Textarea
+                  id="mobile-note"
+                  value={mobileNoteText}
+                  onChange={(event) => setMobileNoteText(event.target.value)}
+                  placeholder="Ej: no estaba, cambió teléfono, promete pagar..."
+                />
+                <Button type="button" className="w-full" variant="outline" disabled={!mobileSelectedAffiliate || !mobileNoteText.trim()} onClick={saveMobileNote}>Guardar novedad</Button>
+              </div>
+
+              {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
+              <Button type="submit" className="mt-4 w-full" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button>
+              <Button type="button" className="mt-2 w-full" variant="outline" onClick={saveCloudSnapshot} disabled={cloudBusy}>Guardar online</Button>
+            </form>
           </section>
         )}
 
