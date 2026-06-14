@@ -136,6 +136,9 @@ const cloudSnapshotKey = "cobranza-tres-provincias";
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
+function normalizeCollectorName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
+}
 
 const demoAffiliates: Affiliate[] = [
   { id: "31774-A238", fullName: "TAGUA DORALISA", policyNumber: "31774", plan: "A 238", value: 13000, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 1 },
@@ -311,7 +314,7 @@ const parseTresProvinciasCollectionRows = (rows: string[][]) => {
       phone: "",
       address: "",
       dependency,
-      collector: (row[collectorColumn] || "").trim().toLocaleUpperCase("es-AR") || "OFICINA",
+      collector: normalizeCollectorName(row[collectorColumn] || ""),
       request: "",
       latestNews: "",
       selectedForMonthly: true,
@@ -384,10 +387,10 @@ const uniqueSorted = (values: string[]) => Array.from(new Set(values.map((value)
 const normalizeCollectorRecords = (value: unknown): CollectorRecord[] => {
   const rows = Array.isArray(value) ? value : ["OFICINA"];
   const normalized = rows.flatMap((item): CollectorRecord[] => {
-    if (typeof item === "string") return [{ name: item.trim().toLocaleUpperCase("es-AR"), phone: "" }];
+    if (typeof item === "string") return [{ name: normalizeCollectorName(item), phone: "" }];
     if (item && typeof item === "object" && "name" in item) {
       const record = item as { name?: unknown; phone?: unknown };
-      return [{ name: String(record.name || "").trim().toLocaleUpperCase("es-AR"), phone: String(record.phone || "").trim() }];
+      return [{ name: normalizeCollectorName(String(record.name || "")), phone: String(record.phone || "").trim() }];
     }
     return [];
   }).filter((item) => item.name);
@@ -601,7 +604,7 @@ const InsuranceCollections = () => {
     return affiliates
       .filter((item) => !normalized || `${item.fullName} ${item.policyNumber} ${item.plan} ${item.dependency} ${item.collector || "OFICINA"}`.toLocaleUpperCase("es-AR").includes(normalized))
       .filter((item) => dependencyFilter === "todos" || (item.dependency || "SIN DEFINIR") === dependencyFilter)
-      .filter((item) => collectorFilter === "todos" || (item.collector || "OFICINA") === collectorFilter)
+      .filter((item) => collectorFilter === "todos" || normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collectorFilter))
       .filter((item) => {
         const pending = getPendingTickets(item.id);
         if (pendingFilter === "con") return pending > 0;
@@ -619,23 +622,23 @@ const InsuranceCollections = () => {
   }, [affiliates, customDependencies]);
 
   const collectors = useMemo(() => {
-    return uniqueSorted([...collectorRecords.map((item) => item.name), "OFICINA", ...affiliates.map((item) => item.collector || "OFICINA")]);
+    return uniqueSorted([...collectorRecords.map((item) => item.name), "OFICINA", ...affiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA"))]);
   }, [affiliates, collectorRecords]);
 
-  const collectorPhoneByName = useMemo(() => new Map(collectorRecords.map((item) => [item.name, item.phone])), [collectorRecords]);
+  const collectorPhoneByName = useMemo(() => new Map(collectorRecords.map((item) => [normalizeCollectorName(item.name), item.phone])), [collectorRecords]);
 
   const collectorRows = useMemo(() => {
     return collectors.map((collector) => {
-      const assigned = affiliates.filter((item) => (item.collector || "OFICINA") === collector);
+      const assigned = affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collector));
       const tickets = assigned.reduce((sum, affiliate) => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
         return sum + (monthly?.tickets || 0);
       }, 0);
       const chargedTickets = ticketCollections
-        .filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === collector)
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
         .reduce((sum, item) => sum + item.ticketsCharged, 0);
       const chargedAmount = ticketCollections
-        .filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === collector)
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
         .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value || 0) * item.ticketsCharged, 0);
       return {
         collector,
@@ -678,7 +681,7 @@ const InsuranceCollections = () => {
         pending: getPendingTickets(affiliate.id),
       }))
       .filter((row) => row.pending > 0)
-      .filter((row) => mobileCollector === "todos" || (row.affiliate.collector || "OFICINA") === mobileCollector)
+      .filter((row) => mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector))
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
       .sort((a, b) => b.pending - a.pending || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
   }, [activeMonth, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
@@ -713,7 +716,7 @@ const InsuranceCollections = () => {
   };
 
   const getWhatsappUrl = (affiliate: Affiliate) => {
-    const phone = (collectorPhoneByName.get(affiliate.collector || "OFICINA") || collectorWhatsapp).replace(/\D/g, "");
+    const phone = (collectorPhoneByName.get(normalizeCollectorName(affiliate.collector || "OFICINA")) || collectorWhatsapp).replace(/\D/g, "");
     const pending = getPendingTickets(affiliate.id);
     const message = [
       `Hola, por favor concentrarse en cobrar a ${affiliate.fullName}.`,
@@ -933,7 +936,7 @@ const InsuranceCollections = () => {
   };
 
   const addCollector = () => {
-    const name = newCollectorName.trim().toLocaleUpperCase("es-AR");
+    const name = normalizeCollectorName(newCollectorName);
     if (!name) return;
     setCollectorRecords((current) => normalizeCollectorRecords([...current, { name, phone: newCollectorPhone.trim() }]));
     setNewCollectorName("");
@@ -941,32 +944,33 @@ const InsuranceCollections = () => {
   };
 
   const renameCollector = () => {
-    const from = collectorToRename.trim();
-    const to = collectorRenameValue.trim().toLocaleUpperCase("es-AR");
+    const from = normalizeCollectorName(collectorToRename);
+    const to = normalizeCollectorName(collectorRenameValue);
     if (!from) return;
     const finalName = to || from;
-    setAffiliates((current) => current.map((item) => (item.collector || "OFICINA") === from ? { ...item, collector: finalName } : item));
+    setAffiliates((current) => current.map((item) => normalizeCollectorName(item.collector || "OFICINA") === from ? { ...item, collector: finalName } : item));
     setCollectorRecords((current) => normalizeCollectorRecords([
-      ...current.filter((item) => item.name !== from),
+      ...current.filter((item) => normalizeCollectorName(item.name) !== from),
       { name: finalName, phone: collectorPhoneValue.trim() },
     ]));
-    if (collectorFilter === from) setCollectorFilter(finalName);
-    if (mobileCollector === from) setMobileCollector(finalName);
+    if (normalizeCollectorName(collectorFilter) === from) setCollectorFilter(finalName);
+    if (normalizeCollectorName(mobileCollector) === from) setMobileCollector(finalName);
     setCollectorToRename("");
     setCollectorRenameValue("");
     setCollectorPhoneValue("");
   };
 
   const removeCollector = (collector: string) => {
-    const assigned = affiliates.some((item) => (item.collector || "OFICINA") === collector);
+    const normalizedCollector = normalizeCollectorName(collector);
+    const assigned = affiliates.some((item) => normalizeCollectorName(item.collector || "OFICINA") === normalizedCollector);
     if (assigned) {
       alert("Este cobrador tiene afiliados asignados. Primero combiná o reasigná su cartera.");
       return;
     }
-    setCollectorRecords((current) => normalizeCollectorRecords(current.filter((item) => item.name !== collector)));
-    if (collectorFilter === collector) setCollectorFilter("todos");
-    if (mobileCollector === collector) setMobileCollector("todos");
-    if (collectorToRename === collector) {
+    setCollectorRecords((current) => normalizeCollectorRecords(current.filter((item) => normalizeCollectorName(item.name) !== normalizedCollector)));
+    if (normalizeCollectorName(collectorFilter) === normalizedCollector) setCollectorFilter("todos");
+    if (normalizeCollectorName(mobileCollector) === normalizedCollector) setMobileCollector("todos");
+    if (normalizeCollectorName(collectorToRename) === normalizedCollector) {
       setCollectorToRename("");
       setCollectorRenameValue("");
       setCollectorPhoneValue("");
@@ -974,18 +978,18 @@ const InsuranceCollections = () => {
   };
 
   const mergeCollectors = () => {
-    const from = collectorMergeFrom.trim();
-    const to = collectorMergeTo.trim();
+    const from = normalizeCollectorName(collectorMergeFrom);
+    const to = normalizeCollectorName(collectorMergeTo);
     if (!from || !to || from === to) return;
     const destinationPhone = collectorPhoneByName.get(to) || collectorPhoneByName.get(from) || "";
-    setAffiliates((current) => current.map((item) => (item.collector || "OFICINA") === from ? { ...item, collector: to } : item));
+    setAffiliates((current) => current.map((item) => normalizeCollectorName(item.collector || "OFICINA") === from ? { ...item, collector: to } : item));
     setCollectorRecords((current) => normalizeCollectorRecords([
-      ...current.filter((item) => item.name !== from && item.name !== to),
+      ...current.filter((item) => normalizeCollectorName(item.name) !== from && normalizeCollectorName(item.name) !== to),
       { name: to, phone: destinationPhone },
     ]));
-    if (collectorFilter === from) setCollectorFilter(to);
-    if (mobileCollector === from) setMobileCollector(to);
-    if (collectorToRename === from) {
+    if (normalizeCollectorName(collectorFilter) === from) setCollectorFilter(to);
+    if (normalizeCollectorName(mobileCollector) === from) setMobileCollector(to);
+    if (normalizeCollectorName(collectorToRename) === from) {
       setCollectorToRename("");
       setCollectorRenameValue("");
       setCollectorPhoneValue("");
@@ -1002,9 +1006,10 @@ const InsuranceCollections = () => {
   };
 
   const selectCollectorToEdit = (collector: string) => {
-    setCollectorToRename(collector);
-    setCollectorRenameValue(collector);
-    setCollectorPhoneValue(collectorPhoneByName.get(collector) || "");
+    const normalizedCollector = normalizeCollectorName(collector);
+    setCollectorToRename(normalizedCollector);
+    setCollectorRenameValue(normalizedCollector);
+    setCollectorPhoneValue(collectorPhoneByName.get(normalizedCollector) || "");
   };
 
   const renameDependency = () => {
