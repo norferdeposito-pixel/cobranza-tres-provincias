@@ -176,6 +176,7 @@ const parseMoney = (value: string) => {
   let normalized = clean;
   if (lastComma >= 0 && lastDot >= 0) normalized = lastComma > lastDot ? clean.replace(/\./g, "").replace(/,/g, ".") : clean.replace(/,/g, "");
   else if (lastComma >= 0) normalized = clean.replace(/,/g, ".");
+  else if (lastDot >= 0 && /^\d{1,3}(\.\d{3})+$/.test(clean)) normalized = clean.replace(/\./g, "");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 };
@@ -864,7 +865,7 @@ const InsuranceCollections = () => {
       else setImportMessage("No encontré afiliados válidos en el archivo.");
       event.target.value = "";
     };
-    reader.readAsText(file);
+    reader.readAsText(file, "windows-1252");
   };
 
   const importGoogleSheet = async (applyImmediately = false) => {
