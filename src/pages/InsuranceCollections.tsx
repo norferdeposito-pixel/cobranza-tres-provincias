@@ -518,6 +518,7 @@ const InsuranceCollections = () => {
   const [collectorPhoneValue, setCollectorPhoneValue] = useState("");
   const [collectorCommissionValue, setCollectorCommissionValue] = useState("12");
   const [collectorBonusEnabled, setCollectorBonusEnabled] = useState(false);
+  const [collectorDetailName, setCollectorDetailName] = useState("");
   const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
   const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
@@ -751,6 +752,31 @@ const InsuranceCollections = () => {
   const mobileSelectedAffiliate = useMemo(() => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
   }, [affiliates, mobileSelectedAffiliateId, selectedMonthlyAffiliate]);
+
+  const selectedCollectorName = collectorDetailName && collectors.includes(collectorDetailName) ? collectorDetailName : collectors[0] || "";
+  const selectedCollectorSummary = collectorRows.find((row) => row.collector === selectedCollectorName) || null;
+  const selectedCollectorPortfolio = useMemo(() => {
+    if (!selectedCollectorName) return [];
+    const normalizedCollector = normalizeCollectorName(selectedCollectorName);
+    return affiliates
+      .filter((affiliate) => normalizeCollectorName(affiliate.collector || "OFICINA") === normalizedCollector)
+      .map((affiliate) => {
+        const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
+        const chargedTickets = ticketCollections
+          .filter((item) => item.month === activeMonth && item.affiliateId === affiliate.id)
+          .reduce((sum, item) => sum + item.ticketsCharged, 0);
+        const tickets = monthly?.tickets || 0;
+        return {
+          affiliate,
+          tickets,
+          chargedTickets,
+          pendingTickets: Math.max(tickets - chargedTickets, 0),
+          chargedAmount: chargedTickets * affiliate.value,
+          pendingAmount: Math.max(tickets - chargedTickets, 0) * affiliate.value,
+        };
+      })
+      .sort((a, b) => b.pendingTickets - a.pendingTickets || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
+  }, [activeMonth, affiliates, monthlyItems, selectedCollectorName, ticketCollections]);
 
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
@@ -1706,6 +1732,80 @@ const InsuranceCollections = () => {
                 </div>
               </div>
             )}
+            <div className="border-b p-3 sm:p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h3 className="font-semibold">Vista por cobrador</h3>
+                  <p className="text-sm text-muted-foreground">Elegí un cobrador para revisar su cartera, tickets pendientes y cobranza del período.</p>
+                </div>
+                <div className="w-full space-y-1 lg:w-72">
+                  <Label htmlFor="collector-detail-name">Cobrador</Label>
+                  <select
+                    id="collector-detail-name"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={selectedCollectorName}
+                    onChange={(event) => setCollectorDetailName(event.target.value)}
+                  >
+                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {selectedCollectorSummary && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <SummaryBox label="Afiliados" value={String(selectedCollectorSummary.affiliates)} />
+                  <SummaryBox label="Tickets recibidos" value={String(selectedCollectorSummary.tickets)} />
+                  <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
+                  <SummaryBox label="Tickets pendientes" value={String(selectedCollectorSummary.pendingTickets)} />
+                  <SummaryBox label="Cobrado" value={currency.format(selectedCollectorSummary.chargedAmount)} />
+                  <SummaryBox label="A rendir" value={currency.format(selectedCollectorSummary.amountToRender)} />
+                </div>
+              )}
+
+              <div className="mt-4 overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[1120px] text-xs sm:text-sm">
+                  <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-3 text-left">Nombre y apellido</th>
+                      <th className="px-3 py-3 text-left">Póliza</th>
+                      <th className="px-3 py-3 text-left">Plan</th>
+                      <th className="px-3 py-3 text-left">Dep.</th>
+                      <th className="px-3 py-3 text-right">Valor</th>
+                      <th className="px-3 py-3 text-center">Tickets mes</th>
+                      <th className="px-3 py-3 text-center">Cobrados</th>
+                      <th className="px-3 py-3 text-center">Pendientes</th>
+                      <th className="px-3 py-3 text-left">Pedido</th>
+                      <th className="px-3 py-3 text-left">Novedad</th>
+                      <th className="px-3 py-3 text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {selectedCollectorPortfolio.map(({ affiliate, tickets, chargedTickets, pendingTickets }) => (
+                      <tr key={`collector-detail-${affiliate.id}`}>
+                        <td className="px-3 py-3 font-medium">{affiliate.fullName}</td>
+                        <td className="px-3 py-3">{affiliate.policyNumber || "-"}</td>
+                        <td className="px-3 py-3">{affiliate.plan}</td>
+                        <td className="px-3 py-3">{affiliate.dependency || "-"}</td>
+                        <td className="px-3 py-3 text-right">{currency.format(affiliate.value)}</td>
+                        <td className="px-3 py-3 text-center">{tickets}</td>
+                        <td className="px-3 py-3 text-center">{chargedTickets}</td>
+                        <td className="px-3 py-3 text-center font-medium">{pendingTickets}</td>
+                        <td className="px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={affiliate.request || ""} onChange={(event) => updateAffiliateRequest(affiliate.id, event.target.value)} placeholder="Pedir info" /></td>
+                        <td className="px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={affiliate.latestNews || ""} onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
+                        <td className="px-3 py-3 text-right">
+                          <Button type="button" size="sm" variant="outline" onClick={() => openMobileCollection(affiliate)}>
+                            Cargar
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {selectedCollectorPortfolio.length === 0 && (
+                      <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={11}>Este cobrador todavía no tiene afiliados asignados.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1320px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
@@ -1753,8 +1853,7 @@ const InsuranceCollections = () => {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              setCollectorFilter(row.collector);
-                              setActiveSection("Base");
+                              setCollectorDetailName(row.collector);
                             }}
                           >
                             Ver cartera
@@ -1766,7 +1865,7 @@ const InsuranceCollections = () => {
                       </td>
                     </tr>
                   ))}
-                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={9}>Todavía no hay cobradores cargados.</td></tr>}
+                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={13}>Todavía no hay cobradores cargados.</td></tr>}
                 </tbody>
               </table>
             </div>
