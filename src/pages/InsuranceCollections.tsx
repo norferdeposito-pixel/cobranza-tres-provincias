@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Download,
   FileSpreadsheet,
+  Users,
   Plus,
   ReceiptText,
   Search,
@@ -18,9 +19,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-type PlanType = "A 238" | "A 269" | "G 238" | "09" | "G 269" | "C" | "Vida";
+type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
-type Section = "Base" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion";
+type Section = "Base" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion";
 
 type TransferData = {
   transactionNumber: string;
@@ -40,6 +41,9 @@ type Affiliate = {
   phone: string;
   address: string;
   dependency: string;
+  collector: string;
+  request: string;
+  latestNews: string;
   selectedForMonthly: boolean;
   sourceTickets?: number;
 };
@@ -96,12 +100,9 @@ type AffiliateImportPreview = {
   duplicatedCount: number;
 };
 
-type LastIncrease = {
-  id: string;
-  month: string;
-  percent: number;
-  appliedAt: string;
-  previousValues: Array<{ affiliateId: string; value: number }>;
+type CollectorRecord = {
+  name: string;
+  phone: string;
 };
 
 const plans: PlanType[] = ["A 238", "A 269", "G 238", "09", "G 269", "C", "Vida"];
@@ -113,19 +114,20 @@ const receiptsStorageKey = "insurance-receipts-v2";
 const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
-const lastIncreaseStorageKey = "insurance-last-increase-v2";
+const collectorsStorageKey = "insurance-collectors-v2";
+const dependenciesStorageKey = "insurance-dependencies-v2";
 
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 const demoAffiliates: Affiliate[] = [
-  { id: "31774-A238", fullName: "TAGUA DORALISA", policyNumber: "31774", plan: "A 238", value: 13000, phone: "", address: "", dependency: "001", selectedForMonthly: true, sourceTickets: 1 },
-  { id: "37096-A238", fullName: "RIVAMAR GLADYS", policyNumber: "37096", plan: "A 238", value: 21700, phone: "", address: "", dependency: "001", selectedForMonthly: true, sourceTickets: 1 },
-  { id: "45446-G238", fullName: "CARTECHINI JUAN", policyNumber: "45446", plan: "G 238", value: 19600, phone: "", address: "", dependency: "001", selectedForMonthly: false, sourceTickets: 1 },
-  { id: "159327-A269", fullName: "AGUIRRE OSCAR", policyNumber: "159327", plan: "A 269", value: 29600, phone: "", address: "", dependency: "001", selectedForMonthly: true, sourceTickets: 4 },
-  { id: "199554-G269", fullName: "ALCANO MARIA", policyNumber: "199554", plan: "G 269", value: 14900, phone: "", address: "", dependency: "001", selectedForMonthly: true, sourceTickets: 4 },
-  { id: "106792-Vida", fullName: "ROMERO EDGARDO", policyNumber: "106792", plan: "Vida", value: 2484, phone: "", address: "", dependency: "001", selectedForMonthly: false, sourceTickets: 1 },
+  { id: "31774-A238", fullName: "TAGUA DORALISA", policyNumber: "31774", plan: "A 238", value: 13000, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 1 },
+  { id: "37096-A238", fullName: "RIVAMAR GLADYS", policyNumber: "37096", plan: "A 238", value: 21700, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 1 },
+  { id: "45446-G238", fullName: "CARTECHINI JUAN", policyNumber: "45446", plan: "G 238", value: 19600, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: false, sourceTickets: 1 },
+  { id: "159327-A269", fullName: "AGUIRRE OSCAR", policyNumber: "159327", plan: "A 269", value: 29600, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 4 },
+  { id: "199554-G269", fullName: "ALCANO MARIA", policyNumber: "199554", plan: "G 269", value: 14900, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 4 },
+  { id: "106792-Vida", fullName: "ROMERO EDGARDO", policyNumber: "106792", plan: "Vida", value: 2484, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: false, sourceTickets: 1 },
 ];
 
 const emptyTransfer = (): TransferData => ({
@@ -182,8 +184,114 @@ const parseCsvLine = (line: string) => {
   return cells;
 };
 
+const detectDelimiter = (text: string) => {
+  const firstLines = text.split(/\r?\n/).slice(0, 5).join("\n");
+  const counts = [
+    { delimiter: ";", count: (firstLines.match(/;/g) || []).length },
+    { delimiter: "\t", count: (firstLines.match(/\t/g) || []).length },
+    { delimiter: ",", count: (firstLines.match(/,/g) || []).length },
+  ];
+  return counts.sort((a, b) => b.count - a.count)[0]?.delimiter || ",";
+};
+
+const parseDelimitedLine = (line: string, delimiter: string) => {
+  if (delimiter === ",") return parseCsvLine(line);
+  const cells: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (const char of line) {
+    if (char === "\"") quoted = !quoted;
+    else if (char === delimiter && !quoted) {
+      cells.push(current.trim());
+      current = "";
+    } else current += char;
+  }
+  cells.push(current.trim());
+  return cells;
+};
+
+const parseDelimitedRows = (text: string) => {
+  const delimiter = detectDelimiter(text);
+  return text.split(/\r?\n/).map((line) => parseDelimitedLine(line, delimiter));
+};
+
+const normalizeHeader = (value: string) => value.trim().toLocaleUpperCase("es-AR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+const getCollectionPlanData = (rawPlan: string) => {
+  const normalized = rawPlan.trim().toLocaleUpperCase("es-AR").replace(/\s+/g, " ");
+  const compact = normalized.replace(/[-\s]/g, "");
+  const coded = compact.match(/^([AG])C[AG](\d+)$/);
+  if (coded) return { plan: `${coded[1]} ${coded[2]}`, dependency: coded[2] };
+  const suffixed = normalized.match(/^([AG])[-\s]?(\d+)$/);
+  if (suffixed) return { plan: `${suffixed[1]} ${suffixed[2]}`, dependency: suffixed[2] };
+  if (normalized === "A") return { plan: "A 327", dependency: "327" };
+  if (normalized === "G") return { plan: "G 327", dependency: "327" };
+  if (normalized === "C") return { plan: "C", dependency: "327" };
+  if (normalized === "VIDA" || normalized === "V") return { plan: "Vida", dependency: "268" };
+  if (normalized === "09") return { plan: "09", dependency: "OFICINA" };
+  return { plan: normalizePlan(rawPlan), dependency: "SIN DEFINIR" };
+};
+
+const looksLikeTresProvinciasCollection = (rows: string[][]) => {
+  return rows.some((row) => {
+    const headers = row.map((cell) => normalizeHeader(cell));
+    return headers.includes("POLIZA") && headers.includes("APELLIDO") && headers.includes("NOMBRE") && headers.some((cell) => cell.includes("COBRADOR"));
+  });
+};
+
+const parseTresProvinciasCollectionRows = (rows: string[][]) => {
+  const headerIndex = rows.findIndex((row) => {
+    const headers = row.map((cell) => normalizeHeader(cell));
+    return headers.includes("POLIZA") && headers.includes("APELLIDO") && headers.includes("NOMBRE");
+  });
+  if (headerIndex < 0) return { affiliates: [] as Affiliate[], duplicatedCount: 0 };
+  const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
+  const findColumn = (names: string[]) => headers.findIndex((header) => names.some((name) => header === name || header.includes(name)));
+  const policyColumn = findColumn(["POLIZA"]);
+  const planColumn = findColumn(["PLAN"]);
+  const lastNameColumn = findColumn(["APELLIDO"]);
+  const firstNameColumn = findColumn(["NOMBRE"]);
+  const amountColumn = findColumn(["MONTO CUOTA", "MONTO", "CUOTA"]);
+  const collectorColumn = findColumn(["COBRADOR"]);
+  const seen = new Set<string>();
+  let duplicatedCount = 0;
+
+  const affiliates = rows.slice(headerIndex + 1).flatMap((row, index): Affiliate[] => {
+    const policyNumber = (row[policyColumn] || "").trim();
+    const rawPlan = (row[planColumn] || "").trim();
+    const lastName = (row[lastNameColumn] || "").trim();
+    const firstName = (row[firstNameColumn] || "").trim();
+    if (!/^\d+$/.test(policyNumber) || !rawPlan || (!lastName && !firstName)) return [];
+    const { plan, dependency } = getCollectionPlanData(rawPlan);
+    const id = `${policyNumber}-${plan}`;
+    if (seen.has(id)) {
+      duplicatedCount += 1;
+      return [];
+    }
+    seen.add(id);
+    return [{
+      id: id || `SIN-${index}`,
+      fullName: `${lastName} ${firstName}`.trim().toLocaleUpperCase("es-AR"),
+      policyNumber,
+      plan,
+      value: parseMoney(row[amountColumn] || ""),
+      phone: "",
+      address: "",
+      dependency,
+      collector: (row[collectorColumn] || "").trim().toLocaleUpperCase("es-AR") || "OFICINA",
+      request: "",
+      latestNews: "",
+      selectedForMonthly: true,
+      sourceTickets: 1,
+    }];
+  });
+
+  return { affiliates, duplicatedCount };
+};
+
 const parseAffiliatesCsv = (text: string) => {
-  const rows = text.split(/\r?\n/).map(parseCsvLine);
+  const rows = parseDelimitedRows(text);
+  if (looksLikeTresProvinciasCollection(rows)) return parseTresProvinciasCollectionRows(rows);
   const seen = new Set<string>();
   let duplicatedCount = 0;
   const affiliates = rows.slice(1).flatMap((row, index): Affiliate[] => {
@@ -206,6 +314,9 @@ const parseAffiliatesCsv = (text: string) => {
       phone: "",
       address: "",
       dependency: "001",
+      collector: "OFICINA",
+      request: "",
+      latestNews: "",
       selectedForMonthly: true,
       sourceTickets: Math.max(0, parseNumber(row[3])),
     }];
@@ -234,6 +345,24 @@ const saveStorage = (key: string, value: unknown) => {
 };
 
 const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : method === "T" ? "Transferencia" : "Sin definir";
+
+const uniqueSorted = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
+
+const normalizeCollectorRecords = (value: unknown): CollectorRecord[] => {
+  const rows = Array.isArray(value) ? value : ["OFICINA"];
+  const normalized = rows.flatMap((item): CollectorRecord[] => {
+    if (typeof item === "string") return [{ name: item.trim().toLocaleUpperCase("es-AR"), phone: "" }];
+    if (item && typeof item === "object" && "name" in item) {
+      const record = item as { name?: unknown; phone?: unknown };
+      return [{ name: String(record.name || "").trim().toLocaleUpperCase("es-AR"), phone: String(record.phone || "").trim() }];
+    }
+    return [];
+  }).filter((item) => item.name);
+  const byName = new Map<string, CollectorRecord>();
+  normalized.forEach((item) => byName.set(item.name, item));
+  if (!byName.has("OFICINA")) byName.set("OFICINA", { name: "OFICINA", phone: "" });
+  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, "es-AR", { numeric: true }));
+};
 
 const isDemoAffiliateBase = (rows: Affiliate[]) => {
   if (rows.length !== demoAffiliates.length) return false;
@@ -275,6 +404,9 @@ const emptyAffiliateForm = (): AffiliateForm => ({
   phone: "",
   address: "",
   dependency: "001",
+  collector: "OFICINA",
+  request: "",
+  latestNews: "",
   sourceTickets: 0,
 });
 
@@ -301,8 +433,18 @@ const InsuranceCollections = () => {
   });
   const [query, setQuery] = useState("");
   const [pendingFilter, setPendingFilter] = useState("todos");
-  const [increasePercent, setIncreasePercent] = useState("");
-  const [lastIncrease, setLastIncrease] = useState<LastIncrease | null>(() => loadStorage(lastIncreaseStorageKey, null));
+  const [dependencyFilter, setDependencyFilter] = useState("todos");
+  const [collectorFilter, setCollectorFilter] = useState("todos");
+  const [collectorRecords, setCollectorRecords] = useState<CollectorRecord[]>(() => normalizeCollectorRecords(loadStorage(collectorsStorageKey, ["OFICINA"])));
+  const [customDependencies, setCustomDependencies] = useState<string[]>(() => loadStorage(dependenciesStorageKey, []));
+  const [newCollectorName, setNewCollectorName] = useState("");
+  const [newCollectorPhone, setNewCollectorPhone] = useState("");
+  const [collectorToRename, setCollectorToRename] = useState("");
+  const [collectorRenameValue, setCollectorRenameValue] = useState("");
+  const [collectorPhoneValue, setCollectorPhoneValue] = useState("");
+  const [newDependencyName, setNewDependencyName] = useState("");
+  const [dependencyToRename, setDependencyToRename] = useState("");
+  const [dependencyRenameValue, setDependencyRenameValue] = useState("");
   const [collectorWhatsapp, setCollectorWhatsapp] = useState(() => loadStorage(collectorWhatsappStorageKey, ""));
   const [sheetUrl, setSheetUrl] = useState(defaultSheetUrl);
   const [importMessage, setImportMessage] = useState("Base demo cargada. Podés importar la planilla original.");
@@ -339,7 +481,8 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
-  useEffect(() => saveStorage(lastIncreaseStorageKey, lastIncrease), [lastIncrease]);
+  useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
+  useEffect(() => saveStorage(dependenciesStorageKey, customDependencies), [customDependencies]);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
 
@@ -354,7 +497,9 @@ const InsuranceCollections = () => {
   const filteredAffiliates = useMemo(() => {
     const normalized = query.trim().toLocaleUpperCase("es-AR");
     return affiliates
-      .filter((item) => !normalized || `${item.fullName} ${item.policyNumber} ${item.plan}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .filter((item) => !normalized || `${item.fullName} ${item.policyNumber} ${item.plan} ${item.dependency} ${item.collector || "OFICINA"}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .filter((item) => dependencyFilter === "todos" || (item.dependency || "SIN DEFINIR") === dependencyFilter)
+      .filter((item) => collectorFilter === "todos" || (item.collector || "OFICINA") === collectorFilter)
       .filter((item) => {
         const pending = getPendingTickets(item.id);
         if (pendingFilter === "con") return pending > 0;
@@ -365,7 +510,43 @@ const InsuranceCollections = () => {
         if (pendingFilter === "mayor" || pendingFilter === "con") return getPendingTickets(b.id) - getPendingTickets(a.id);
         return 0;
       });
-  }, [activeMonth, affiliates, pendingFilter, query, monthlyItems, ticketCollections]);
+  }, [activeMonth, affiliates, collectorFilter, dependencyFilter, pendingFilter, query, monthlyItems, ticketCollections]);
+
+  const dependencies = useMemo(() => {
+    return uniqueSorted([...customDependencies, ...affiliates.map((item) => item.dependency || "SIN DEFINIR")]);
+  }, [affiliates, customDependencies]);
+
+  const collectors = useMemo(() => {
+    return uniqueSorted([...collectorRecords.map((item) => item.name), "OFICINA", ...affiliates.map((item) => item.collector || "OFICINA")]);
+  }, [affiliates, collectorRecords]);
+
+  const collectorPhoneByName = useMemo(() => new Map(collectorRecords.map((item) => [item.name, item.phone])), [collectorRecords]);
+
+  const collectorRows = useMemo(() => {
+    return collectors.map((collector) => {
+      const assigned = affiliates.filter((item) => (item.collector || "OFICINA") === collector);
+      const tickets = assigned.reduce((sum, affiliate) => {
+        const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
+        return sum + (monthly?.tickets || 0);
+      }, 0);
+      const chargedTickets = ticketCollections
+        .filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === collector)
+        .reduce((sum, item) => sum + item.ticketsCharged, 0);
+      const chargedAmount = ticketCollections
+        .filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === collector)
+        .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value || 0) * item.ticketsCharged, 0);
+      return {
+        collector,
+        phone: collectorPhoneByName.get(collector) || "",
+        dependencies: Array.from(new Set(assigned.map((item) => item.dependency || "SIN DEFINIR"))).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true })),
+        affiliates: assigned.length,
+        tickets,
+        chargedTickets,
+        pendingTickets: Math.max(tickets - chargedTickets, 0),
+        chargedAmount,
+      };
+    });
+  }, [activeMonth, affiliates, affiliatesById, collectorPhoneByName, collectors, monthlyItems, ticketCollections]);
 
   const monthlyRows = useMemo(() => {
     return affiliates
@@ -385,9 +566,10 @@ const InsuranceCollections = () => {
     ? ticketCollections.filter((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id).reduce((sum, item) => sum + item.ticketsCharged, 0)
     : 0;
   const ticketsToCharge = Math.max((selectedMonthlyItem?.tickets || 0) - alreadyChargedTickets, 0);
+  const hasUnansweredRequest = !!selectedMonthlyAffiliate?.request?.trim() && !selectedMonthlyAffiliate?.latestNews?.trim();
 
   const getWhatsappUrl = (affiliate: Affiliate) => {
-    const phone = collectorWhatsapp.replace(/\D/g, "");
+    const phone = (collectorPhoneByName.get(affiliate.collector || "OFICINA") || collectorWhatsapp).replace(/\D/g, "");
     const pending = getPendingTickets(affiliate.id);
     const message = [
       `Hola, por favor concentrarse en cobrar a ${affiliate.fullName}.`,
@@ -399,8 +581,13 @@ const InsuranceCollections = () => {
     return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : "";
   };
 
+  const availablePlans = useMemo(() => {
+    const collected = new Set([...plans, ...affiliates.map((item) => item.plan), ...receipts.map((item) => item.plan)]);
+    return Array.from(collected).filter(Boolean).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
+  }, [affiliates, receipts]);
+
   const totalsByPlan = useMemo(() => {
-    return plans.map((plan) => {
+    return availablePlans.map((plan) => {
       const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
       const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && affiliatesById.get(item.affiliateId)?.plan === plan);
       const receiptsForPlan = receipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
@@ -431,7 +618,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [activeMonth, affiliatesById, monthlyRows, receipts, ticketCollections]);
+  }, [activeMonth, affiliatesById, availablePlans, monthlyRows, receipts, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -452,6 +639,9 @@ const InsuranceCollections = () => {
       phone: affiliate.phone,
       address: affiliate.address,
       dependency: affiliate.dependency || "001",
+      collector: affiliate.collector || "OFICINA",
+      request: affiliate.request || "",
+      latestNews: affiliate.latestNews || "",
       sourceTickets: affiliate.sourceTickets || 0,
     } : emptyAffiliateForm());
     setAffiliateDialogOpen(true);
@@ -491,6 +681,9 @@ const InsuranceCollections = () => {
       phone: affiliateForm.phone.trim(),
       address: affiliateForm.address.trim(),
       dependency: affiliateForm.dependency.trim() || "001",
+      collector: affiliateForm.collector.trim().toLocaleUpperCase("es-AR") || "OFICINA",
+      request: affiliateForm.request.trim(),
+      latestNews: affiliateForm.latestNews.trim(),
       selectedForMonthly: affiliates.find((item) => item.id === editingAffiliateId)?.selectedForMonthly || false,
       sourceTickets: Math.max(0, Number(affiliateForm.sourceTickets) || 0),
     };
@@ -502,7 +695,7 @@ const InsuranceCollections = () => {
     const currentById = new Map(affiliates.map((item) => [item.id, item]));
     const merged = imported.map((item) => {
       const previous = currentById.get(item.id);
-      return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: previous.dependency || item.dependency, selectedForMonthly: true } : item;
+      return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: item.dependency || previous.dependency, collector: previous.collector || item.collector || "OFICINA", request: previous.request || item.request || "", latestNews: previous.latestNews || item.latestNews || "", selectedForMonthly: true } : item;
     });
     setAffiliates(merged);
     setMonthlyItems((current) => [
@@ -579,50 +772,80 @@ const InsuranceCollections = () => {
     });
   };
 
+  const updateAffiliateRequest = (affiliateId: string, request: string) => {
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, request } : item));
+  };
+
+  const updateAffiliateNews = (affiliateId: string, latestNews: string) => {
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, latestNews } : item));
+  };
+
+  const updateAffiliateDependency = (affiliateId: string, dependency: string) => {
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, dependency } : item));
+  };
+
+  const updateAffiliateCollector = (affiliateId: string, collector: string) => {
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, collector } : item));
+  };
+
+  const addCollector = () => {
+    const name = newCollectorName.trim().toLocaleUpperCase("es-AR");
+    if (!name) return;
+    setCollectorRecords((current) => normalizeCollectorRecords([...current, { name, phone: newCollectorPhone.trim() }]));
+    setNewCollectorName("");
+    setNewCollectorPhone("");
+  };
+
+  const renameCollector = () => {
+    const from = collectorToRename.trim();
+    const to = collectorRenameValue.trim().toLocaleUpperCase("es-AR");
+    if (!from) return;
+    const finalName = to || from;
+    setAffiliates((current) => current.map((item) => (item.collector || "OFICINA") === from ? { ...item, collector: finalName } : item));
+    setCollectorRecords((current) => normalizeCollectorRecords(current.map((item) => item.name === from ? { name: finalName, phone: collectorPhoneValue.trim() } : item).concat({ name: finalName, phone: collectorPhoneValue.trim() })));
+    if (collectorFilter === from) setCollectorFilter(finalName);
+    setCollectorToRename("");
+    setCollectorRenameValue("");
+    setCollectorPhoneValue("");
+  };
+
+  const addDependency = () => {
+    const name = newDependencyName.trim().toLocaleUpperCase("es-AR");
+    if (!name) return;
+    setCustomDependencies((current) => uniqueSorted([...current, name]));
+    setNewDependencyName("");
+  };
+
+  const selectCollectorToEdit = (collector: string) => {
+    setCollectorToRename(collector);
+    setCollectorRenameValue(collector);
+    setCollectorPhoneValue(collectorPhoneByName.get(collector) || "");
+  };
+
+  const renameDependency = () => {
+    const from = dependencyToRename.trim();
+    const to = dependencyRenameValue.trim().toLocaleUpperCase("es-AR");
+    if (!from || !to) return;
+    setAffiliates((current) => current.map((item) => (item.dependency || "SIN DEFINIR") === from ? { ...item, dependency: to } : item));
+    setCustomDependencies((current) => uniqueSorted(current.map((item) => item === from ? to : item).concat(to)));
+    if (dependencyFilter === from) setDependencyFilter(to);
+    setDependencyToRename("");
+    setDependencyRenameValue("");
+  };
+
   const updateMonthlyTickets = (affiliateId: string, tickets: number) => {
     setMonthlyItems((current) => current.some((item) => item.month === activeMonth && item.affiliateId === affiliateId)
       ? current.map((item) => item.month === activeMonth && item.affiliateId === affiliateId ? { ...item, tickets } : item)
       : [...current, { month: activeMonth, affiliateId, tickets }]);
   };
 
-  const applyMonthlyIncrease = () => {
-    const percent = parseNumber(increasePercent);
-    if (percent <= 0) {
-      alert("Ingresá un porcentaje de aumento mayor a 0.");
-      return;
-    }
-    const affectedIds = new Set(monthlyRows.map(({ affiliate }) => affiliate.id));
-    if (affectedIds.size === 0) {
-      alert("No hay afiliados seleccionados en la planilla mensual.");
-      return;
-    }
-    const confirmed = window.confirm(`Se aplicará un aumento del ${percent}% a ${affectedIds.size} afiliados de ${activeMonth}. El nuevo valor quedará como base para los próximos meses. ¿Confirmás?`);
-    if (!confirmed) return;
-    setLastIncrease({
-      id: `increase-${Date.now()}`,
-      month: activeMonth,
-      percent,
-      appliedAt: new Date().toISOString(),
-      previousValues: monthlyRows.map(({ affiliate }) => ({ affiliateId: affiliate.id, value: affiliate.value })),
-    });
-    setAffiliates((current) => current.map((item) => affectedIds.has(item.id)
-      ? { ...item, value: Math.round(item.value * (1 + percent / 100)) }
-      : item));
-    setIncreasePercent("");
-  };
-
-  const undoLastIncrease = () => {
-    if (!lastIncrease) return;
-    const confirmed = window.confirm(`Se restauraran los valores anteriores al aumento del ${lastIncrease.percent}% aplicado en ${lastIncrease.month}. Confirmas?`);
-    if (!confirmed) return;
-    const previousById = new Map(lastIncrease.previousValues.map((item) => [item.affiliateId, item.value]));
-    setAffiliates((current) => current.map((item) => previousById.has(item.id) ? { ...item, value: previousById.get(item.id) || item.value } : item));
-    setLastIncrease(null);
-  };
-
   const saveTicketCollection = (event: FormEvent) => {
     event.preventDefault();
     if (!selectedMonthlyAffiliate) return;
+    if (hasUnansweredRequest) {
+      alert("Esta póliza tiene un pedido pendiente. Para guardar el cobro, primero completá la novedad/respuesta.");
+      return;
+    }
     const tickets = Math.max(0, Math.min(parseNumber(collectionTickets), ticketsToCharge));
     if (tickets <= 0) return;
     setTicketCollections((current) => [...current, {
@@ -660,8 +883,8 @@ const InsuranceCollections = () => {
       const text = String(value ?? "");
       return /[",\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
     };
-    const header = ["Nombre y apellido", "Numero de poliza", "Plan", "Valor", "Telefono", "Direccion", "Dependencia", "Seleccionado mensual"].join(",");
-    const rows = affiliates.map((item) => [item.fullName, item.policyNumber, item.plan, item.value, item.phone, item.address, item.dependency || "001", item.selectedForMonthly ? "SI" : "NO"].map(escapeCsv).join(","));
+    const header = ["Nombre y apellido", "Numero de poliza", "Plan", "Valor", "Telefono", "Direccion", "Dependencia", "Cobrador", "Pedido", "Novedad", "Seleccionado mensual"].join(",");
+    const rows = affiliates.map((item) => [item.fullName, item.policyNumber, item.plan, item.value, item.phone, item.address, item.dependency || "001", item.collector || "OFICINA", item.request || "", item.latestNews || "", item.selectedForMonthly ? "SI" : "NO"].map(escapeCsv).join(","));
     const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -693,6 +916,7 @@ const InsuranceCollections = () => {
 
   const navItems: Array<{ id: Section; label: string; icon: typeof ClipboardList }> = [
     { id: "Base", label: "Base de afiliados", icon: ClipboardList },
+    { id: "Cobradores", label: "Cobradores", icon: Users },
     { id: "Mensual", label: "Cobranza mensual", icon: CheckSquare },
     { id: "Cobranza", label: "Cobranza", icon: Banknote },
     { id: "Recibos", label: "Recibos", icon: ReceiptText },
@@ -704,7 +928,7 @@ const InsuranceCollections = () => {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="border-b bg-card">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-full flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 place-items-center rounded-md bg-primary text-primary-foreground">
               <ShieldCheck className="h-6 w-6" />
@@ -725,7 +949,7 @@ const InsuranceCollections = () => {
             </Button>
             <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
               <Upload className="h-4 w-4" />
-              Importar CSV
+              Importar CSV cobranza
               <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
             </label>
             <Button type="button" variant="outline" onClick={exportAffiliatesCsv}>
@@ -736,7 +960,16 @@ const InsuranceCollections = () => {
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-5 py-6">
+      <div className="grid w-full gap-5 px-5 py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="rounded-md border bg-card p-4 lg:sticky lg:top-4 lg:self-start">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Módulo</p>
+            <h2 className="mt-1 text-lg font-semibold">Cobranza Tres Provincias</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Cartera, cobradores, tickets y rendición.</p>
+          </div>
+        </aside>
+
+        <div className="grid gap-5">
         <section className="rounded-md border bg-card p-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
             <div className="space-y-2">
@@ -851,6 +1084,30 @@ const InsuranceCollections = () => {
                     <option value="mayor">Mas pendientes primero</option>
                   </select>
                 </div>
+                <div className="w-full space-y-1 lg:w-48">
+                  <Label htmlFor="dependency-filter">Dependencia</Label>
+                  <select
+                    id="dependency-filter"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={dependencyFilter}
+                    onChange={(event) => setDependencyFilter(event.target.value)}
+                  >
+                    <option value="todos">Todas</option>
+                    {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                  </select>
+                </div>
+                <div className="w-full space-y-1 lg:w-48">
+                  <Label htmlFor="collector-filter">Cobrador</Label>
+                  <select
+                    id="collector-filter"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={collectorFilter}
+                    onChange={(event) => setCollectorFilter(event.target.value)}
+                  >
+                    <option value="todos">Todos</option>
+                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                  </select>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" onClick={() => setAllFilteredMonthly(true)}>Tildar todos</Button>
                   <Button type="button" variant="outline" onClick={() => setAllFilteredMonthly(false)}>Destildar todos</Button>
@@ -858,31 +1115,45 @@ const InsuranceCollections = () => {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1080px] text-sm">
+              <table className="w-full min-w-[1500px] text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-3 text-left">Seleccionar</th>
-                    <th className="px-4 py-3 text-left">Nombre y apellido</th>
+                    <th className="w-16 px-2 py-3 text-center">Sel.</th>
+                    <th className="w-64 px-3 py-3 text-left">Nombre y apellido</th>
                     <th className="px-4 py-3 text-left">Póliza</th>
-                    <th className="px-4 py-3 text-left">Plan</th>
-                    <th className="px-4 py-3 text-left">Dependencia</th>
-                    <th className="px-4 py-3 text-right">Valor</th>
-                    <th className="px-4 py-3 text-right">Tickets mes</th>
-                    <th className="px-4 py-3 text-right">Tickets pendientes</th>
+                    <th className="w-20 px-3 py-3 text-left">Plan</th>
+                    <th className="w-24 px-3 py-3 text-left">Dep.</th>
+                    <th className="w-28 px-3 py-3 text-left">Cobrador</th>
+                    <th className="w-28 px-3 py-3 text-right">Valor</th>
+                    <th className="w-20 px-2 py-3 text-center">Tickets mes</th>
+                    <th className="w-24 px-2 py-3 text-center">Pendientes</th>
+                    <th className="w-64 px-3 py-3 text-left">Pedido</th>
+                    <th className="w-64 px-3 py-3 text-left">Novedad</th>
                     <th className="px-4 py-3 text-right">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {filteredAffiliates.map((item) => (
                     <tr key={item.id}>
-                      <td className="px-4 py-3"><input type="checkbox" checked={item.selectedForMonthly} onChange={(event) => toggleMonthly(item.id, event.target.checked)} className="h-4 w-4" /></td>
-                      <td className="px-4 py-3 font-medium">{item.fullName}</td>
+                      <td className="w-16 px-2 py-3 text-center"><input type="checkbox" checked={item.selectedForMonthly} onChange={(event) => toggleMonthly(item.id, event.target.checked)} className="h-4 w-4" /></td>
+                      <td className="w-64 px-3 py-3 font-medium">{item.fullName}</td>
                       <td className="px-4 py-3">{item.policyNumber || "-"}</td>
-                      <td className="px-4 py-3">{item.plan}</td>
-                      <td className="px-4 py-3">{item.dependency || "001"}</td>
-                      <td className="px-4 py-3 text-right">{currency.format(item.value)}</td>
-                      <td className="px-4 py-3 text-right">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
-                      <td className="px-4 py-3 text-right">{getPendingTickets(item.id)}</td>
+                      <td className="w-20 px-3 py-3">{item.plan}</td>
+                      <td className="w-24 px-2 py-3">
+                        <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs" value={item.dependency || "SIN DEFINIR"} onChange={(event) => updateAffiliateDependency(item.id, event.target.value)}>
+                          {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                        </select>
+                      </td>
+                      <td className="w-28 px-2 py-3">
+                        <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs" value={item.collector || "OFICINA"} onChange={(event) => updateAffiliateCollector(item.id, event.target.value)}>
+                          {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        </select>
+                      </td>
+                      <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
+                      <td className="w-20 px-2 py-3 text-center">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
+                      <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
+                      <td className="w-64 px-3 py-3"><Input className="h-8" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" /></td>
+                      <td className="w-64 px-3 py-3"><Input className="h-8" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -908,28 +1179,128 @@ const InsuranceCollections = () => {
           </section>
         )}
 
+        {activeSection === "Cobradores" && (
+          <section className="rounded-md border bg-card">
+            <div className="border-b p-4">
+              <h2 className="font-semibold">Cobradores</h2>
+              <p className="text-sm text-muted-foreground">Resumen de cartera por cobrador para el período {activeMonth}.</p>
+            </div>
+            <div className="grid gap-4 border-b p-4 xl:grid-cols-2">
+              <div className="rounded-md border bg-surface-subtle p-3">
+                <h3 className="font-semibold">Agregar / modificar cobrador</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <div className="space-y-1">
+                    <Label htmlFor="new-collector">Nombre y apellido</Label>
+                    <Input id="new-collector" value={newCollectorName} onChange={(event) => setNewCollectorName(event.target.value)} placeholder="Ej: JUAN PEREZ" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="new-collector-phone">Teléfono</Label>
+                    <Input id="new-collector-phone" value={newCollectorPhone} onChange={(event) => setNewCollectorPhone(event.target.value)} placeholder="549..." />
+                  </div>
+                  <Button type="button" variant="command" className="self-end" onClick={addCollector}>Agregar</Button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+                  <div className="space-y-1">
+                    <Label htmlFor="collector-to-rename">Cobrador actual</Label>
+                    <select id="collector-to-rename" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorToRename} onChange={(event) => selectCollectorToEdit(event.target.value)}>
+                      <option value="">Seleccionar</option>
+                      {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="collector-rename-value">Nuevo nombre</Label>
+                    <Input id="collector-rename-value" value={collectorRenameValue} onChange={(event) => setCollectorRenameValue(event.target.value)} placeholder="Nuevo nombre" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="collector-phone-value">Teléfono</Label>
+                    <Input id="collector-phone-value" value={collectorPhoneValue} onChange={(event) => setCollectorPhoneValue(event.target.value)} placeholder="549..." />
+                  </div>
+                  <Button type="button" variant="outline" className="self-end" onClick={renameCollector}>Modificar</Button>
+                </div>
+              </div>
+
+              <div className="rounded-md border bg-surface-subtle p-3">
+                <h3 className="font-semibold">Agregar / modificar dependencia</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
+                  <div className="space-y-1">
+                    <Label htmlFor="new-dependency">Nueva dependencia</Label>
+                    <Input id="new-dependency" value={newDependencyName} onChange={(event) => setNewDependencyName(event.target.value)} placeholder="Ej: 328" />
+                  </div>
+                  <Button type="button" variant="command" className="self-end" onClick={addDependency}>Agregar</Button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <div className="space-y-1">
+                    <Label htmlFor="dependency-to-rename">Dependencia actual</Label>
+                    <select id="dependency-to-rename" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={dependencyToRename} onChange={(event) => setDependencyToRename(event.target.value)}>
+                      <option value="">Seleccionar</option>
+                      {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="dependency-rename-value">Nuevo nombre</Label>
+                    <Input id="dependency-rename-value" value={dependencyRenameValue} onChange={(event) => setDependencyRenameValue(event.target.value)} placeholder="Nuevo nombre" />
+                  </div>
+                  <Button type="button" variant="outline" className="self-end" onClick={renameDependency}>Modificar</Button>
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1040px] text-sm">
+                <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Cobrador</th>
+                    <th className="px-4 py-3 text-left">Teléfono</th>
+                    <th className="px-4 py-3 text-left">Dependencias</th>
+                    <th className="px-4 py-3 text-right">Afiliados</th>
+                    <th className="px-4 py-3 text-right">Tickets recibidos</th>
+                    <th className="px-4 py-3 text-right">Tickets cobrados</th>
+                    <th className="px-4 py-3 text-right">Tickets pendientes</th>
+                    <th className="px-4 py-3 text-right">Cobrado</th>
+                    <th className="px-4 py-3 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {collectorRows.map((row) => (
+                    <tr key={row.collector}>
+                      <td className="px-4 py-3 font-medium">{row.collector}</td>
+                      <td className="px-4 py-3">{row.phone || "-"}</td>
+                      <td className="px-4 py-3">{row.dependencies.join(", ") || "-"}</td>
+                      <td className="px-4 py-3 text-right">{row.affiliates}</td>
+                      <td className="px-4 py-3 text-right">{row.tickets}</td>
+                      <td className="px-4 py-3 text-right">{row.chargedTickets}</td>
+                      <td className="px-4 py-3 text-right">{row.pendingTickets}</td>
+                      <td className="px-4 py-3 text-right">{currency.format(row.chargedAmount)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          {row.phone && (
+                            <Button type="button" size="sm" variant="outline" onClick={() => window.open(`https://wa.me/${row.phone.replace(/\D/g, "")}`, "_blank", "noopener,noreferrer")}>WhatsApp</Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setCollectorFilter(row.collector);
+                              setActiveSection("Base");
+                            }}
+                          >
+                            Ver cartera
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={9}>Todavía no hay cobradores cargados.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {activeSection === "Mensual" && (
           <section className="rounded-md border bg-card">
             <div className="border-b p-4">
               <h2 className="font-semibold">Planilla de cobranza mensual</h2>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
-                <div className="w-full space-y-1 sm:w-44">
-                  <Label htmlFor="increase-percent">Aumento %</Label>
-                  <Input
-                    id="increase-percent"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={increasePercent}
-                    onChange={(event) => setIncreasePercent(event.target.value)}
-                    placeholder="Ej: 10"
-                  />
-                </div>
-                <Button type="button" variant="command" onClick={applyMonthlyIncrease}>Aplicar aumento</Button>
-                {lastIncrease && (
-                  <Button type="button" variant="outline" onClick={undoLastIncrease}>Deshacer ultimo aumento</Button>
-                )}
-              </div>
               <p className="text-sm text-muted-foreground">Período {activeMonth}. Aparecen solo los afiliados tildados en la base. Acá se carga la cantidad de tickets.</p>
             </div>
             <div className="overflow-x-auto">
@@ -970,12 +1341,27 @@ const InsuranceCollections = () => {
               <h2 className="font-semibold">Registrar cobranza por tickets</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => setCollectionPolicy(event.target.value)} /></div>
-                <div className="space-y-2"><Label>Plan</Label><select value={collectionPlan} onChange={(event) => setCollectionPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{plans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+                <div className="space-y-2"><Label>Plan</Label><select value={collectionPlan} onChange={(event) => setCollectionPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
               </div>
               {selectedMonthlyAffiliate && (
                 <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-sm">
                   <strong>{selectedMonthlyAffiliate.fullName}</strong>
                   <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
+                  {selectedMonthlyAffiliate.request?.trim() && (
+                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">
+                      <p className="font-semibold">Pedido pendiente para el cobrador</p>
+                      <p className="mt-1">{selectedMonthlyAffiliate.request}</p>
+                      <div className="mt-3 space-y-1">
+                        <Label htmlFor="collection-request-answer">Respuesta / novedad obligatoria</Label>
+                        <Input
+                          id="collection-request-answer"
+                          value={selectedMonthlyAffiliate.latestNews || ""}
+                          onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
+                          placeholder="Completar dato solicitado o explicar por qué no se pudo"
+                        />
+                      </div>
+                    </div>
+                  )}
                   <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => openNoteDialog(selectedMonthlyAffiliate.id)}>Agregar novedad</Button>
                 </div>
               )}
@@ -984,7 +1370,8 @@ const InsuranceCollections = () => {
                 <div className="space-y-2"><Label>Forma de pago</Label><select value={collectionMethod} onChange={(event) => setCollectionMethod(event.target.value as PaymentMethod)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
-              <div className="mt-4 flex justify-end"><Button type="submit" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0}>Guardar cobro</Button></div>
+              {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
+              <div className="mt-4 flex justify-end"><Button type="submit" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button></div>
             </form>
             <div className="space-y-5">
               <RecentTicketCollections collections={ticketCollections.filter((item) => item.month === activeMonth)} affiliatesById={affiliatesById} />
@@ -1000,7 +1387,7 @@ const InsuranceCollections = () => {
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Nombre y apellido</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value })} required /></div>
-                <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => setReceiptForm({ ...receiptForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{plans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+                <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => setReceiptForm({ ...receiptForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
                 <div className="space-y-2"><Label>Mes que paga</Label><Input type="month" value={receiptForm.paidMonth} onChange={(event) => setReceiptForm({ ...receiptForm, paidMonth: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Cant. de meses</Label><Input type="number" min="1" value={receiptForm.monthCount} onChange={(event) => setReceiptForm({ ...receiptForm, monthCount: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Monto mensual</Label><Input value={receiptForm.monthlyAmount} onChange={(event) => setReceiptForm({ ...receiptForm, monthlyAmount: event.target.value })} required /></div>
@@ -1154,6 +1541,7 @@ const InsuranceCollections = () => {
           </section>
         )}
       </div>
+      </div>
 
       <Dialog open={affiliateDialogOpen} onOpenChange={setAffiliateDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -1161,12 +1549,15 @@ const InsuranceCollections = () => {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveAffiliate}>
             <div className="space-y-2 md:col-span-2"><Label>Nombre y apellido</Label><Input value={affiliateForm.fullName} onChange={(event) => setAffiliateForm({ ...affiliateForm, fullName: event.target.value })} required /></div>
             <div className="space-y-2"><Label>N° de póliza</Label><Input value={affiliateForm.policyNumber} onChange={(event) => setAffiliateForm({ ...affiliateForm, policyNumber: event.target.value })} /></div>
-            <div className="space-y-2"><Label>Plan</Label><select value={affiliateForm.plan} onChange={(event) => setAffiliateForm({ ...affiliateForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{plans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+            <div className="space-y-2"><Label>Plan</Label><select value={affiliateForm.plan} onChange={(event) => setAffiliateForm({ ...affiliateForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
             <div className="space-y-2"><Label>Valor</Label><Input type="number" min="0" value={affiliateForm.value} onChange={(event) => setAffiliateForm({ ...affiliateForm, value: parseNumber(event.target.value) })} /></div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={affiliateForm.phone} onChange={(event) => setAffiliateForm({ ...affiliateForm, phone: event.target.value })} /></div>
             <div className="space-y-2"><Label>Dependencia</Label><Input value={affiliateForm.dependency} onChange={(event) => setAffiliateForm({ ...affiliateForm, dependency: event.target.value })} /></div>
+            <div className="space-y-2"><Label>Cobrador</Label><Input value={affiliateForm.collector} onChange={(event) => setAffiliateForm({ ...affiliateForm, collector: event.target.value })} /></div>
             <div className="space-y-2"><Label>Tickets base</Label><Input type="number" min="0" value={affiliateForm.sourceTickets || 0} onChange={(event) => setAffiliateForm({ ...affiliateForm, sourceTickets: parseNumber(event.target.value) })} /></div>
             <div className="space-y-2 md:col-span-2"><Label>Dirección</Label><Input value={affiliateForm.address} onChange={(event) => setAffiliateForm({ ...affiliateForm, address: event.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Pedido al cobrador</Label><Input value={affiliateForm.request} onChange={(event) => setAffiliateForm({ ...affiliateForm, request: event.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Novedad / respuesta</Label><Input value={affiliateForm.latestNews} onChange={(event) => setAffiliateForm({ ...affiliateForm, latestNews: event.target.value })} /></div>
             <div className="flex justify-end gap-2 md:col-span-2"><Button type="button" variant="outline" onClick={() => setAffiliateDialogOpen(false)}>Cancelar</Button><Button type="submit" variant="command">Guardar</Button></div>
           </form>
         </DialogContent>

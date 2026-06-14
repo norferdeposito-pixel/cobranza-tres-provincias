@@ -21,11 +21,7 @@ const App = () => (
           <Routes>
             <Route
               path="/"
-              element={
-                <RequireUserProfile>
-                  <Index />
-                </RequireUserProfile>
-              }
+              element={<InsuranceCollections />}
             />
             <Route
               path="/compras"
