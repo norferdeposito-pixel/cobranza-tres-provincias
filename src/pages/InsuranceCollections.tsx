@@ -105,6 +105,10 @@ type AffiliateImportPreview = {
 type CollectorRecord = {
   name: string;
   phone: string;
+  commissionBase: number;
+  bonusEnabled: boolean;
+  bonusThreshold: number;
+  bonusRate: number;
 };
 
 type CloudSnapshot = {
@@ -384,13 +388,46 @@ const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : met
 
 const uniqueSorted = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
 
+const knownCollectorCommissions: Record<string, Pick<CollectorRecord, "commissionBase" | "bonusEnabled" | "bonusThreshold" | "bonusRate">> = {
+  "ALCIDES OMAR": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
+  "BENJAMIN NAVARRO": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "DANIEL HLOSKA": { commissionBase: 13, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "EUGENIO BUSTOS": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "FABIAN GONZALEZ": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "FEDERICO CASTILLO": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
+  "GUADALUPE GONZALEZ": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
+  "GUSTAVO ARIEL GARCIA": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "JORGE FUNES": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
+  "SAN MARTIN OFICINA": { commissionBase: 5, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "SILVIA PELLEGRINI": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "TUNUYAN OFICINA": { commissionBase: 5, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+};
+
+const defaultCollectorConfig = (name: string, phone = ""): CollectorRecord => ({
+  name: normalizeCollectorName(name),
+  phone,
+  ...(knownCollectorCommissions[normalizeCollectorName(name)] || {
+    commissionBase: 12,
+    bonusEnabled: false,
+    bonusThreshold: 90,
+    bonusRate: 13,
+  }),
+});
+
 const normalizeCollectorRecords = (value: unknown): CollectorRecord[] => {
   const rows = Array.isArray(value) ? value : ["OFICINA"];
   const normalized = rows.flatMap((item): CollectorRecord[] => {
-    if (typeof item === "string") return [{ name: normalizeCollectorName(item), phone: "" }];
+    if (typeof item === "string") return [defaultCollectorConfig(item)];
     if (item && typeof item === "object" && "name" in item) {
-      const record = item as { name?: unknown; phone?: unknown };
-      return [{ name: normalizeCollectorName(String(record.name || "")), phone: String(record.phone || "").trim() }];
+      const record = item as { name?: unknown; phone?: unknown; commissionBase?: unknown; bonusEnabled?: unknown; bonusThreshold?: unknown; bonusRate?: unknown };
+      return [{
+        name: normalizeCollectorName(String(record.name || "")),
+        phone: String(record.phone || "").trim(),
+        commissionBase: Math.max(0, parseNumber(record.commissionBase as string) || defaultCollectorConfig(String(record.name || "")).commissionBase),
+        bonusEnabled: record.bonusEnabled === undefined ? defaultCollectorConfig(String(record.name || "")).bonusEnabled : Boolean(record.bonusEnabled),
+        bonusThreshold: Math.max(0, parseNumber(record.bonusThreshold as string) || defaultCollectorConfig(String(record.name || "")).bonusThreshold),
+        bonusRate: Math.max(0, parseNumber(record.bonusRate as string) || defaultCollectorConfig(String(record.name || "")).bonusRate),
+      }];
     }
     return [];
   }).filter((item) => item.name);
@@ -474,9 +511,13 @@ const InsuranceCollections = () => {
   const [customDependencies, setCustomDependencies] = useState<string[]>(() => loadStorage(dependenciesStorageKey, []));
   const [newCollectorName, setNewCollectorName] = useState("");
   const [newCollectorPhone, setNewCollectorPhone] = useState("");
+  const [newCollectorCommission, setNewCollectorCommission] = useState("12");
+  const [newCollectorBonusEnabled, setNewCollectorBonusEnabled] = useState(false);
   const [collectorToRename, setCollectorToRename] = useState("");
   const [collectorRenameValue, setCollectorRenameValue] = useState("");
   const [collectorPhoneValue, setCollectorPhoneValue] = useState("");
+  const [collectorCommissionValue, setCollectorCommissionValue] = useState("12");
+  const [collectorBonusEnabled, setCollectorBonusEnabled] = useState(false);
   const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
   const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
@@ -626,13 +667,19 @@ const InsuranceCollections = () => {
   }, [affiliates, collectorRecords]);
 
   const collectorPhoneByName = useMemo(() => new Map(collectorRecords.map((item) => [normalizeCollectorName(item.name), item.phone])), [collectorRecords]);
+  const collectorConfigByName = useMemo(() => new Map(collectorRecords.map((item) => [normalizeCollectorName(item.name), item])), [collectorRecords]);
 
   const collectorRows = useMemo(() => {
     return collectors.map((collector) => {
-      const assigned = affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collector));
+      const normalizedCollector = normalizeCollectorName(collector);
+      const assigned = affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === normalizedCollector);
       const tickets = assigned.reduce((sum, affiliate) => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
         return sum + (monthly?.tickets || 0);
+      }, 0);
+      const assignedAmount = assigned.reduce((sum, affiliate) => {
+        const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
+        return sum + (monthly?.tickets || 0) * affiliate.value;
       }, 0);
       const chargedTickets = ticketCollections
         .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
@@ -640,18 +687,33 @@ const InsuranceCollections = () => {
       const chargedAmount = ticketCollections
         .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
         .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value || 0) * item.ticketsCharged, 0);
+      const config = collectorConfigByName.get(normalizedCollector) || defaultCollectorConfig(collector);
+      const effectiveness = assignedAmount > 0 ? (chargedAmount / assignedAmount) * 100 : 0;
+      const bonusAchieved = config.bonusEnabled && effectiveness >= config.bonusThreshold;
+      const appliedCommissionRate = bonusAchieved ? config.bonusRate : config.commissionBase;
+      const commissionAmount = chargedAmount * (appliedCommissionRate / 100);
       return {
         collector,
         phone: collectorPhoneByName.get(collector) || "",
         dependencies: Array.from(new Set(assigned.map((item) => item.dependency || "SIN DEFINIR"))).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true })),
         affiliates: assigned.length,
         tickets,
+        assignedAmount,
         chargedTickets,
         pendingTickets: Math.max(tickets - chargedTickets, 0),
         chargedAmount,
+        commissionBase: config.commissionBase,
+        bonusEnabled: config.bonusEnabled,
+        bonusThreshold: config.bonusThreshold,
+        bonusRate: config.bonusRate,
+        effectiveness,
+        bonusAchieved,
+        appliedCommissionRate,
+        commissionAmount,
+        amountToRender: chargedAmount - commissionAmount,
       };
     });
-  }, [activeMonth, affiliates, affiliatesById, collectorPhoneByName, collectors, monthlyItems, ticketCollections]);
+  }, [activeMonth, affiliates, affiliatesById, collectorConfigByName, collectorPhoneByName, collectors, monthlyItems, ticketCollections]);
 
   const monthlyRows = useMemo(() => {
     return affiliates
@@ -770,11 +832,12 @@ const InsuranceCollections = () => {
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
   const totalCollected = totalCashCollected + totalTransferCollected;
-  const commission = totalCollected * 0.12;
+  const commission = collectorRows.reduce((sum, item) => sum + item.commissionAmount, 0);
   const totalToRender = totalCollected - commission;
   const totalTransferRendered = rendition.transferRenders.reduce((sum, item) => sum + item.amount, 0);
   const totalCashRendered = rendition.cashRenders.reduce((sum, item) => sum + item.amount, 0);
   const totalRendered = totalCashRendered + totalTransferRendered;
+  const bonusCollectorRows = collectorRows.filter((item) => item.bonusAchieved);
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -844,7 +907,12 @@ const InsuranceCollections = () => {
       const previous = currentById.get(item.id);
       return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: item.dependency || previous.dependency, collector: previous.collector || item.collector || "OFICINA", request: previous.request || item.request || "", latestNews: previous.latestNews || item.latestNews || "", selectedForMonthly: true } : item;
     });
+    const importedCollectors = uniqueSorted(merged.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
     setAffiliates(merged);
+    setCollectorRecords((current) => normalizeCollectorRecords([
+      ...current,
+      ...importedCollectors.map((collector) => defaultCollectorConfig(collector)),
+    ]));
     setMonthlyItems((current) => [
       ...current.filter((item) => item.month !== activeMonth),
       ...merged
@@ -938,9 +1006,18 @@ const InsuranceCollections = () => {
   const addCollector = () => {
     const name = normalizeCollectorName(newCollectorName);
     if (!name) return;
-    setCollectorRecords((current) => normalizeCollectorRecords([...current, { name, phone: newCollectorPhone.trim() }]));
+    setCollectorRecords((current) => normalizeCollectorRecords([...current, {
+      name,
+      phone: newCollectorPhone.trim(),
+      commissionBase: Math.max(0, parseNumber(newCollectorCommission) || 12),
+      bonusEnabled: newCollectorBonusEnabled,
+      bonusThreshold: 90,
+      bonusRate: 13,
+    }]));
     setNewCollectorName("");
     setNewCollectorPhone("");
+    setNewCollectorCommission("12");
+    setNewCollectorBonusEnabled(false);
   };
 
   const renameCollector = () => {
@@ -951,13 +1028,22 @@ const InsuranceCollections = () => {
     setAffiliates((current) => current.map((item) => normalizeCollectorName(item.collector || "OFICINA") === from ? { ...item, collector: finalName } : item));
     setCollectorRecords((current) => normalizeCollectorRecords([
       ...current.filter((item) => normalizeCollectorName(item.name) !== from),
-      { name: finalName, phone: collectorPhoneValue.trim() },
+      {
+        name: finalName,
+        phone: collectorPhoneValue.trim(),
+        commissionBase: Math.max(0, parseNumber(collectorCommissionValue) || 12),
+        bonusEnabled: collectorBonusEnabled,
+        bonusThreshold: 90,
+        bonusRate: 13,
+      },
     ]));
     if (normalizeCollectorName(collectorFilter) === from) setCollectorFilter(finalName);
     if (normalizeCollectorName(mobileCollector) === from) setMobileCollector(finalName);
     setCollectorToRename("");
     setCollectorRenameValue("");
     setCollectorPhoneValue("");
+    setCollectorCommissionValue("12");
+    setCollectorBonusEnabled(false);
   };
 
   const removeCollector = (collector: string) => {
@@ -974,6 +1060,8 @@ const InsuranceCollections = () => {
       setCollectorToRename("");
       setCollectorRenameValue("");
       setCollectorPhoneValue("");
+      setCollectorCommissionValue("12");
+      setCollectorBonusEnabled(false);
     }
   };
 
@@ -982,10 +1070,11 @@ const InsuranceCollections = () => {
     const to = normalizeCollectorName(collectorMergeTo);
     if (!from || !to || from === to) return;
     const destinationPhone = collectorPhoneByName.get(to) || collectorPhoneByName.get(from) || "";
+    const destinationConfig = collectorConfigByName.get(to) || collectorConfigByName.get(from) || defaultCollectorConfig(to, destinationPhone);
     setAffiliates((current) => current.map((item) => normalizeCollectorName(item.collector || "OFICINA") === from ? { ...item, collector: to } : item));
     setCollectorRecords((current) => normalizeCollectorRecords([
       ...current.filter((item) => normalizeCollectorName(item.name) !== from && normalizeCollectorName(item.name) !== to),
-      { name: to, phone: destinationPhone },
+      { ...destinationConfig, name: to, phone: destinationPhone },
     ]));
     if (normalizeCollectorName(collectorFilter) === from) setCollectorFilter(to);
     if (normalizeCollectorName(mobileCollector) === from) setMobileCollector(to);
@@ -1007,9 +1096,12 @@ const InsuranceCollections = () => {
 
   const selectCollectorToEdit = (collector: string) => {
     const normalizedCollector = normalizeCollectorName(collector);
+    const config = collectorConfigByName.get(normalizedCollector) || defaultCollectorConfig(normalizedCollector);
     setCollectorToRename(normalizedCollector);
     setCollectorRenameValue(normalizedCollector);
     setCollectorPhoneValue(collectorPhoneByName.get(normalizedCollector) || "");
+    setCollectorCommissionValue(String(config.commissionBase));
+    setCollectorBonusEnabled(config.bonusEnabled);
   };
 
   const renameDependency = () => {
@@ -1508,7 +1600,7 @@ const InsuranceCollections = () => {
             <div className="grid gap-4 border-b p-3 sm:p-4 xl:grid-cols-2">
               <div className="rounded-md border bg-surface-subtle p-3">
                 <h3 className="font-semibold">Agregar / modificar cobrador</h3>
-                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_120px_auto]">
                   <div className="space-y-1">
                     <Label htmlFor="new-collector">Nombre y apellido</Label>
                     <Input id="new-collector" value={newCollectorName} onChange={(event) => setNewCollectorName(event.target.value)} placeholder="Ej: JUAN PEREZ" />
@@ -1517,9 +1609,17 @@ const InsuranceCollections = () => {
                     <Label htmlFor="new-collector-phone">Teléfono</Label>
                     <Input id="new-collector-phone" value={newCollectorPhone} onChange={(event) => setNewCollectorPhone(event.target.value)} placeholder="549..." />
                   </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="new-collector-commission">% comisión</Label>
+                    <Input id="new-collector-commission" type="number" min="0" step="0.1" value={newCollectorCommission} onChange={(event) => setNewCollectorCommission(event.target.value)} />
+                  </div>
                   <Button type="button" variant="command" className="self-end" onClick={addCollector}>Agregar</Button>
                 </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+                <label className="mt-3 flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={newCollectorBonusEnabled} onChange={(event) => setNewCollectorBonusEnabled(event.target.checked)} />
+                  Tiene premio: si cobra 90% o más, pasa al 13%
+                </label>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_120px_auto]">
                   <div className="space-y-1">
                     <Label htmlFor="collector-to-rename">Cobrador actual</Label>
                     <select id="collector-to-rename" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorToRename} onChange={(event) => selectCollectorToEdit(event.target.value)}>
@@ -1535,8 +1635,16 @@ const InsuranceCollections = () => {
                     <Label htmlFor="collector-phone-value">Teléfono</Label>
                     <Input id="collector-phone-value" value={collectorPhoneValue} onChange={(event) => setCollectorPhoneValue(event.target.value)} placeholder="549..." />
                   </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="collector-commission-value">% comisión</Label>
+                    <Input id="collector-commission-value" type="number" min="0" step="0.1" value={collectorCommissionValue} onChange={(event) => setCollectorCommissionValue(event.target.value)} />
+                  </div>
                   <Button type="button" variant="outline" className="self-end" onClick={renameCollector}>Modificar</Button>
                 </div>
+                <label className="mt-3 flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={collectorBonusEnabled} onChange={(event) => setCollectorBonusEnabled(event.target.checked)} />
+                  Tiene premio: si cobra 90% o más, pasa al 13%
+                </label>
                 <div className="mt-4 rounded-md border bg-background p-3">
                   <h4 className="font-semibold">Combinar / reasignar cobradores</h4>
                   <p className="mt-1 text-xs text-muted-foreground">Pasa toda la cartera del cobrador origen al cobrador correcto y elimina el origen si queda sin afiliados.</p>
@@ -1586,8 +1694,20 @@ const InsuranceCollections = () => {
               </div>
             </div>
             <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para ver el resumen completo.</div>
+            {bonusCollectorRows.length > 0 && (
+              <div className="border-b bg-emerald-50 p-3 text-emerald-950 sm:p-4">
+                <h3 className="font-semibold">Felicitaciones, objetivo alcanzado</h3>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {bonusCollectorRows.map((row) => (
+                    <div key={`bonus-${row.collector}`} className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm">
+                      <strong>{row.collector}</strong> logró {row.effectiveness.toFixed(1)}% de cobranza. Su comisión pasa al {row.appliedCommissionRate}%.
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-xs sm:text-sm">
+              <table className="w-full min-w-[1320px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 text-left">Cobrador</th>
@@ -1598,6 +1718,10 @@ const InsuranceCollections = () => {
                     <th className="px-4 py-3 text-right">Tickets cobrados</th>
                     <th className="px-4 py-3 text-right">Tickets pendientes</th>
                     <th className="px-4 py-3 text-right">Cobrado</th>
+                    <th className="px-4 py-3 text-right">Efectividad</th>
+                    <th className="px-4 py-3 text-right">% comisión</th>
+                    <th className="px-4 py-3 text-right">Comisión</th>
+                    <th className="px-4 py-3 text-right">A rendir</th>
                     <th className="px-4 py-3 text-right">Acción</th>
                   </tr>
                 </thead>
@@ -1612,6 +1736,13 @@ const InsuranceCollections = () => {
                       <td className="px-4 py-3 text-right">{row.chargedTickets}</td>
                       <td className="px-4 py-3 text-right">{row.pendingTickets}</td>
                       <td className="px-4 py-3 text-right">{currency.format(row.chargedAmount)}</td>
+                      <td className="px-4 py-3 text-right">{row.effectiveness.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="font-medium">{row.appliedCommissionRate}%</div>
+                        {row.bonusEnabled && <div className="text-[10px] text-muted-foreground">Premio {row.bonusThreshold}%</div>}
+                      </td>
+                      <td className="px-4 py-3 text-right">{currency.format(row.commissionAmount)}</td>
+                      <td className="px-4 py-3 text-right">{currency.format(row.amountToRender)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           {row.phone && (
@@ -1839,7 +1970,7 @@ const InsuranceCollections = () => {
                 <SummaryBox label="Cobrado efectivo" value={currency.format(totalCashCollected)} />
                 <SummaryBox label="Cobrado transferencia" value={currency.format(totalTransferCollected)} />
                 <SummaryBox label="Total cobrado" value={currency.format(totalCollected)} />
-                <SummaryBox label="Comisión 12%" value={currency.format(commission)} />
+                <SummaryBox label="Comisión cobradores" value={currency.format(commission)} />
                 <SummaryBox label="Total a rendir" value={currency.format(totalToRender)} />
                 <SummaryBox label="Total rendido" value={currency.format(totalRendered)} />
                 <SummaryBox label="Resta por rendir" value={currency.format(totalToRender - totalRendered)} />
