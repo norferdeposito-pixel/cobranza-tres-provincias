@@ -396,7 +396,6 @@ const normalizeCollectorRecords = (value: unknown): CollectorRecord[] => {
   }).filter((item) => item.name);
   const byName = new Map<string, CollectorRecord>();
   normalized.forEach((item) => byName.set(item.name, item));
-  if (!byName.has("OFICINA")) byName.set("OFICINA", { name: "OFICINA", phone: "" });
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, "es-AR", { numeric: true }));
 };
 
@@ -622,7 +621,8 @@ const InsuranceCollections = () => {
   }, [affiliates, customDependencies]);
 
   const collectors = useMemo(() => {
-    return uniqueSorted([...collectorRecords.map((item) => item.name), "OFICINA", ...affiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA"))]);
+    const rows = uniqueSorted([...collectorRecords.map((item) => item.name), ...affiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA"))]);
+    return rows.length > 0 ? rows : ["OFICINA"];
   }, [affiliates, collectorRecords]);
 
   const collectorPhoneByName = useMemo(() => new Map(collectorRecords.map((item) => [normalizeCollectorName(item.name), item.phone])), [collectorRecords]);
@@ -1538,14 +1538,14 @@ const InsuranceCollections = () => {
                   <Button type="button" variant="outline" className="self-end" onClick={renameCollector}>Modificar</Button>
                 </div>
                 <div className="mt-4 rounded-md border bg-background p-3">
-                  <h4 className="font-semibold">Combinar cobradores duplicados</h4>
-                  <p className="mt-1 text-xs text-muted-foreground">Pasa toda la cartera del duplicado al cobrador correcto y elimina el nombre duplicado.</p>
+                  <h4 className="font-semibold">Combinar / reasignar cobradores</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Pasa toda la cartera del cobrador origen al cobrador correcto y elimina el origen si queda sin afiliados.</p>
                   <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                     <div className="space-y-1">
-                      <Label htmlFor="collector-merge-from">Duplicado a eliminar</Label>
+                      <Label htmlFor="collector-merge-from">Cobrador origen</Label>
                       <select id="collector-merge-from" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorMergeFrom} onChange={(event) => setCollectorMergeFrom(event.target.value)}>
                         <option value="">Seleccionar</option>
-                        {collectors.filter((collector) => collector !== "OFICINA").map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -1628,7 +1628,7 @@ const InsuranceCollections = () => {
                           >
                             Ver cartera
                           </Button>
-                          {row.affiliates === 0 && row.collector !== "OFICINA" && (
+                          {row.affiliates === 0 && (
                             <Button type="button" size="sm" variant="outline" onClick={() => removeCollector(row.collector)}>Quitar</Button>
                           )}
                         </div>
