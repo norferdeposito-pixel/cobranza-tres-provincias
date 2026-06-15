@@ -1638,11 +1638,12 @@ const InsuranceCollections = () => {
           </section>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             ["Afiliados", visibleAffiliatesCount, isOfficeUser ? "Clientes en base" : "Tu cartera asignada"],
             ["Seleccionados", visibleSelectedCount, isOfficeUser ? "Pasan a cobranza mensual" : "En tu cobranza mensual"],
             ["Tickets mensuales", visibleMonthlyTickets, isOfficeUser ? "Tickets recibidos" : "Tus tickets recibidos"],
+            ["Pedidos", requestRows.filter((item) => !item.answered).length, isOfficeUser ? "Solicitudes pendientes" : "Tus pedidos pendientes"],
             ["Novedades", visibleNotesCount, isOfficeUser ? "Cargadas en el mes" : "Tus novedades del mes"],
             ["Total a rendir", currency.format(visibleTotalToRender), visibleTotalLabel],
           ].map(([label, value, helper]) => (
