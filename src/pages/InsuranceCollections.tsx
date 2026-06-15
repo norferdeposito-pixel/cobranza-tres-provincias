@@ -659,6 +659,11 @@ const InsuranceCollections = () => {
     setCloudStatus(`Sincronizado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const saveRequestOrNews = async () => {
+    setCloudStatus("Guardando pedido/novedad...");
+    await saveCloudSnapshot();
+  };
+
   const loadCloudSnapshot = async () => {
     setCloudBusy(true);
     setCloudStatus("Cargando datos online...");
@@ -1773,8 +1778,18 @@ const InsuranceCollections = () => {
                       <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
                       <td className="w-20 px-2 py-3 text-center">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
                       <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
-                      <td className="w-52 px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" /></td>
-                      <td className="w-52 px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
+                      <td className="w-64 px-3 py-3">
+                        <div className="flex gap-2">
+                          <Input className="h-8 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" />
+                          <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                        </div>
+                      </td>
+                      <td className="w-64 px-3 py-3">
+                        <div className="flex gap-2">
+                          <Input className="h-8 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" />
+                          <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -1887,12 +1902,15 @@ const InsuranceCollections = () => {
                   <p className="mt-1">{selectedMonthlyAffiliate.request}</p>
                   <div className="mt-3 space-y-1">
                     <Label htmlFor="mobile-request-answer">Respuesta del cobrador</Label>
-                    <Input
-                      id="mobile-request-answer"
-                      value={selectedMonthlyAffiliate.latestNews || ""}
-                      onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
-                      placeholder="Dato informado o motivo"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="mobile-request-answer"
+                        value={selectedMonthlyAffiliate.latestNews || ""}
+                        onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
+                        placeholder="Dato informado o motivo"
+                      />
+                      <Button type="button" variant="command" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2324,6 +2342,7 @@ const InsuranceCollections = () => {
                           onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
                           placeholder="Completar dato solicitado o explicar por qué no se pudo"
                         />
+                        <Button type="button" variant="command" className="mt-2" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
                       </div>
                     </div>
                   )}
@@ -2397,12 +2416,15 @@ const InsuranceCollections = () => {
                       <p className="text-[10px] uppercase text-muted-foreground">tickets pend.</p>
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
+                  <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto_auto]">
                     <Input
                       value={affiliate.latestNews || ""}
                       onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)}
                       placeholder="Respuesta del cobrador o dato informado"
                     />
+                    <Button type="button" variant="command" onClick={saveRequestOrNews} disabled={cloudBusy}>
+                      Guardar
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
