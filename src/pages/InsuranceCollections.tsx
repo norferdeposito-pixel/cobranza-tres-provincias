@@ -25,7 +25,7 @@ import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
-type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion" | "Usuarios";
+type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Pedidos" | "Novedades" | "Totales" | "Rendicion" | "Usuarios";
 
 type TransferData = {
   transactionNumber: string;
@@ -1030,9 +1030,30 @@ const InsuranceCollections = () => {
   const visibleMonthlyTickets = monthlyItems
     .filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId))
     .reduce((sum, item) => sum + item.tickets, 0);
-  const visibleNotesCount = notes.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId)).length;
+  const visibleNotes = notes.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId));
+  const visibleNotesCount = visibleNotes.length;
+  const visibleTicketCollections = ticketCollections.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId));
+  const visibleReceipts = receipts.filter((item) => {
+    if (item.collectionMonth !== activeMonth) return false;
+    if (isOfficeUser) return true;
+    return normalizeCollectorName(item.collector || "") === currentCollectorName;
+  });
   const visibleTotalToRender = isOfficeUser ? totalToRender : selectedCollectorStats.reportRenditionAmount;
   const visibleTotalLabel = isOfficeUser ? "Cobrado menos comision" : "Tu cobranza menos comision";
+  const requestRows = useMemo(() => {
+    return affiliates
+      .filter((affiliate) => affiliate.request.trim())
+      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .map((affiliate) => ({
+        affiliate,
+        pendingTickets: getPendingTickets(affiliate.id),
+        answered: !!affiliate.latestNews.trim(),
+      }))
+      .sort((a, b) => {
+        if (a.answered !== b.answered) return a.answered ? 1 : -1;
+        return b.pendingTickets - a.pendingTickets || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR");
+      });
+  }, [activeMonth, affiliates, currentCollectorName, isOfficeUser, monthlyItems, ticketCollections]);
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -1483,6 +1504,7 @@ const InsuranceCollections = () => {
     { id: "Mensual", label: "Cobranza mensual", icon: CheckSquare },
     { id: "Cobranza", label: "Cobranza", icon: Banknote },
     { id: "Recibos", label: "Recibos", icon: ReceiptText },
+    { id: "Pedidos", label: "Pedidos", icon: ClipboardList },
     { id: "Novedades", label: "Novedades", icon: ClipboardList },
     { id: "Totales", label: "Totales", icon: Calculator },
     { id: "Rendicion", label: "Rendición", icon: ShieldCheck },
@@ -1491,7 +1513,7 @@ const InsuranceCollections = () => {
   const visibleNavItems = navItems.filter((item) => {
     if (item.id === "Usuarios") return isAdminUser;
     if (isOfficeUser) return true;
-    return ["CobradorMovil", "Cobranza", "Recibos", "Novedades", "Rendicion"].includes(item.id);
+    return ["CobradorMovil", "Cobranza", "Recibos", "Pedidos", "Novedades", "Rendicion"].includes(item.id);
   });
 
   useEffect(() => {
@@ -2303,8 +2325,8 @@ const InsuranceCollections = () => {
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button></div>
             </form>
             <div className="space-y-5">
-              <RecentTicketCollections collections={ticketCollections.filter((item) => item.month === activeMonth)} affiliatesById={affiliatesById} />
-              <RecentNotes notes={notes.filter((item) => item.month === activeMonth)} affiliatesById={affiliatesById} />
+              <RecentTicketCollections collections={visibleTicketCollections} affiliatesById={affiliatesById} />
+              <RecentNotes notes={visibleNotes} affiliatesById={affiliatesById} />
             </div>
           </section>
         )}
@@ -2326,7 +2348,66 @@ const InsuranceCollections = () => {
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command">Guardar recibo</Button></div>
             </form>
-            <RecentReceipts receipts={receipts.filter((item) => item.collectionMonth === activeMonth)} />
+            <RecentReceipts receipts={visibleReceipts} />
+          </section>
+        )}
+
+        {activeSection === "Pedidos" && (
+          <section className="overflow-hidden rounded-md border bg-card">
+            <div className="border-b p-3 sm:p-4">
+              <h2 className="font-semibold">Pedidos de administracion</h2>
+              <p className="text-sm text-muted-foreground">
+                Solicitudes cargadas por administracion para completar datos o informar novedades antes de cobrar.
+              </p>
+            </div>
+            <div className="grid gap-3 p-3 sm:p-4">
+              {requestRows.map(({ affiliate, pendingTickets, answered }) => (
+                <div key={`request-panel-${affiliate.id}`} className="rounded-md border bg-background p-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{affiliate.fullName}</p>
+                        <span className={`rounded px-2 py-1 text-xs font-semibold ${answered ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                          {answered ? "Respondido" : "Pendiente"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Poliza {affiliate.policyNumber || "-"} - {affiliate.plan} - Dep. {affiliate.dependency || "-"} - Cobrador {affiliate.collector || "OFICINA"}
+                      </p>
+                      <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                        {affiliate.request}
+                      </p>
+                    </div>
+                    <div className="shrink-0 rounded-md bg-surface-subtle px-3 py-2 text-center">
+                      <p className="text-2xl font-semibold">{pendingTickets}</p>
+                      <p className="text-[10px] uppercase text-muted-foreground">tickets pend.</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
+                    <Input
+                      value={affiliate.latestNews || ""}
+                      onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)}
+                      placeholder="Respuesta del cobrador o dato informado"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        openMobileCollection(affiliate);
+                        setActiveSection("Cobranza");
+                      }}
+                    >
+                      Cargar cobro
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {requestRows.length === 0 && (
+                <div className="rounded-md border bg-surface-subtle p-4 text-center text-sm text-muted-foreground">
+                  No hay pedidos pendientes para este usuario.
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -2350,7 +2431,7 @@ const InsuranceCollections = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {notes.filter((item) => item.month === activeMonth).map((item) => {
+                  {visibleNotes.map((item) => {
                     const affiliate = affiliatesById.get(item.affiliateId);
                     return (
                       <tr key={item.id}>
@@ -2363,7 +2444,7 @@ const InsuranceCollections = () => {
                       </tr>
                     );
                   })}
-                  {notes.filter((item) => item.month === activeMonth).length === 0 && (
+                  {visibleNotes.length === 0 && (
                     <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Sin novedades cargadas para este mes.</td></tr>
                   )}
                 </tbody>
