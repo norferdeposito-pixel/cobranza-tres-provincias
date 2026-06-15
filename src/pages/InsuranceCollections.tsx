@@ -70,6 +70,7 @@ type ReceiptCollection = {
   collectionMonth: string;
   receiptNumber: string;
   fullName: string;
+  collector?: string;
   plan: PlanType;
   paidMonth: string;
   monthCount: number;
@@ -520,6 +521,7 @@ const InsuranceCollections = () => {
   const [collectorBonusEnabled, setCollectorBonusEnabled] = useState(false);
   const [collectorDetailName, setCollectorDetailName] = useState("");
   const [collectorSettingsOpen, setCollectorSettingsOpen] = useState(false);
+  const [collectorReportOpen, setCollectorReportOpen] = useState(false);
   const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
   const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
@@ -548,6 +550,7 @@ const InsuranceCollections = () => {
   const [receiptForm, setReceiptForm] = useState({
     receiptNumber: "",
     fullName: "",
+    collector: "OFICINA",
     plan: "A 238" as PlanType,
     paidMonth: "",
     monthCount: "1",
@@ -822,22 +825,51 @@ const InsuranceCollections = () => {
     const cashCollections = collections.filter((item) => item.paymentMethod === "E");
     const transferCollections = collections.filter((item) => item.paymentMethod === "T");
     const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value || 0) * collection.ticketsCharged;
+    const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
+    const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
+    const receiptsForCollector = receipts.filter((receipt) => {
+      const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : affiliateCollectorByName.get(normalizeHeader(receipt.fullName));
+      return receipt.collectionMonth === activeMonth && receiptCollector === normalizedCollector;
+    });
+    const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
+    const receiptCash = receiptsForCollector.filter((receipt) => receipt.paymentMethod === "E");
+    const receiptTransfer = receiptsForCollector.filter((receipt) => receipt.paymentMethod === "T");
     const notesForCollector = notes
       .filter((item) => item.month === activeMonth && affiliateIds.has(item.affiliateId))
       .sort((a, b) => b.date.localeCompare(a.date));
+    const ticketCashAmount = cashCollections.reduce((sum, item) => sum + amountFor(item), 0);
+    const ticketTransferAmount = transferCollections.reduce((sum, item) => sum + amountFor(item), 0);
+    const receiptCashAmount = receiptCash.reduce((sum, item) => sum + receiptAmount(item), 0);
+    const receiptTransferAmount = receiptTransfer.reduce((sum, item) => sum + receiptAmount(item), 0);
+    const reportCashAmount = ticketCashAmount + receiptCashAmount;
+    const reportTransferAmount = ticketTransferAmount + receiptTransferAmount;
+    const reportTotalAmount = reportCashAmount + reportTransferAmount;
+    const reportCommissionAmount = reportTotalAmount * ((selectedCollectorSummary?.appliedCommissionRate || 0) / 100);
     return {
       cashTickets: cashCollections.reduce((sum, item) => sum + item.ticketsCharged, 0),
-      cashAmount: cashCollections.reduce((sum, item) => sum + amountFor(item), 0),
+      cashAmount: ticketCashAmount,
       transferTickets: transferCollections.reduce((sum, item) => sum + item.ticketsCharged, 0),
-      transferAmount: transferCollections.reduce((sum, item) => sum + amountFor(item), 0),
+      transferAmount: ticketTransferAmount,
+      receiptCount: new Set(receiptsForCollector.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size,
+      receiptAmount: receiptsForCollector.reduce((sum, item) => sum + receiptAmount(item), 0),
+      receiptCashCount: new Set(receiptCash.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size,
+      receiptCashAmount,
+      receiptTransferCount: new Set(receiptTransfer.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size,
+      receiptTransferAmount,
+      totalCashAmount: reportCashAmount,
+      totalTransferAmount: reportTransferAmount,
+      totalCollectionAmount: reportTotalAmount,
+      reportCommissionAmount,
+      reportRenditionAmount: reportTotalAmount - reportCommissionAmount,
       pendingAmount: selectedCollectorPortfolio.reduce((sum, item) => sum + item.pendingAmount, 0),
+      returnedRows: selectedCollectorPortfolio.filter((item) => item.pendingTickets > 0),
       requestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim()).length,
       unansweredRequestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim() && !item.affiliate.latestNews.trim()).length,
       answeredRequestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim() && item.affiliate.latestNews.trim()).length,
       newsCount: notesForCollector.length,
       latestNotes: notesForCollector.slice(0, 6),
     };
-  }, [activeMonth, affiliatesById, notes, selectedCollectorPortfolio, ticketCollections]);
+  }, [activeMonth, affiliates, affiliatesById, notes, receipts, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
 
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
@@ -1239,6 +1271,7 @@ const InsuranceCollections = () => {
       collectionMonth: activeMonth,
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
+      collector: normalizeCollectorName(receiptForm.collector || selectedCollectorName || "OFICINA"),
       plan: receiptForm.plan,
       paidMonth: receiptForm.paidMonth,
       monthCount: Math.max(1, parseNumber(receiptForm.monthCount)),
@@ -1246,7 +1279,7 @@ const InsuranceCollections = () => {
       paymentMethod: receiptForm.paymentMethod,
       transfer: receiptForm.paymentMethod === "T" ? receiptForm.transfer : undefined,
     }]);
-    setReceiptForm({ receiptNumber: "", fullName: "", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
+    setReceiptForm({ receiptNumber: "", fullName: "", collector: selectedCollectorName || "OFICINA", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
   };
 
   const exportAffiliatesCsv = () => {
@@ -1809,7 +1842,8 @@ const InsuranceCollections = () => {
                   <h3 className="font-semibold">Vista por cobrador</h3>
                   <p className="text-sm text-muted-foreground">Elegí un cobrador para revisar su cartera, tickets pendientes y cobranza del período.</p>
                 </div>
-                <div className="w-full space-y-1 lg:w-72">
+                <div className="grid w-full gap-2 lg:w-[420px] lg:grid-cols-[1fr_auto] lg:items-end">
+                  <div className="space-y-1">
                   <Label htmlFor="collector-detail-name">Cobrador</Label>
                   <select
                     id="collector-detail-name"
@@ -1819,6 +1853,10 @@ const InsuranceCollections = () => {
                   >
                     {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
+                  </div>
+                  <Button type="button" variant="command" onClick={() => setCollectorReportOpen(true)}>
+                    Reporte
+                  </Button>
                 </div>
               </div>
 
@@ -2098,6 +2136,7 @@ const InsuranceCollections = () => {
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Nombre y apellido</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value })} required /></div>
+                <div className="space-y-2"><Label>Cobrador</Label><select value={receiptForm.collector} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
                 <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => setReceiptForm({ ...receiptForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
                 <div className="space-y-2"><Label>Mes que paga</Label><Input type="month" value={receiptForm.paidMonth} onChange={(event) => setReceiptForm({ ...receiptForm, paidMonth: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Cant. de meses</Label><Input type="number" min="1" value={receiptForm.monthCount} onChange={(event) => setReceiptForm({ ...receiptForm, monthCount: event.target.value })} /></div>
@@ -2297,6 +2336,91 @@ const InsuranceCollections = () => {
               <Button type="submit" variant="command">Guardar novedad</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={collectorReportOpen} onOpenChange={setCollectorReportOpen}>
+        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Reporte de cobranza - {selectedCollectorName || "Cobrador"}</DialogTitle>
+          </DialogHeader>
+          {selectedCollectorSummary && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-surface-subtle p-3 text-sm">
+                <strong>Período {activeMonth}</strong>
+                <p className="mt-1 text-muted-foreground">Reporte consolidado de tickets, recibos, comisiones, rendición y devoluciones.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
+                <SummaryBox label="Tickets devueltos" value={String(selectedCollectorSummary.pendingTickets)} />
+                <SummaryBox label="Monto cobranza" value={currency.format(selectedCollectorStats.totalCollectionAmount)} />
+                <SummaryBox label="Monto rendición" value={currency.format(selectedCollectorStats.reportRenditionAmount)} />
+                <SummaryBox label="Monto comisión" value={currency.format(selectedCollectorStats.reportCommissionAmount)} />
+                <SummaryBox label="Cobranza efectivo" value={currency.format(selectedCollectorStats.totalCashAmount)} />
+                <SummaryBox label="Cobranza transferencia" value={currency.format(selectedCollectorStats.totalTransferAmount)} />
+                <SummaryBox label="Recibos cobrados" value={String(selectedCollectorStats.receiptCount)} />
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-md border bg-card p-3">
+                  <h3 className="font-semibold">Detalle de tickets</h3>
+                  <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <p>Tickets en efectivo: <strong>{selectedCollectorStats.cashTickets}</strong></p>
+                    <p>Monto efectivo tickets: <strong>{currency.format(selectedCollectorStats.cashAmount)}</strong></p>
+                    <p>Tickets por transferencia: <strong>{selectedCollectorStats.transferTickets}</strong></p>
+                    <p>Monto transferencia tickets: <strong>{currency.format(selectedCollectorStats.transferAmount)}</strong></p>
+                  </div>
+                </div>
+                <div className="rounded-md border bg-card p-3">
+                  <h3 className="font-semibold">Detalle de recibos</h3>
+                  <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <p>Recibos efectivo: <strong>{selectedCollectorStats.receiptCashCount}</strong></p>
+                    <p>Monto efectivo recibos: <strong>{currency.format(selectedCollectorStats.receiptCashAmount)}</strong></p>
+                    <p>Recibos transferencia: <strong>{selectedCollectorStats.receiptTransferCount}</strong></p>
+                    <p>Monto transferencia recibos: <strong>{currency.format(selectedCollectorStats.receiptTransferAmount)}</strong></p>
+                    <p>Total recibos: <strong>{selectedCollectorStats.receiptCount}</strong></p>
+                    <p>Monto recibos: <strong>{currency.format(selectedCollectorStats.receiptAmount)}</strong></p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[760px] text-xs sm:text-sm">
+                  <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-3 text-left">Devolución</th>
+                      <th className="px-3 py-3 text-left">Póliza</th>
+                      <th className="px-3 py-3 text-left">Plan</th>
+                      <th className="px-3 py-3 text-left">Dependencia</th>
+                      <th className="px-3 py-3 text-center">Tickets devueltos</th>
+                      <th className="px-3 py-3 text-right">Monto pendiente</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {selectedCollectorStats.returnedRows.map(({ affiliate, pendingTickets, pendingAmount }) => (
+                      <tr key={`returned-${affiliate.id}`}>
+                        <td className="px-3 py-3 font-medium">{affiliate.fullName}</td>
+                        <td className="px-3 py-3">{affiliate.policyNumber || "-"}</td>
+                        <td className="px-3 py-3">{affiliate.plan}</td>
+                        <td className="px-3 py-3">{affiliate.dependency || "-"}</td>
+                        <td className="px-3 py-3 text-center">{pendingTickets}</td>
+                        <td className="px-3 py-3 text-right">{currency.format(pendingAmount)}</td>
+                      </tr>
+                    ))}
+                    {selectedCollectorStats.returnedRows.length === 0 && (
+                      <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={6}>Sin devoluciones para este cobrador.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setCollectorReportOpen(false)}>Cerrar</Button>
+                <Button type="button" variant="command" onClick={() => window.print()}>Imprimir</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </main>
