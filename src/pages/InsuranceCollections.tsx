@@ -141,6 +141,11 @@ const cloudSnapshotKey = "cobranza-tres-provincias";
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
+const addMonths = (month: string, amount: number) => {
+  const [year, monthIndex] = month.split("-").map((value) => Number(value));
+  const date = new Date(year, (monthIndex || 1) - 1 + amount, 1);
+  return date.toISOString().slice(0, 7);
+};
 function normalizeCollectorName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
 }
@@ -560,6 +565,7 @@ const InsuranceCollections = () => {
   });
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
+  const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -1320,6 +1326,31 @@ const InsuranceCollections = () => {
       cashRenders: [...current.cashRenders, { id: `cash-${Date.now()}`, date: cashRenderForm.date || today(), amount, detail: cashRenderForm.detail.trim() }],
     }));
     setCashRenderForm({ date: today(), amount: "", detail: "" });
+  };
+
+  const prepareNewCollection = () => {
+    const targetMonth = nextCollectionMonth || addMonths(activeMonth, 1);
+    const sameMonth = targetMonth === activeMonth;
+    const message = sameMonth
+      ? `Vas a limpiar los movimientos del mes ${targetMonth}. Esta acción conserva afiliados y cobradores, pero borra tickets cobrados, recibos, novedades y rendición de ese mes.`
+      : `Vas a preparar la cobranza ${targetMonth}. Se conservan afiliados, cobradores, dependencias y datos cerrados de ${activeMonth}. Se limpia la rendición y cualquier prueba cargada en ${targetMonth}.`;
+    if (!window.confirm(`${message}\n\n¿Continuar?`)) return;
+
+    setActiveMonth(targetMonth);
+    setMonthlyItems((current) => current.filter((item) => item.month !== targetMonth));
+    setTicketCollections((current) => current.filter((item) => item.month !== targetMonth));
+    setReceipts((current) => current.filter((item) => item.collectionMonth !== targetMonth));
+    setNotes((current) => current.filter((item) => item.month !== targetMonth));
+    setRendition({ cashRenders: [], transferRenders: [] });
+    setCollectionPolicy("");
+    setCollectionTickets("1");
+    setCollectionMethod("E");
+    setCollectionTransfer(emptyTransfer());
+    setMobileSelectedAffiliateId("");
+    setMobileNoteText("");
+    setReceiptForm({ receiptNumber: "", fullName: "", collector: selectedCollectorName || "OFICINA", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
+    setNextCollectionMonth(addMonths(targetMonth, 1));
+    setImportMessage(`Nueva cobranza preparada para ${targetMonth}. Ahora podés importar el listado actualizado.`);
   };
 
   const navItems: Array<{ id: Section; label: string; icon: typeof ClipboardList }> = [
@@ -2314,6 +2345,24 @@ const InsuranceCollections = () => {
                   </div>
                 ))}
                 {rendition.transferRenders.length === 0 && <p className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground">Sin transferencias rendidas cargadas.</p>}
+              </div>
+            </div>
+            <div className="rounded-md border bg-card p-3 sm:p-4 lg:col-span-2">
+              <h2 className="font-semibold">Preparar nueva cobranza</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Usar al finalizar la cobranza y rendición. Conserva afiliados, cobradores, dependencias y comisiones; deja listo el nuevo período para importar el próximo listado.
+              </p>
+              <div className="mt-4 grid gap-3 rounded-md border bg-surface-subtle p-3 sm:grid-cols-[220px_1fr_auto] sm:items-end">
+                <div className="space-y-1">
+                  <Label htmlFor="next-collection-month">Nuevo período</Label>
+                  <Input id="next-collection-month" type="month" value={nextCollectionMonth} onChange={(event) => setNextCollectionMonth(event.target.value)} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  El mes cerrado queda guardado por fecha. Si ya cargaste pruebas en el nuevo período, esta acción las limpia para empezar de cero.
+                </p>
+                <Button type="button" variant="outline" onClick={prepareNewCollection}>
+                  Preparar nueva cobranza
+                </Button>
               </div>
             </div>
           </section>
