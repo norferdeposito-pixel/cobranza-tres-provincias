@@ -608,17 +608,17 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
   useEffect(() => saveStorage(dependenciesStorageKey, customDependencies), [customDependencies]);
 
-  const buildCloudSnapshot = (): CloudSnapshot => ({
-    affiliates,
-    monthlyItems,
-    ticketCollections,
-    receipts,
-    notes,
-    rendition,
-    collectorRecords,
-    customDependencies,
-    collectorWhatsapp,
-    activeMonth,
+  const buildCloudSnapshot = (overrides: Partial<CloudSnapshot> = {}): CloudSnapshot => ({
+    affiliates: overrides.affiliates ?? affiliates,
+    monthlyItems: overrides.monthlyItems ?? monthlyItems,
+    ticketCollections: overrides.ticketCollections ?? ticketCollections,
+    receipts: overrides.receipts ?? receipts,
+    notes: overrides.notes ?? notes,
+    rendition: overrides.rendition ?? rendition,
+    collectorRecords: overrides.collectorRecords ?? collectorRecords,
+    customDependencies: overrides.customDependencies ?? customDependencies,
+    collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
+    activeMonth: overrides.activeMonth ?? activeMonth,
   });
 
   const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>) => {
@@ -634,12 +634,12 @@ const InsuranceCollections = () => {
     if (snapshot.activeMonth) setActiveMonth(snapshot.activeMonth);
   };
 
-  const saveCloudSnapshot = async () => {
+  const saveCloudSnapshot = async (overrides: Partial<CloudSnapshot> = {}) => {
     setCloudBusy(true);
     setCloudStatus("Guardando en la base online...");
     const { error } = await supabase
       .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(), updated_at: new Date().toISOString() }, { onConflict: "key" });
+      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(overrides), updated_at: new Date().toISOString() }, { onConflict: "key" });
     setCloudBusy(false);
     if (error) {
       setCloudStatus(`No se pudo guardar online: ${error.message}`);
@@ -659,9 +659,23 @@ const InsuranceCollections = () => {
     setCloudStatus(`Sincronizado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
-  const saveRequestOrNews = async () => {
+  const saveRequestOrNews = async (affiliateId?: string, patch?: Partial<Pick<Affiliate, "request" | "latestNews">>) => {
     setCloudStatus("Guardando pedido/novedad...");
-    await saveCloudSnapshot();
+    if (!affiliateId || !patch) {
+      await saveCloudSnapshot();
+      return;
+    }
+    const normalizedPatch: Partial<Pick<Affiliate, "request" | "latestNews">> = {};
+    if (patch.request !== undefined) normalizedPatch.request = patch.request.toLocaleUpperCase("es-AR");
+    if (patch.latestNews !== undefined) normalizedPatch.latestNews = patch.latestNews.toLocaleUpperCase("es-AR");
+    const nextAffiliates = affiliates.map((item) => item.id === affiliateId ? { ...item, ...normalizedPatch } : item);
+    setAffiliates(nextAffiliates);
+    await saveCloudSnapshot({ affiliates: nextAffiliates });
+  };
+
+  const textFromButton = (button: HTMLButtonElement) => {
+    const field = button.parentElement?.querySelector("textarea, input") as HTMLTextAreaElement | HTMLInputElement | null;
+    return field?.value || "";
   };
 
   const loadCloudSnapshot = async () => {
@@ -1209,11 +1223,11 @@ const InsuranceCollections = () => {
   };
 
   const updateAffiliateRequest = (affiliateId: string, request: string) => {
-    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, request } : item));
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, request: request.toLocaleUpperCase("es-AR") } : item));
   };
 
   const updateAffiliateNews = (affiliateId: string, latestNews: string) => {
-    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, latestNews } : item));
+    setAffiliates((current) => current.map((item) => item.id === affiliateId ? { ...item, latestNews: latestNews.toLocaleUpperCase("es-AR") } : item));
   };
 
   const updateAffiliateDependency = (affiliateId: string, dependency: string) => {
@@ -1577,7 +1591,7 @@ const InsuranceCollections = () => {
             <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
               Cargar online
             </Button>
-            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={saveCloudSnapshot} disabled={cloudBusy}>
+            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>
               Guardar online
             </Button>
             <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => signOut()}>
@@ -1781,13 +1795,13 @@ const InsuranceCollections = () => {
                       <td className="w-96 px-3 py-3">
                         <div className="flex items-start gap-2">
                           <Textarea className="min-h-20 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" />
-                          <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={(event) => saveRequestOrNews(item.id, { request: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
                       <td className="w-96 px-3 py-3">
                         <div className="flex items-start gap-2">
                           <Textarea className="min-h-20 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" />
-                          <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={(event) => saveRequestOrNews(item.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1909,7 +1923,7 @@ const InsuranceCollections = () => {
                         onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
                         placeholder="Dato informado o motivo"
                       />
-                      <Button type="button" variant="command" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                      <Button type="button" variant="command" onClick={(event) => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
                     </div>
                   </div>
                 </div>
@@ -1943,7 +1957,7 @@ const InsuranceCollections = () => {
 
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
               <Button type="submit" className="mt-4 w-full" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button>
-              <Button type="button" className="mt-2 w-full" variant="outline" onClick={saveCloudSnapshot} disabled={cloudBusy}>Guardar online</Button>
+              <Button type="button" className="mt-2 w-full" variant="outline" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>Guardar online</Button>
             </form>
           </section>
         )}
@@ -2342,7 +2356,7 @@ const InsuranceCollections = () => {
                           onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
                           placeholder="Completar dato solicitado o explicar por qué no se pudo"
                         />
-                        <Button type="button" variant="command" className="mt-2" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
+                        <Button type="button" variant="command" className="mt-2" onClick={(event) => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
                       </div>
                     </div>
                   )}
@@ -2423,7 +2437,7 @@ const InsuranceCollections = () => {
                       onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)}
                       placeholder="Respuesta del cobrador o dato informado"
                     />
-                    <Button type="button" variant="command" onClick={saveRequestOrNews} disabled={cloudBusy}>
+                    <Button type="button" variant="command" onClick={(event) => saveRequestOrNews(affiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>
                       Guardar
                     </Button>
                     <Button
