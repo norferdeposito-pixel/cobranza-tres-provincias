@@ -794,7 +794,11 @@ const InsuranceCollections = () => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
   }, [affiliates, mobileSelectedAffiliateId, selectedMonthlyAffiliate]);
 
-  const selectedCollectorName = collectorDetailName && collectors.includes(collectorDetailName) ? collectorDetailName : collectors[0] || "";
+  const selectedCollectorName = collectorDetailName && collectors.includes(collectorDetailName)
+    ? collectorDetailName
+    : mobileCollector !== "todos" && collectors.includes(mobileCollector)
+      ? mobileCollector
+      : collectors[0] || "";
   const selectedCollectorSummary = collectorRows.find((row) => row.collector === selectedCollectorName) || null;
   const selectedCollectorPortfolio = useMemo(() => {
     if (!selectedCollectorName) return [];
@@ -1842,7 +1846,7 @@ const InsuranceCollections = () => {
                   <h3 className="font-semibold">Vista por cobrador</h3>
                   <p className="text-sm text-muted-foreground">Elegí un cobrador para revisar su cartera, tickets pendientes y cobranza del período.</p>
                 </div>
-                <div className="grid w-full gap-2 lg:w-[420px] lg:grid-cols-[1fr_auto] lg:items-end">
+                <div className="w-full space-y-1 lg:w-72">
                   <div className="space-y-1">
                   <Label htmlFor="collector-detail-name">Cobrador</Label>
                   <select
@@ -1854,9 +1858,6 @@ const InsuranceCollections = () => {
                     {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                   </div>
-                  <Button type="button" variant="command" onClick={() => setCollectorReportOpen(true)}>
-                    Reporte
-                  </Button>
                 </div>
               </div>
 
@@ -2237,6 +2238,31 @@ const InsuranceCollections = () => {
 
         {activeSection === "Rendicion" && (
           <section className="grid gap-4 sm:gap-5 lg:grid-cols-2">
+            <div className="rounded-md border bg-card p-3 sm:p-4 lg:col-span-2">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="font-semibold">Rendición del cobrador</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Información correspondiente a {selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
+                  </p>
+                </div>
+                <Button type="button" variant="command" onClick={() => setCollectorReportOpen(true)}>
+                  Ver reporte de cobranza
+                </Button>
+              </div>
+              {selectedCollectorSummary && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
+                  <SummaryBox label="Tickets devueltos" value={String(selectedCollectorSummary.pendingTickets)} />
+                  <SummaryBox label="Cobranza efectivo" value={currency.format(selectedCollectorStats.totalCashAmount)} />
+                  <SummaryBox label="Cobranza transferencia" value={currency.format(selectedCollectorStats.totalTransferAmount)} />
+                  <SummaryBox label="Recibos cobrados" value={String(selectedCollectorStats.receiptCount)} />
+                  <SummaryBox label="Monto cobranza" value={currency.format(selectedCollectorStats.totalCollectionAmount)} />
+                  <SummaryBox label="Comisión" value={currency.format(selectedCollectorStats.reportCommissionAmount)} />
+                  <SummaryBox label="A rendir" value={currency.format(selectedCollectorStats.reportRenditionAmount)} />
+                </div>
+              )}
+            </div>
             <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Rendición final</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
