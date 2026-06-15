@@ -519,6 +519,7 @@ const InsuranceCollections = () => {
   const [collectorCommissionValue, setCollectorCommissionValue] = useState("12");
   const [collectorBonusEnabled, setCollectorBonusEnabled] = useState(false);
   const [collectorDetailName, setCollectorDetailName] = useState("");
+  const [collectorSettingsOpen, setCollectorSettingsOpen] = useState(false);
   const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
   const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
@@ -1389,7 +1390,7 @@ const InsuranceCollections = () => {
 
         {activeSection === "Base" && (
           <section className="overflow-hidden rounded-md border bg-card">
-            <div className="border-b p-3 sm:p-4">
+            <div className="flex flex-col gap-3 border-b p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div className="relative w-full flex-1 lg:max-w-lg">
                   <Label htmlFor="base-search" className="sr-only">Buscar</Label>
@@ -1642,11 +1643,19 @@ const InsuranceCollections = () => {
 
         {activeSection === "Cobradores" && (
           <section className="overflow-hidden rounded-md border bg-card">
-            <div className="border-b p-3 sm:p-4">
+            <div className="flex flex-col gap-3 border-b p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
               <h2 className="font-semibold">Cobradores</h2>
+              <Button type="button" variant="outline" onClick={() => setCollectorSettingsOpen(true)}>
+                Configurar cobradores y dependencias
+              </Button>
               <p className="text-sm text-muted-foreground">Resumen de cartera por cobrador para el período {activeMonth}.</p>
             </div>
-            <div className="grid gap-4 border-b p-3 sm:p-4 xl:grid-cols-2">
+            <Dialog open={collectorSettingsOpen} onOpenChange={setCollectorSettingsOpen}>
+              <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Configurar cobradores y dependencias</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-md border bg-surface-subtle p-3">
                 <h3 className="font-semibold">Agregar / modificar cobrador</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_120px_auto]">
@@ -1743,6 +1752,8 @@ const InsuranceCollections = () => {
               </div>
             </div>
             <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para ver el resumen completo.</div>
+              </DialogContent>
+            </Dialog>
             {bonusCollectorRows.length > 0 && (
               <div className="border-b bg-emerald-50 p-3 text-emerald-950 sm:p-4">
                 <h3 className="font-semibold">Felicitaciones, objetivo alcanzado</h3>
