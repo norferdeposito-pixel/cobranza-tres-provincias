@@ -1019,6 +1019,20 @@ const InsuranceCollections = () => {
   const totalCashRendered = rendition.cashRenders.reduce((sum, item) => sum + item.amount, 0);
   const totalRendered = totalCashRendered + totalTransferRendered;
   const bonusCollectorRows = collectorRows.filter((item) => item.bonusAchieved);
+  const visibleAffiliateIds = new Set(
+    (isOfficeUser
+      ? affiliates
+      : affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName)
+    ).map((item) => item.id),
+  );
+  const visibleAffiliatesCount = isOfficeUser ? affiliates.length : visibleAffiliateIds.size;
+  const visibleSelectedCount = affiliates.filter((item) => visibleAffiliateIds.has(item.id) && item.selectedForMonthly).length;
+  const visibleMonthlyTickets = monthlyItems
+    .filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId))
+    .reduce((sum, item) => sum + item.tickets, 0);
+  const visibleNotesCount = notes.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId)).length;
+  const visibleTotalToRender = isOfficeUser ? totalToRender : selectedCollectorStats.reportRenditionAmount;
+  const visibleTotalLabel = isOfficeUser ? "Cobrado menos comision" : "Tu cobranza menos comision";
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -1604,11 +1618,11 @@ const InsuranceCollections = () => {
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            ["Afiliados", affiliates.length, "Clientes en base"],
-            ["Seleccionados", affiliates.filter((item) => item.selectedForMonthly).length, "Pasan a cobranza mensual"],
-            ["Tickets mensuales", monthlyItems.filter((item) => item.month === activeMonth).reduce((sum, item) => sum + item.tickets, 0), "Tickets recibidos"],
-            ["Novedades", notes.filter((item) => item.month === activeMonth).length, "Cargadas en el mes"],
-            ["Total a rendir", currency.format(totalToRender), "Cobrado menos comisión"],
+            ["Afiliados", visibleAffiliatesCount, isOfficeUser ? "Clientes en base" : "Tu cartera asignada"],
+            ["Seleccionados", visibleSelectedCount, isOfficeUser ? "Pasan a cobranza mensual" : "En tu cobranza mensual"],
+            ["Tickets mensuales", visibleMonthlyTickets, isOfficeUser ? "Tickets recibidos" : "Tus tickets recibidos"],
+            ["Novedades", visibleNotesCount, isOfficeUser ? "Cargadas en el mes" : "Tus novedades del mes"],
+            ["Total a rendir", currency.format(visibleTotalToRender), visibleTotalLabel],
           ].map(([label, value, helper]) => (
             <div key={String(label)} className="rounded-md border bg-card p-3 shadow-command sm:p-4">
               <p className="text-sm font-medium text-muted-foreground">{String(label)}</p>
@@ -2509,7 +2523,7 @@ const InsuranceCollections = () => {
                 </div>
               )}
             </div>
-            <div className="rounded-md border bg-card p-3 sm:p-4">
+            {isOfficeUser && <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Rendición final</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <SummaryBox label="Cobrado efectivo" value={currency.format(totalCashCollected)} />
@@ -2520,8 +2534,8 @@ const InsuranceCollections = () => {
                 <SummaryBox label="Total rendido" value={currency.format(totalRendered)} />
                 <SummaryBox label="Resta por rendir" value={currency.format(totalToRender - totalRendered)} />
               </div>
-            </div>
-            <div className="rounded-md border bg-card p-3 sm:p-4">
+            </div>}
+            {isOfficeUser && <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Monto rendido</h2>
               <div className="mt-4 flex items-center justify-between">
                 <h3 className="font-semibold">Efectivo rendido</h3>
@@ -2561,8 +2575,8 @@ const InsuranceCollections = () => {
                 ))}
                 {rendition.transferRenders.length === 0 && <p className="rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground">Sin transferencias rendidas cargadas.</p>}
               </div>
-            </div>
-            <div className="rounded-md border bg-card p-3 sm:p-4 lg:col-span-2">
+            </div>}
+            {isOfficeUser && <div className="rounded-md border bg-card p-3 sm:p-4 lg:col-span-2">
               <h2 className="font-semibold">Preparar nueva cobranza</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Usar al finalizar la cobranza y rendición. Conserva afiliados, cobradores, dependencias y comisiones; deja listo el nuevo período para importar el próximo listado.
@@ -2579,7 +2593,7 @@ const InsuranceCollections = () => {
                   Preparar nueva cobranza
                 </Button>
               </div>
-            </div>
+            </div>}
           </section>
         )}
       </div>
