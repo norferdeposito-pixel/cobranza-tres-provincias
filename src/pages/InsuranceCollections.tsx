@@ -1753,8 +1753,8 @@ const InsuranceCollections = () => {
                     <th className="w-28 px-3 py-3 text-right">Valor</th>
                     <th className="w-20 px-2 py-3 text-center">Tickets mes</th>
                     <th className="w-24 px-2 py-3 text-center">Pendientes</th>
-                    <th className="w-52 px-3 py-3 text-left">Pedido</th>
-                    <th className="w-52 px-3 py-3 text-left">Novedad</th>
+                    <th className="w-96 px-3 py-3 text-left">Pedido</th>
+                    <th className="w-96 px-3 py-3 text-left">Novedad</th>
                     <th className="px-4 py-3 text-right">Acción</th>
                   </tr>
                 </thead>
@@ -1778,15 +1778,15 @@ const InsuranceCollections = () => {
                       <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
                       <td className="w-20 px-2 py-3 text-center">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
                       <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
-                      <td className="w-64 px-3 py-3">
-                        <div className="flex gap-2">
-                          <Input className="h-8 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" />
+                      <td className="w-96 px-3 py-3">
+                        <div className="flex items-start gap-2">
+                          <Textarea className="min-h-20 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" />
                           <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
-                      <td className="w-64 px-3 py-3">
-                        <div className="flex gap-2">
-                          <Input className="h-8 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" />
+                      <td className="w-96 px-3 py-3">
+                        <div className="flex items-start gap-2">
+                          <Textarea className="min-h-20 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" />
                           <Button type="button" size="sm" variant="outline" onClick={saveRequestOrNews} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
@@ -2197,8 +2197,8 @@ const InsuranceCollections = () => {
                         <td className="px-3 py-3 text-center">{tickets}</td>
                         <td className="px-3 py-3 text-center">{chargedTickets}</td>
                         <td className="px-3 py-3 text-center font-medium">{pendingTickets}</td>
-                        <td className="px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={affiliate.request || ""} onChange={(event) => updateAffiliateRequest(affiliate.id, event.target.value)} placeholder="Pedir info" /></td>
-                        <td className="px-3 py-3"><Input className="h-8 text-xs sm:text-sm" value={affiliate.latestNews || ""} onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
+                        <td className="min-w-80 px-3 py-3"><Textarea className="min-h-20 text-xs sm:text-sm" value={affiliate.request || ""} onChange={(event) => updateAffiliateRequest(affiliate.id, event.target.value)} placeholder="Pedir info" /></td>
+                        <td className="min-w-80 px-3 py-3"><Textarea className="min-h-20 text-xs sm:text-sm" value={affiliate.latestNews || ""} onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)} placeholder="Respuesta / novedad" /></td>
                         <td className="px-3 py-3 text-right">
                           <Button type="button" size="sm" variant="outline" onClick={() => openMobileCollection(affiliate)}>
                             Cargar
@@ -2416,8 +2416,9 @@ const InsuranceCollections = () => {
                       <p className="text-[10px] uppercase text-muted-foreground">tickets pend.</p>
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto_auto]">
-                    <Input
+                  <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto_auto] lg:items-start">
+                    <Textarea
+                      className="min-h-24"
                       value={affiliate.latestNews || ""}
                       onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)}
                       placeholder="Respuesta del cobrador o dato informado"
@@ -2729,8 +2730,8 @@ const InsuranceCollections = () => {
             <div className="space-y-2"><Label>Cobrador</Label><Input value={affiliateForm.collector} onChange={(event) => setAffiliateForm({ ...affiliateForm, collector: event.target.value })} /></div>
             <div className="space-y-2"><Label>Tickets base</Label><Input type="number" min="0" value={affiliateForm.sourceTickets || 0} onChange={(event) => setAffiliateForm({ ...affiliateForm, sourceTickets: parseNumber(event.target.value) })} /></div>
             <div className="space-y-2 md:col-span-2"><Label>Dirección</Label><Input value={affiliateForm.address} onChange={(event) => setAffiliateForm({ ...affiliateForm, address: event.target.value })} /></div>
-            <div className="space-y-2 md:col-span-2"><Label>Pedido al cobrador</Label><Input value={affiliateForm.request} onChange={(event) => setAffiliateForm({ ...affiliateForm, request: event.target.value })} /></div>
-            <div className="space-y-2 md:col-span-2"><Label>Novedad / respuesta</Label><Input value={affiliateForm.latestNews} onChange={(event) => setAffiliateForm({ ...affiliateForm, latestNews: event.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Pedido al cobrador</Label><Textarea className="min-h-24" value={affiliateForm.request} onChange={(event) => setAffiliateForm({ ...affiliateForm, request: event.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Novedad / respuesta</Label><Textarea className="min-h-24" value={affiliateForm.latestNews} onChange={(event) => setAffiliateForm({ ...affiliateForm, latestNews: event.target.value })} /></div>
             <div className="flex justify-end gap-2 md:col-span-2"><Button type="button" variant="outline" onClick={() => setAffiliateDialogOpen(false)}>Cancelar</Button><Button type="submit" variant="command">Guardar</Button></div>
           </form>
         </DialogContent>
