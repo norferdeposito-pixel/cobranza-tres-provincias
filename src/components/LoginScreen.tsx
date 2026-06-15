@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-
 export const LoginScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,13 +25,21 @@ export const LoginScreen = () => {
         onSubmit={handleSubmit}
         className="w-full max-w-md space-y-5 rounded-md border border-border bg-card p-7 shadow-command"
       >
-        <div className="space-y-5">
-          <img src="/norfer-logo.svg" alt="NORFER - Industrias en movimiento" className="mx-auto h-auto w-full max-w-[300px]" />
+        <div className="space-y-4 text-center">
+          <img
+            src="/gestion-san-miguel-logo.png"
+            alt="Gestion San Miguel"
+            className="mx-auto h-24 w-24 object-contain"
+          />
+          <div>
+            <p className="text-3xl font-extrabold tracking-normal text-foreground">GESTION SAN MIGUEL</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">Sistema de gestion y cobranza</p>
+          </div>
           <div className="h-px bg-border" />
         </div>
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Ingresar</h1>
-          <p className="text-sm text-muted-foreground">Iniciá sesión para continuar</p>
+          <p className="text-sm text-muted-foreground">Inicia sesion para continuar</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -46,7 +53,7 @@ export const LoginScreen = () => {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Contraseña</Label>
+          <Label htmlFor="password">Contrasena</Label>
           <Input
             id="password"
             type="password"
