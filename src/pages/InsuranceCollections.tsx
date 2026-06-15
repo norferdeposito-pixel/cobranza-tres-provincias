@@ -1588,12 +1588,12 @@ const InsuranceCollections = () => {
               <Download className="h-4 w-4" />
               Exportar base
             </Button>}
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
+            {isOfficeUser && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
               Cargar online
-            </Button>
-            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>
+            </Button>}
+            {isOfficeUser && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>
               Guardar online
-            </Button>
+            </Button>}
             <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => signOut()}>
               Cerrar sesión
             </Button>
@@ -1957,7 +1957,7 @@ const InsuranceCollections = () => {
 
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
               <Button type="submit" className="mt-4 w-full" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button>
-              <Button type="button" className="mt-2 w-full" variant="outline" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>Guardar online</Button>
+              {isOfficeUser && <Button type="button" className="mt-2 w-full" variant="outline" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>Guardar online</Button>}
             </form>
           </section>
         )}
