@@ -1541,6 +1541,13 @@ const InsuranceCollections = () => {
             <h2 className="text-base font-semibold sm:text-lg lg:mt-1">Cobranza Tres Provincias</h2>
             <p className="hidden text-xs text-muted-foreground sm:block lg:mt-1">Cartera, cobradores, tickets y rendición.</p>
           </div>
+          <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">{currentUserProfile?.nombre || userEmail || "Usuario"}</p>
+            <p className="mt-1">{userRole || "sin rol"}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-3 w-full" onClick={() => signOut()}>
+              Cerrar sesión
+            </Button>
+          </div>
         </aside>
 
         <div className="grid min-w-0 gap-4 sm:gap-5">
