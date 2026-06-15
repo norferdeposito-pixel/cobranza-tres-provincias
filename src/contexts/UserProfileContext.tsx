@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase";
 export type CurrentUserProfile = {
   nombre: string;
   rol: string;
+  collectorName?: string;
+  active?: boolean;
 };
 
 type UserProfileContextValue = {
@@ -46,14 +48,23 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from("perfiles_usuarios" as any)
-        .select("nombre, rol")
+        .select("*")
         .eq("email", userEmail)
         .maybeSingle();
       if (error || !data) {
         setCurrentUserProfile(null);
       } else {
         const d = data as any;
-        setCurrentUserProfile({ nombre: d.nombre ?? "", rol: d.rol ?? "" });
+        if (d.activo === false || d.active === false) {
+          setCurrentUserProfile(null);
+        } else {
+          setCurrentUserProfile({
+            nombre: d.nombre ?? "",
+            rol: d.rol ?? "",
+            collectorName: d.collector_name ?? d.cobrador ?? "",
+            active: d.activo ?? d.active ?? true,
+          });
+        }
       }
     } catch {
       setCurrentUserProfile(null);

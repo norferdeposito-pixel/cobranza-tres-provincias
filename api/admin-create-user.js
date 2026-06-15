@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://mwbhjlyuitkgunchsyht.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_9PkFScfGvzwbziQ9AJWBgQ_gNqIld9B";
-const allowedRoles = new Set(["admin", "compras", "vendedor", "deposito", "comercial", "produccion", "consultor", "gerencia", "administracion", "contaduria", "logistica"]);
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://yiovuyysgszyfltbbjpn.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_0qMU7y_oLzG5YUwxSwVwmg_cmQUUxwA";
+const allowedRoles = new Set(["admin", "oficina", "cobrador", "oficina_cobrador", "consulta", "compras", "vendedor", "deposito", "comercial", "produccion", "consultor", "gerencia", "administracion", "contaduria", "logistica"]);
 
 const json = (res, status, body) => {
   res.status(status).json(body);
@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { nombre, email, password, rol } = req.body || {};
+  const { nombre, email, password, rol, collectorName } = req.body || {};
   const cleanNombre = String(nombre || "").trim().toLocaleUpperCase("es-AR");
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanPassword = String(password || "");
@@ -84,7 +84,13 @@ export default async function handler(req, res) {
     .eq("email", cleanEmail)
     .maybeSingle();
 
-  const profilePayload = { email: cleanEmail, nombre: cleanNombre, rol: cleanRol };
+  const profilePayload = {
+    email: cleanEmail,
+    nombre: cleanNombre,
+    rol: cleanRol,
+    collector_name: String(collectorName || "").trim().toLocaleUpperCase("es-AR"),
+    activo: true,
+  };
   const profileRequest = existingProfile
     ? adminClient.from("perfiles_usuarios").update(profilePayload).eq("email", cleanEmail)
     : adminClient.from("perfiles_usuarios").insert(profilePayload);

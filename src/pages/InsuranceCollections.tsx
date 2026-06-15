@@ -13,6 +13,7 @@ import {
   Search,
   ShieldCheck,
   Upload,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,10 +21,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
-type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion";
+type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Novedades" | "Totales" | "Rendicion" | "Usuarios";
 
 type TransferData = {
   transactionNumber: string;
@@ -123,6 +125,14 @@ type CloudSnapshot = {
   customDependencies: string[];
   collectorWhatsapp: string;
   activeMonth: string;
+};
+
+type UserAdminProfile = {
+  email: string;
+  nombre: string;
+  rol: string;
+  collector_name?: string;
+  activo?: boolean;
 };
 
 const plans: PlanType[] = ["A 238", "A 269", "G 238", "09", "G 269", "C", "Vida"];
@@ -489,8 +499,16 @@ const emptyAffiliateForm = (): AffiliateForm => ({
 });
 
 const emptyTransferForm = emptyTransfer;
+const userRoleOptions = [
+  { value: "cobrador", label: "Cobrador" },
+  { value: "oficina", label: "Oficina" },
+  { value: "oficina_cobrador", label: "Oficina + cobrador" },
+  { value: "consulta", label: "Consulta" },
+  { value: "admin", label: "Administrador" },
+];
 
 const InsuranceCollections = () => {
+  const { currentUserProfile, email: userEmail, signOut } = useCurrentUserProfile();
   const [activeSection, setActiveSection] = useState<Section>("Base");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
   const [affiliates, setAffiliates] = useState<Affiliate[]>(() => loadStorage(affiliatesStorageKey, demoAffiliates));
@@ -566,10 +584,19 @@ const InsuranceCollections = () => {
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
+  const [userForm, setUserForm] = useState({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "" });
+  const [userProfiles, setUserProfiles] = useState<UserAdminProfile[]>([]);
+  const [userAdminStatus, setUserAdminStatus] = useState("");
+  const [isSavingUser, setIsSavingUser] = useState(false);
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const autoSaveTimer = useRef<number | null>(null);
+  const userRole = (currentUserProfile?.rol || "").trim().toLowerCase();
+  const isAdminUser = userRole === "admin";
+  const isOfficeUser = ["admin", "oficina", "oficina_cobrador", "administracion", "compras"].includes(userRole);
+  const isCollectorUser = ["cobrador", "oficina_cobrador"].includes(userRole);
+  const currentCollectorName = normalizeCollectorName(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
 
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
@@ -677,6 +704,23 @@ const InsuranceCollections = () => {
     return () => window.clearInterval(timer);
   }, []);
 
+  const loadUserProfiles = async () => {
+    if (!isAdminUser) return;
+    const { data, error } = await supabase
+      .from("perfiles_usuarios" as any)
+      .select("*")
+      .order("nombre", { ascending: true });
+    if (error) {
+      setUserAdminStatus(`No se pudieron cargar usuarios: ${error.message}`);
+      return;
+    }
+    setUserProfiles((data || []) as unknown as UserAdminProfile[]);
+  };
+
+  useEffect(() => {
+    void loadUserProfiles();
+  }, [isAdminUser]);
+
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
 
   const getPendingTickets = (affiliateId: string) => {
@@ -691,6 +735,7 @@ const InsuranceCollections = () => {
     const normalized = query.trim().toLocaleUpperCase("es-AR");
     return affiliates
       .filter((item) => !normalized || `${item.fullName} ${item.policyNumber} ${item.plan} ${item.dependency} ${item.collector || "OFICINA"}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .filter((item) => isOfficeUser || normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName)
       .filter((item) => dependencyFilter === "todos" || (item.dependency || "SIN DEFINIR") === dependencyFilter)
       .filter((item) => collectorFilter === "todos" || normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collectorFilter))
       .filter((item) => {
@@ -703,7 +748,7 @@ const InsuranceCollections = () => {
         if (pendingFilter === "mayor" || pendingFilter === "con") return getPendingTickets(b.id) - getPendingTickets(a.id);
         return 0;
       });
-  }, [activeMonth, affiliates, collectorFilter, dependencyFilter, pendingFilter, query, monthlyItems, ticketCollections]);
+  }, [activeMonth, affiliates, collectorFilter, currentCollectorName, dependencyFilter, isOfficeUser, pendingFilter, query, monthlyItems, ticketCollections]);
 
   const dependencies = useMemo(() => {
     return uniqueSorted([...customDependencies, ...affiliates.map((item) => item.dependency || "SIN DEFINIR")]);
@@ -773,8 +818,11 @@ const InsuranceCollections = () => {
   }, [activeMonth, affiliates, monthlyItems]);
 
   const selectedMonthlyAffiliate = useMemo(() => {
-    return affiliates.find((item) => item.policyNumber === collectionPolicy.trim() && item.plan === collectionPlan) || null;
-  }, [affiliates, collectionPlan, collectionPolicy]);
+    const affiliate = affiliates.find((item) => item.policyNumber === collectionPolicy.trim() && item.plan === collectionPlan) || null;
+    if (!affiliate) return null;
+    if (!isOfficeUser && normalizeCollectorName(affiliate.collector || "OFICINA") !== currentCollectorName) return null;
+    return affiliate;
+  }, [affiliates, collectionPlan, collectionPolicy, currentCollectorName, isOfficeUser]);
 
   const selectedMonthlyItem = selectedMonthlyAffiliate ? monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id) : null;
   const alreadyChargedTickets = selectedMonthlyAffiliate
@@ -791,16 +839,20 @@ const InsuranceCollections = () => {
         pending: getPendingTickets(affiliate.id),
       }))
       .filter((row) => row.pending > 0)
-      .filter((row) => mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector))
+      .filter((row) => isOfficeUser
+        ? mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector)
+        : normalizeCollectorName(row.affiliate.collector || "OFICINA") === currentCollectorName)
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
       .sort((a, b) => b.pending - a.pending || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
-  }, [activeMonth, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
+  }, [activeMonth, currentCollectorName, isOfficeUser, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
 
   const mobileSelectedAffiliate = useMemo(() => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
   }, [affiliates, mobileSelectedAffiliateId, selectedMonthlyAffiliate]);
 
-  const selectedCollectorName = collectorDetailName && collectors.includes(collectorDetailName)
+  const selectedCollectorName = !isOfficeUser && currentCollectorName
+    ? currentCollectorName
+    : collectorDetailName && collectors.includes(collectorDetailName)
     ? collectorDetailName
     : mobileCollector !== "todos" && collectors.includes(mobileCollector)
       ? mobileCollector
@@ -1281,7 +1333,7 @@ const InsuranceCollections = () => {
       collectionMonth: activeMonth,
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
-      collector: normalizeCollectorName(receiptForm.collector || selectedCollectorName || "OFICINA"),
+      collector: normalizeCollectorName(isOfficeUser ? receiptForm.collector || selectedCollectorName || "OFICINA" : currentCollectorName || "OFICINA"),
       plan: receiptForm.plan,
       paidMonth: receiptForm.paidMonth,
       monthCount: Math.max(1, parseNumber(receiptForm.monthCount)),
@@ -1353,6 +1405,63 @@ const InsuranceCollections = () => {
     setImportMessage(`Nueva cobranza preparada para ${targetMonth}. Ahora podés importar el listado actualizado.`);
   };
 
+  const saveUserProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!isAdminUser) return;
+    if (!userForm.nombre.trim() || !userForm.email.trim() || !userForm.password.trim()) return;
+    setIsSavingUser(true);
+    setUserAdminStatus("Guardando usuario...");
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      setIsSavingUser(false);
+      setUserAdminStatus("Sesión vencida. Volvé a iniciar sesión.");
+      return;
+    }
+
+    const response = await fetch("/api/admin-create-user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        nombre: userForm.nombre,
+        email: userForm.email,
+        password: userForm.password,
+        rol: userForm.rol,
+        collectorName: userForm.collectorName,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setIsSavingUser(false);
+    if (!response.ok) {
+      setUserAdminStatus(result.error || "No se pudo guardar el usuario.");
+      return;
+    }
+    setUserForm({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "" });
+    setUserAdminStatus(result.userAlreadyExists ? "Perfil actualizado." : "Usuario creado.");
+    await loadUserProfiles();
+  };
+
+  const updateUserProfile = async (profile: UserAdminProfile, patch: Partial<UserAdminProfile>) => {
+    if (!isAdminUser) return;
+    const payload = {
+      nombre: patch.nombre ?? profile.nombre,
+      rol: patch.rol ?? profile.rol,
+      collector_name: patch.collector_name ?? profile.collector_name ?? "",
+      activo: patch.activo ?? profile.activo ?? true,
+    };
+    const { error } = await supabase.from("perfiles_usuarios" as any).update(payload).eq("email", profile.email);
+    if (error) {
+      setUserAdminStatus(`No se pudo actualizar ${profile.email}: ${error.message}`);
+      return;
+    }
+    setUserAdminStatus("Usuario actualizado.");
+    await loadUserProfiles();
+  };
+
   const navItems: Array<{ id: Section; label: string; icon: typeof ClipboardList }> = [
     { id: "Base", label: "Base de afiliados", icon: ClipboardList },
     { id: "CobradorMovil", label: "Vista cobrador", icon: Smartphone },
@@ -1363,7 +1472,19 @@ const InsuranceCollections = () => {
     { id: "Novedades", label: "Novedades", icon: ClipboardList },
     { id: "Totales", label: "Totales", icon: Calculator },
     { id: "Rendicion", label: "Rendición", icon: ShieldCheck },
+    { id: "Usuarios", label: "Usuarios", icon: UserPlus },
   ];
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.id === "Usuarios") return isAdminUser;
+    if (isOfficeUser) return true;
+    return ["CobradorMovil", "Cobranza", "Recibos", "Novedades", "Rendicion"].includes(item.id);
+  });
+
+  useEffect(() => {
+    if (!visibleNavItems.some((item) => item.id === activeSection)) {
+      setActiveSection(visibleNavItems[0]?.id || "CobradorMovil");
+    }
+  }, [activeSection, visibleNavItems]);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -1376,6 +1497,9 @@ const InsuranceCollections = () => {
             <div className="min-w-0">
               <h1 className="text-xl font-semibold leading-tight sm:text-2xl">Sistema de afiliados y cobranza</h1>
               <p className="text-sm text-muted-foreground">Base de datos, cobranza mensual, recibos, totales y rendición</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {currentUserProfile?.nombre || userEmail} · {userRole || "sin rol"}{currentCollectorName ? ` · ${currentCollectorName}` : ""}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -1383,24 +1507,27 @@ const InsuranceCollections = () => {
               <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Mes</Label>
               <Input id="active-month" type="month" value={activeMonth} onChange={(event) => setActiveMonth(event.target.value || currentMonth())} className="h-8 w-36 border-0 p-0 shadow-none focus-visible:ring-0" />
             </div>
-            <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => openAffiliateForm()}>
+            {isOfficeUser && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => openAffiliateForm()}>
               <Plus className="h-4 w-4" />
               Nuevo afiliado
-            </Button>
-            <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground sm:w-auto sm:px-4">
+            </Button>}
+            {isOfficeUser && <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground sm:w-auto sm:px-4">
               <Upload className="h-4 w-4" />
               Importar CSV cobranza
               <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
-            </label>
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportAffiliatesCsv}>
+            </label>}
+            {isOfficeUser && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportAffiliatesCsv}>
               <Download className="h-4 w-4" />
               Exportar base
-            </Button>
+            </Button>}
             <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
               Cargar online
             </Button>
             <Button type="button" variant="command" className="w-full sm:w-auto" onClick={saveCloudSnapshot} disabled={cloudBusy}>
               Guardar online
+            </Button>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => signOut()}>
+              Cerrar sesión
             </Button>
           </div>
         </div>
@@ -1485,7 +1612,7 @@ const InsuranceCollections = () => {
         </section>
 
         <nav className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 sm:flex sm:flex-wrap">
-          {navItems.map(({ id, label, icon: Icon }) => (
+          {visibleNavItems.map(({ id, label, icon: Icon }) => (
             <Button key={id} type="button" className="justify-start sm:justify-center" variant={activeSection === id ? "command" : "ghost"} onClick={() => setActiveSection(id)}>
               <Icon className="h-4 w-4" />
               {label}
@@ -1624,7 +1751,7 @@ const InsuranceCollections = () => {
                 <p className="text-sm text-muted-foreground">Búsqueda rápida de tickets pendientes para cobrar desde el celular.</p>
               </div>
               <div className="grid gap-3 border-b p-3 sm:grid-cols-[1fr_1fr] sm:p-4">
-                <div className="space-y-1">
+                {isOfficeUser && <div className="space-y-1">
                   <Label htmlFor="mobile-collector">Cobrador</Label>
                   <select
                     id="mobile-collector"
@@ -1635,7 +1762,7 @@ const InsuranceCollections = () => {
                     <option value="todos">Todos</option>
                     {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
-                </div>
+                </div>}
                 <div className="space-y-1">
                   <Label htmlFor="mobile-search">Buscar</Label>
                   <div className="relative">
@@ -2168,7 +2295,7 @@ const InsuranceCollections = () => {
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Nombre y apellido</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value })} required /></div>
-                <div className="space-y-2"><Label>Cobrador</Label><select value={receiptForm.collector} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
+                <div className="space-y-2"><Label>Cobrador</Label><select value={isOfficeUser ? receiptForm.collector : currentCollectorName} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} disabled={!isOfficeUser} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{(isOfficeUser ? collectors : [currentCollectorName]).filter(Boolean).map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
                 <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => setReceiptForm({ ...receiptForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
                 <div className="space-y-2"><Label>Mes que paga</Label><Input type="month" value={receiptForm.paidMonth} onChange={(event) => setReceiptForm({ ...receiptForm, paidMonth: event.target.value })} /></div>
                 <div className="space-y-2"><Label>Cant. de meses</Label><Input type="number" min="1" value={receiptForm.monthCount} onChange={(event) => setReceiptForm({ ...receiptForm, monthCount: event.target.value })} /></div>
@@ -2261,6 +2388,87 @@ const InsuranceCollections = () => {
                       <td className="px-3 py-3 text-right">{currency.format(item.receiptTransferAmount)}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {activeSection === "Usuarios" && isAdminUser && (
+          <section className="space-y-4">
+            <div className="rounded-md border bg-card p-3 sm:p-4">
+              <h2 className="font-semibold">Usuarios y roles</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Alta inicial de usuarios de cobranza. Los roles base son cobrador, oficina, oficina + cobrador y administrador.
+              </p>
+              <form className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_220px_auto]" onSubmit={saveUserProfile}>
+                <div className="space-y-1">
+                  <Label htmlFor="new-user-name">Nombre</Label>
+                  <Input id="new-user-name" value={userForm.nombre} onChange={(event) => setUserForm({ ...userForm, nombre: event.target.value })} required />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-user-email">Email</Label>
+                  <Input id="new-user-email" type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} required />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-user-password">Clave inicial</Label>
+                  <Input id="new-user-password" type="password" minLength={6} value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} required />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-user-role">Rol</Label>
+                  <select id="new-user-role" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={userForm.rol} onChange={(event) => setUserForm({ ...userForm, rol: event.target.value })}>
+                    {userRoleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1 md:col-span-2 xl:col-span-1">
+                  <Label htmlFor="new-user-collector">Cobrador asociado</Label>
+                  <select id="new-user-collector" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={userForm.collectorName} onChange={(event) => setUserForm({ ...userForm, collectorName: event.target.value })}>
+                    <option value="">Sin cobrador</option>
+                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                  </select>
+                </div>
+                <Button type="submit" variant="command" className="self-end" disabled={isSavingUser}>
+                  {isSavingUser ? "Guardando..." : "Crear usuario"}
+                </Button>
+              </form>
+              {userAdminStatus && <p className="mt-3 rounded-md bg-surface-subtle p-3 text-sm text-muted-foreground">{userAdminStatus}</p>}
+            </div>
+
+            <div className="overflow-x-auto rounded-md border bg-card">
+              <table className="w-full min-w-[920px] text-xs sm:text-sm">
+                <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-3 text-left">Usuario</th>
+                    <th className="px-3 py-3 text-left">Email</th>
+                    <th className="px-3 py-3 text-left">Rol</th>
+                    <th className="px-3 py-3 text-left">Cobrador asociado</th>
+                    <th className="px-3 py-3 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {userProfiles.map((profile) => (
+                    <tr key={profile.email}>
+                      <td className="px-3 py-3 font-medium">{profile.nombre || "-"}</td>
+                      <td className="px-3 py-3">{profile.email}</td>
+                      <td className="px-3 py-3">
+                        <select className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs" value={profile.rol || "cobrador"} onChange={(event) => updateUserProfile(profile, { rol: event.target.value })}>
+                          {userRoleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        <select className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs" value={profile.collector_name || ""} onChange={(event) => updateUserProfile(profile, { collector_name: event.target.value })}>
+                          <option value="">Sin cobrador</option>
+                          {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <Button type="button" size="sm" variant="outline" onClick={() => updateUserProfile(profile, { activo: !(profile.activo ?? true) })}>
+                          {(profile.activo ?? true) ? "Activo" : "Inactivo"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {userProfiles.length === 0 && <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={5}>Todavía no hay usuarios cargados o no se pudo leer la tabla de perfiles.</td></tr>}
                 </tbody>
               </table>
             </div>

@@ -21,7 +21,11 @@ const App = () => (
           <Routes>
             <Route
               path="/"
-              element={<InsuranceCollections />}
+              element={
+                <RequireUserProfile>
+                  <InsuranceCollections />
+                </RequireUserProfile>
+              }
             />
             <Route
               path="/compras"
@@ -31,7 +35,14 @@ const App = () => (
                 </RequireUserProfile>
               }
             />
-            <Route path="/cobranza" element={<InsuranceCollections />} />
+            <Route
+              path="/cobranza"
+              element={
+                <RequireUserProfile>
+                  <InsuranceCollections />
+                </RequireUserProfile>
+              }
+            />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
