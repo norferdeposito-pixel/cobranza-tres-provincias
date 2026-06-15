@@ -631,6 +631,10 @@ const InsuranceCollections = () => {
     setCloudStatus(`Datos online cargados. Ultima actualizacion: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
   };
 
+  useEffect(() => {
+    void loadCloudSnapshot();
+  }, []);
+
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
 
   const getPendingTickets = (affiliateId: string) => {
