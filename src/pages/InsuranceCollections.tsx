@@ -863,7 +863,7 @@ const InsuranceCollections = () => {
         ? mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector)
         : normalizeCollectorName(row.affiliate.collector || "OFICINA") === currentCollectorName)
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
-      .sort((a, b) => b.pending - a.pending || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
+      .sort((a, b) => a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR") || b.pending - a.pending);
   }, [activeMonth, currentCollectorName, isOfficeUser, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
 
   const mobileSelectedAffiliate = useMemo(() => {
@@ -960,6 +960,7 @@ const InsuranceCollections = () => {
     setCollectionTickets(String(Math.max(1, getPendingTickets(affiliate.id))));
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
+    setActiveSection("Cobranza");
   };
 
   const saveMobileNote = () => {
@@ -1864,29 +1865,29 @@ const InsuranceCollections = () => {
                   </div>
                 </div>
               </div>
-              <div className="grid gap-3 p-3 sm:p-4">
+              <div className="grid gap-2 p-2 sm:p-3">
                 {mobileCollectorRows.slice(0, 40).map(({ affiliate, pending }) => {
                   const selected = mobileSelectedAffiliateId === affiliate.id || selectedMonthlyAffiliate?.id === affiliate.id;
                   return (
                     <button
                       key={affiliate.id}
                       type="button"
-                      className={`rounded-md border p-3 text-left transition hover:bg-accent ${selected ? "border-primary bg-primary/5" : "bg-background"}`}
+                      className={`rounded-md border px-3 py-2 text-left transition hover:bg-accent ${selected ? "border-primary bg-primary/5" : "bg-background"}`}
                       onClick={() => openMobileCollection(affiliate)}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-semibold leading-tight">{affiliate.fullName}</p>
+                          <p className="text-sm font-semibold leading-tight">{affiliate.fullName}</p>
                           <p className="mt-1 text-xs text-muted-foreground">Póliza {affiliate.policyNumber} · {affiliate.plan} · Dep. {affiliate.dependency || "-"}</p>
-                          {isOfficeUser && <p className="mt-1 text-xs text-muted-foreground">Cobrador: {affiliate.collector || "OFICINA"}</p>}
+                          {canUseManualSync && <p className="mt-1 text-xs text-muted-foreground">Cobrador: {affiliate.collector || "OFICINA"}</p>}
                         </div>
-                        <div className="shrink-0 rounded-md bg-surface-subtle px-3 py-2 text-center">
-                          <p className="text-xl font-semibold">{pending}</p>
+                        <div className="shrink-0 rounded-md bg-surface-subtle px-2.5 py-1.5 text-center">
+                          <p className="text-lg font-semibold leading-tight">{pending}</p>
                           <p className="text-[10px] uppercase text-muted-foreground">pend.</p>
                         </div>
                       </div>
                       {affiliate.request?.trim() && (
-                        <p className="mt-3 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-xs font-semibold text-red-950">Pedido: {affiliate.request}</p>
+                        <p className="mt-2 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-xs font-semibold text-red-950">Pedido: {affiliate.request}</p>
                       )}
                     </button>
                   );
