@@ -675,11 +675,6 @@ const InsuranceCollections = () => {
     await saveCloudSnapshot({ affiliates: nextAffiliates });
   };
 
-  const textFromButton = (button: HTMLButtonElement) => {
-    const field = button.parentElement?.querySelector("textarea, input") as HTMLTextAreaElement | HTMLInputElement | null;
-    return field?.value || "";
-  };
-
   const loadCloudSnapshot = async () => {
     setCloudBusy(true);
     setCloudStatus("Cargando datos online...");
@@ -1798,13 +1793,13 @@ const InsuranceCollections = () => {
                       <td className="w-96 px-3 py-3">
                         <div className="flex items-start gap-2">
                           <Textarea className="min-h-20 text-xs sm:text-sm" value={item.request || ""} onChange={(event) => updateAffiliateRequest(item.id, event.target.value)} placeholder="Pedir info" />
-                          <Button type="button" size="sm" variant="outline" onClick={(event) => saveRequestOrNews(item.id, { request: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => saveRequestOrNews(item.id, { request: item.request || "" })} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
                       <td className="w-96 px-3 py-3">
                         <div className="flex items-start gap-2">
                           <Textarea className="min-h-20 text-xs sm:text-sm" value={item.latestNews || ""} onChange={(event) => updateAffiliateNews(item.id, event.target.value)} placeholder="Respuesta / novedad" />
-                          <Button type="button" size="sm" variant="outline" onClick={(event) => saveRequestOrNews(item.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => saveRequestOrNews(item.id, { latestNews: item.latestNews || "" })} disabled={cloudBusy}>Guardar</Button>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1939,7 +1934,7 @@ const InsuranceCollections = () => {
                         onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
                         placeholder="Dato informado o motivo"
                       />
-                      <Button type="button" variant="command" onClick={(event) => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
+                      <Button type="button" variant="command" onClick={() => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: selectedMonthlyAffiliate.latestNews || "" })} disabled={cloudBusy}>Guardar</Button>
                     </div>
                   </div>
                 </div>
@@ -2372,7 +2367,7 @@ const InsuranceCollections = () => {
                           onChange={(event) => updateAffiliateNews(selectedMonthlyAffiliate.id, event.target.value)}
                           placeholder="Completar dato solicitado o explicar por qué no se pudo"
                         />
-                        <Button type="button" variant="command" className="mt-2" onClick={(event) => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>Guardar</Button>
+                        <Button type="button" variant="command" className="mt-2" onClick={() => saveRequestOrNews(selectedMonthlyAffiliate.id, { latestNews: selectedMonthlyAffiliate.latestNews || "" })} disabled={cloudBusy}>Guardar</Button>
                       </div>
                     </div>
                   )}
@@ -2453,7 +2448,7 @@ const InsuranceCollections = () => {
                       onChange={(event) => updateAffiliateNews(affiliate.id, event.target.value)}
                       placeholder="Respuesta del cobrador o dato informado"
                     />
-                    <Button type="button" variant="command" onClick={(event) => saveRequestOrNews(affiliate.id, { latestNews: textFromButton(event.currentTarget) })} disabled={cloudBusy}>
+                    <Button type="button" variant="command" onClick={() => saveRequestOrNews(affiliate.id, { latestNews: affiliate.latestNews || "" })} disabled={cloudBusy}>
                       Guardar
                     </Button>
                     <Button
