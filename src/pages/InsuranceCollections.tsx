@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Banknote,
   Calculator,
@@ -559,6 +559,8 @@ const InsuranceCollections = () => {
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const autoSaveTimer = useRef<number | null>(null);
 
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
@@ -610,6 +612,17 @@ const InsuranceCollections = () => {
     setCloudStatus(`Guardado online ${new Date().toLocaleString("es-AR")}`);
   };
 
+  const saveCloudSnapshotSilent = async () => {
+    const { error } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(), updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) {
+      setCloudStatus(`No se pudo sincronizar online: ${error.message}`);
+      return;
+    }
+    setCloudStatus(`Sincronizado online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
   const loadCloudSnapshot = async () => {
     setCloudBusy(true);
     setCloudStatus("Cargando datos online...");
@@ -625,14 +638,34 @@ const InsuranceCollections = () => {
     }
     if (!data?.data) {
       setCloudStatus("Todavia no hay datos guardados online.");
+      setCloudReady(true);
       return;
     }
     applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
     setCloudStatus(`Datos online cargados. Ultima actualizacion: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
+    setCloudReady(true);
   };
 
   useEffect(() => {
     void loadCloudSnapshot();
+  }, []);
+
+  useEffect(() => {
+    if (!cloudReady) return;
+    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = window.setTimeout(() => {
+      void saveCloudSnapshotSilent();
+    }, 1200);
+    return () => {
+      if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    };
+  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadCloudSnapshot();
+    }, 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
