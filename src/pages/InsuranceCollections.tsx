@@ -778,6 +778,29 @@ const InsuranceCollections = () => {
       .sort((a, b) => b.pendingTickets - a.pendingTickets || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
   }, [activeMonth, affiliates, monthlyItems, selectedCollectorName, ticketCollections]);
 
+  const selectedCollectorStats = useMemo(() => {
+    const affiliateIds = new Set(selectedCollectorPortfolio.map((row) => row.affiliate.id));
+    const collections = ticketCollections.filter((item) => item.month === activeMonth && affiliateIds.has(item.affiliateId));
+    const cashCollections = collections.filter((item) => item.paymentMethod === "E");
+    const transferCollections = collections.filter((item) => item.paymentMethod === "T");
+    const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value || 0) * collection.ticketsCharged;
+    const notesForCollector = notes
+      .filter((item) => item.month === activeMonth && affiliateIds.has(item.affiliateId))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      cashTickets: cashCollections.reduce((sum, item) => sum + item.ticketsCharged, 0),
+      cashAmount: cashCollections.reduce((sum, item) => sum + amountFor(item), 0),
+      transferTickets: transferCollections.reduce((sum, item) => sum + item.ticketsCharged, 0),
+      transferAmount: transferCollections.reduce((sum, item) => sum + amountFor(item), 0),
+      pendingAmount: selectedCollectorPortfolio.reduce((sum, item) => sum + item.pendingAmount, 0),
+      requestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim()).length,
+      unansweredRequestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim() && !item.affiliate.latestNews.trim()).length,
+      answeredRequestCount: selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim() && item.affiliate.latestNews.trim()).length,
+      newsCount: notesForCollector.length,
+      latestNotes: notesForCollector.slice(0, 6),
+    };
+  }, [activeMonth, affiliatesById, notes, selectedCollectorPortfolio, ticketCollections]);
+
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
     setCollectionPolicy(affiliate.policyNumber);
@@ -1752,15 +1775,79 @@ const InsuranceCollections = () => {
               </div>
 
               {selectedCollectorSummary && (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <SummaryBox label="Afiliados" value={String(selectedCollectorSummary.affiliates)} />
                   <SummaryBox label="Tickets recibidos" value={String(selectedCollectorSummary.tickets)} />
                   <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
                   <SummaryBox label="Tickets pendientes" value={String(selectedCollectorSummary.pendingTickets)} />
+                  <SummaryBox label="Monto asignado" value={currency.format(selectedCollectorSummary.assignedAmount)} />
                   <SummaryBox label="Cobrado" value={currency.format(selectedCollectorSummary.chargedAmount)} />
+                  <SummaryBox label="Pendiente $" value={currency.format(selectedCollectorStats.pendingAmount)} />
+                  <SummaryBox label="Efectividad" value={`${selectedCollectorSummary.effectiveness.toFixed(1)}%`} />
+                  <SummaryBox label="Efectivo" value={currency.format(selectedCollectorStats.cashAmount)} />
+                  <SummaryBox label="Transferencia" value={currency.format(selectedCollectorStats.transferAmount)} />
+                  <SummaryBox label="Comisión" value={currency.format(selectedCollectorSummary.commissionAmount)} />
                   <SummaryBox label="A rendir" value={currency.format(selectedCollectorSummary.amountToRender)} />
                 </div>
               )}
+
+              {selectedCollectorSummary && (
+                <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                  <div className="rounded-md border bg-surface-subtle p-3">
+                    <p className="text-sm font-medium text-muted-foreground">Comisión del cobrador</p>
+                    <p className="mt-2 text-2xl font-semibold">{selectedCollectorSummary.appliedCommissionRate}%</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Base {selectedCollectorSummary.commissionBase}%{selectedCollectorSummary.bonusEnabled ? ` · Premio al ${selectedCollectorSummary.bonusThreshold}%: ${selectedCollectorSummary.bonusAchieved ? "logrado" : "pendiente"}` : " · Sin premio"}
+                    </p>
+                  </div>
+                  <div className="rounded-md border bg-surface-subtle p-3">
+                    <p className="text-sm font-medium text-muted-foreground">Tickets por forma de pago</p>
+                    <p className="mt-2 text-lg font-semibold">E: {selectedCollectorStats.cashTickets} · T: {selectedCollectorStats.transferTickets}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Importes separados en efectivo y transferencia.</p>
+                  </div>
+                  <div className="rounded-md border bg-surface-subtle p-3">
+                    <p className="text-sm font-medium text-muted-foreground">Pedidos y novedades</p>
+                    <p className="mt-2 text-lg font-semibold">{selectedCollectorStats.unansweredRequestCount} pedidos sin responder</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{selectedCollectorStats.answeredRequestCount} respondidos · {selectedCollectorStats.newsCount} novedades cargadas.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border bg-card p-3">
+                  <h4 className="font-semibold">Pedidos pendientes del cobrador</h4>
+                  <div className="mt-3 space-y-2">
+                    {selectedCollectorPortfolio.filter((item) => item.affiliate.request.trim() && !item.affiliate.latestNews.trim()).slice(0, 6).map(({ affiliate, pendingTickets }) => (
+                      <div key={`request-${affiliate.id}`} className="rounded-md bg-surface-subtle px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <strong>{affiliate.fullName}</strong>
+                          <span>{pendingTickets} pend.</span>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{affiliate.request}</p>
+                      </div>
+                    ))}
+                    {selectedCollectorStats.unansweredRequestCount === 0 && <p className="text-sm text-muted-foreground">No hay pedidos pendientes para este cobrador.</p>}
+                  </div>
+                </div>
+                <div className="rounded-md border bg-card p-3">
+                  <h4 className="font-semibold">Últimas novedades</h4>
+                  <div className="mt-3 space-y-2">
+                    {selectedCollectorStats.latestNotes.map((note) => {
+                      const affiliate = affiliatesById.get(note.affiliateId);
+                      return (
+                        <div key={`collector-note-${note.id}`} className="rounded-md bg-surface-subtle px-3 py-2 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <strong>{affiliate?.fullName || "Afiliado"}</strong>
+                            <span>{new Date(note.date).toLocaleDateString("es-AR")}</span>
+                          </div>
+                          <p className="mt-1 text-muted-foreground">{note.text}</p>
+                        </div>
+                      );
+                    })}
+                    {selectedCollectorStats.latestNotes.length === 0 && <p className="text-sm text-muted-foreground">Sin novedades cargadas para este cobrador.</p>}
+                  </div>
+                </div>
+              </div>
 
               <div className="mt-4 overflow-x-auto rounded-md border">
                 <table className="w-full min-w-[1120px] text-xs sm:text-sm">
