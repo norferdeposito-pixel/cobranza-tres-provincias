@@ -1880,7 +1880,7 @@ const InsuranceCollections = () => {
                 </div>
               </div>
               <div className="grid gap-2 p-2 sm:p-3">
-                {mobileCollectorRows.slice(0, 40).map(({ affiliate, pending }) => {
+                {mobileCollectorRows.map(({ affiliate, pending }) => {
                   const selected = mobileSelectedAffiliateId === affiliate.id || selectedMonthlyAffiliate?.id === affiliate.id;
                   return (
                     <button
