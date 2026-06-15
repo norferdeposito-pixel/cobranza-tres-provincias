@@ -1516,6 +1516,19 @@ const InsuranceCollections = () => {
     return ["CobradorMovil", "Cobranza", "Recibos", "Pedidos", "Novedades", "Rendicion"].includes(item.id);
   });
 
+  const forceUppercaseInput = (event: React.FormEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    const type = target instanceof HTMLInputElement ? target.type : "textarea";
+    if (["email", "password", "number", "date", "month", "time"].includes(type)) return;
+    const upperValue = target.value.toLocaleUpperCase("es-AR");
+    if (target.value === upperValue) return;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    target.value = upperValue;
+    if (start !== null && end !== null) target.setSelectionRange(start, end);
+  };
+
   useEffect(() => {
     if (!visibleNavItems.some((item) => item.id === activeSection)) {
       setActiveSection(visibleNavItems[0]?.id || "CobradorMovil");
@@ -1523,7 +1536,7 @@ const InsuranceCollections = () => {
   }, [activeSection, visibleNavItems]);
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen bg-background text-foreground" onInputCapture={forceUppercaseInput}>
       <div className="border-b bg-card">
         <div className="flex w-full flex-col gap-4 px-3 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -1843,7 +1856,7 @@ const InsuranceCollections = () => {
                         </div>
                       </div>
                       {affiliate.request?.trim() && (
-                        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">Pedido: {affiliate.request}</p>
+                        <p className="mt-3 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-xs font-semibold text-red-950">Pedido: {affiliate.request}</p>
                       )}
                     </button>
                   );
@@ -1869,7 +1882,7 @@ const InsuranceCollections = () => {
               )}
 
               {selectedMonthlyAffiliate?.request?.trim() && (
-                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <div className="mt-3 rounded-md border border-red-300 bg-red-100 p-3 text-sm text-red-950">
                   <p className="font-semibold">Pedido obligatorio</p>
                   <p className="mt-1">{selectedMonthlyAffiliate.request}</p>
                   <div className="mt-3 space-y-1">
@@ -2300,7 +2313,7 @@ const InsuranceCollections = () => {
                   <strong>{selectedMonthlyAffiliate.fullName}</strong>
                   <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
                   {selectedMonthlyAffiliate.request?.trim() && (
-                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">
+                    <div className="mt-3 rounded-md border border-red-300 bg-red-100 p-3 text-red-950">
                       <p className="font-semibold">Pedido pendiente para el cobrador</p>
                       <p className="mt-1">{selectedMonthlyAffiliate.request}</p>
                       <div className="mt-3 space-y-1">
@@ -2368,14 +2381,14 @@ const InsuranceCollections = () => {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{affiliate.fullName}</p>
-                        <span className={`rounded px-2 py-1 text-xs font-semibold ${answered ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                        <span className={`rounded px-2 py-1 text-xs font-semibold ${answered ? "bg-emerald-50 text-emerald-700" : "bg-red-600 text-white"}`}>
                           {answered ? "Respondido" : "Pendiente"}
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Poliza {affiliate.policyNumber || "-"} - {affiliate.plan} - Dep. {affiliate.dependency || "-"} - Cobrador {affiliate.collector || "OFICINA"}
                       </p>
-                      <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                      <p className="mt-2 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-sm font-semibold text-red-950">
                         {affiliate.request}
                       </p>
                     </div>
