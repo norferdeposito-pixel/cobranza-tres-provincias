@@ -1878,7 +1878,7 @@ const InsuranceCollections = () => {
                         <div className="min-w-0">
                           <p className="font-semibold leading-tight">{affiliate.fullName}</p>
                           <p className="mt-1 text-xs text-muted-foreground">Póliza {affiliate.policyNumber} · {affiliate.plan} · Dep. {affiliate.dependency || "-"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Cobrador: {affiliate.collector || "OFICINA"}</p>
+                          {isOfficeUser && <p className="mt-1 text-xs text-muted-foreground">Cobrador: {affiliate.collector || "OFICINA"}</p>}
                         </div>
                         <div className="shrink-0 rounded-md bg-surface-subtle px-3 py-2 text-center">
                           <p className="text-xl font-semibold">{pending}</p>
