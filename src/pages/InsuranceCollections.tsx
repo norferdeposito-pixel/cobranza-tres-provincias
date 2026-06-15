@@ -568,6 +568,7 @@ const InsuranceCollections = () => {
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
   const [mobileCollector, setMobileCollector] = useState("todos");
   const [mobileSearch, setMobileSearch] = useState("");
+  const [mobileTicketFilter, setMobileTicketFilter] = useState<"pending" | "all" | "paid">("pending");
   const [mobileSelectedAffiliateId, setMobileSelectedAffiliateId] = useState("");
   const [mobileNoteText, setMobileNoteText] = useState("");
   const [receiptForm, setReceiptForm] = useState({
@@ -858,13 +859,13 @@ const InsuranceCollections = () => {
         monthly,
         pending: getPendingTickets(affiliate.id),
       }))
-      .filter((row) => row.pending > 0)
+      .filter((row) => mobileTicketFilter === "all" || (mobileTicketFilter === "pending" ? row.pending > 0 : row.pending === 0 && (row.monthly.tickets || 0) > 0))
       .filter((row) => isOfficeUser
         ? mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector)
         : normalizeCollectorName(row.affiliate.collector || "OFICINA") === currentCollectorName)
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
       .sort((a, b) => a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR") || b.pending - a.pending);
-  }, [activeMonth, currentCollectorName, isOfficeUser, mobileCollector, mobileSearch, monthlyRows, ticketCollections]);
+  }, [activeMonth, currentCollectorName, isOfficeUser, mobileCollector, mobileSearch, mobileTicketFilter, monthlyRows, ticketCollections]);
 
   const mobileSelectedAffiliate = useMemo(() => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
@@ -957,7 +958,7 @@ const InsuranceCollections = () => {
     setMobileSelectedAffiliateId(affiliate.id);
     setCollectionPolicy(affiliate.policyNumber);
     setCollectionPlan(affiliate.plan);
-    setCollectionTickets(String(Math.max(1, getPendingTickets(affiliate.id))));
+    setCollectionTickets(String(Math.max(0, getPendingTickets(affiliate.id))));
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
     setActiveSection("Cobranza");
@@ -1838,7 +1839,7 @@ const InsuranceCollections = () => {
                 <h2 className="font-semibold">Vista cobrador</h2>
                 <p className="text-sm text-muted-foreground">Búsqueda rápida de tickets pendientes para cobrar desde el celular.</p>
               </div>
-              <div className="grid gap-3 border-b p-3 sm:grid-cols-[1fr_1fr] sm:p-4">
+              <div className="grid gap-3 border-b p-3 sm:grid-cols-2 md:grid-cols-3 sm:p-4">
                 {isOfficeUser && <div className="space-y-1">
                   <Label htmlFor="mobile-collector">Cobrador</Label>
                   <select
@@ -1864,6 +1865,19 @@ const InsuranceCollections = () => {
                     />
                   </div>
                 </div>
+                <div className="space-y-1">
+                  <Label htmlFor="mobile-ticket-filter">Mostrar</Label>
+                  <select
+                    id="mobile-ticket-filter"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={mobileTicketFilter}
+                    onChange={(event) => setMobileTicketFilter(event.target.value as "pending" | "all" | "paid")}
+                  >
+                    <option value="pending">Pendientes</option>
+                    <option value="all">Todas</option>
+                    <option value="paid">Cobradas</option>
+                  </select>
+                </div>
               </div>
               <div className="grid gap-2 p-2 sm:p-3">
                 {mobileCollectorRows.slice(0, 40).map(({ affiliate, pending }) => {
@@ -1883,7 +1897,7 @@ const InsuranceCollections = () => {
                         </div>
                         <div className="shrink-0 rounded-md bg-surface-subtle px-2.5 py-1.5 text-center">
                           <p className="text-lg font-semibold leading-tight">{pending}</p>
-                          <p className="text-[10px] uppercase text-muted-foreground">pend.</p>
+                          <p className="text-[10px] uppercase text-muted-foreground">{pending > 0 ? "pend." : "cobr."}</p>
                         </div>
                       </div>
                       {affiliate.request?.trim() && (
