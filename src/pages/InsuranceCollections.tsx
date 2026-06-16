@@ -561,6 +561,9 @@ const InsuranceCollections = () => {
   const [affiliateForm, setAffiliateForm] = useState<AffiliateForm>(emptyAffiliateForm);
   const [noteAffiliateId, setNoteAffiliateId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [newsAffiliateQuery, setNewsAffiliateQuery] = useState("");
+  const [newsAffiliateId, setNewsAffiliateId] = useState("");
+  const [newsText, setNewsText] = useState("");
   const [collectionPolicy, setCollectionPolicy] = useState("");
   const [collectionPlan, setCollectionPlan] = useState<PlanType>("A 238");
   const [collectionTickets, setCollectionTickets] = useState("1");
@@ -1055,6 +1058,14 @@ const InsuranceCollections = () => {
     if (isOfficeUser) return true;
     return normalizeCollectorName(item.collector || "") === currentCollectorName;
   });
+  const newsAffiliateOptions = useMemo(() => {
+    const normalized = newsAffiliateQuery.trim().toLocaleUpperCase("es-AR");
+    return affiliates
+      .filter((affiliate) => visibleAffiliateIds.has(affiliate.id))
+      .filter((affiliate) => !normalized || `${affiliate.fullName} ${affiliate.policyNumber} ${affiliate.plan} ${affiliate.dependency || ""}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "es-AR"))
+      .slice(0, 80);
+  }, [affiliates, newsAffiliateQuery, visibleAffiliateIds]);
   const visibleTotalToRender = isOfficeUser ? totalToRender : selectedCollectorStats.reportRenditionAmount;
   const visibleTotalLabel = isOfficeUser ? "Cobrado menos comision" : "Tu cobranza menos comision";
   const requestRows = useMemo(() => {
@@ -1110,6 +1121,22 @@ const InsuranceCollections = () => {
     ]);
     setNoteAffiliateId(null);
     setNoteText("");
+  };
+
+  const saveDirectNews = (event: FormEvent) => {
+    event.preventDefault();
+    if (!newsAffiliateId || !newsText.trim()) return;
+    setNotes((current) => [
+      {
+        id: `note-${Date.now()}`,
+        affiliateId: newsAffiliateId,
+        month: activeMonth,
+        date: new Date().toISOString(),
+        text: newsText.trim(),
+      },
+      ...current,
+    ]);
+    setNewsText("");
   };
 
   const saveAffiliate = (event: FormEvent) => {
@@ -2480,6 +2507,48 @@ const InsuranceCollections = () => {
               <p className="text-sm text-muted-foreground">Texto libre cargado por afiliado o ticket. Período {activeMonth}.</p>
             </div>
             <div className="border-b bg-surface-subtle px-3 py-2 text-xs text-muted-foreground sm:hidden">Deslizá la tabla hacia los costados para leer todas las novedades.</div>
+            <form className="grid gap-3 border-b bg-surface-subtle p-3 sm:p-4 lg:grid-cols-[1fr_1fr_2fr_auto] lg:items-end" onSubmit={saveDirectNews}>
+              <div className="space-y-1">
+                <Label htmlFor="news-affiliate-search">Buscar afiliado</Label>
+                <Input
+                  id="news-affiliate-search"
+                  value={newsAffiliateQuery}
+                  onChange={(event) => setNewsAffiliateQuery(event.target.value)}
+                  placeholder="Nombre, poliza o plan"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="news-affiliate">Afiliado</Label>
+                <select
+                  id="news-affiliate"
+                  value={newsAffiliateId}
+                  onChange={(event) => setNewsAffiliateId(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  required
+                >
+                  <option value="">Seleccionar</option>
+                  {newsAffiliateOptions.map((affiliate) => (
+                    <option key={affiliate.id} value={affiliate.id}>
+                      {affiliate.fullName} - {affiliate.policyNumber || "-"} - {affiliate.plan}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="news-text">Novedad</Label>
+                <Textarea
+                  id="news-text"
+                  className="min-h-20"
+                  value={newsText}
+                  onChange={(event) => setNewsText(event.target.value)}
+                  placeholder="Escribi la novedad del afiliado"
+                  required
+                />
+              </div>
+              <Button type="submit" variant="command" disabled={!newsAffiliateId || !newsText.trim()}>
+                Guardar novedad
+              </Button>
+            </form>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[860px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
