@@ -706,7 +706,7 @@ export const Cotizaciones = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   {isAdmin && (
                     <Button size="sm" variant="outline" type="button" className="border-destructive/40 text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
-                      <Trash2 className="h-4 w-4" /> Quitar de cotizaciones
+                      <Trash2 className="h-4 w-4" /> Quitar cotización
                     </Button>
                   )}
                   {isAdmin && (
