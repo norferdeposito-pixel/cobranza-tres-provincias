@@ -705,7 +705,7 @@ export const Cotizaciones = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {isAdmin && (
-                    <Button size="sm" variant="outline" type="button" title="Quitar item de Cotizaciones" className="border-destructive/40 text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
+                    <Button size="sm" variant="outline" type="button" title="Quitar item del modulo Cotizaciones" className="border-destructive/40 text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
                       <Trash2 className="h-4 w-4" /> Quitar cotización
                     </Button>
                   )}
