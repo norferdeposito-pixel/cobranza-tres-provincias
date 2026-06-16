@@ -787,8 +787,8 @@ export const Cotizaciones = () => {
                                 </Button>
                               )}
                               {isAdmin && (
-                                <Button size="sm" variant="ghost" type="button" onClick={() => eliminarCotizacion(cot)}>
-                                  <Trash2 className="h-3 w-3" />
+                                <Button size="sm" variant="ghost" type="button" className="text-destructive hover:text-destructive" onClick={() => eliminarCotizacion(cot)}>
+                                  <Trash2 className="h-3 w-3" /> Eliminar
                                 </Button>
                               )}
                             </div>
