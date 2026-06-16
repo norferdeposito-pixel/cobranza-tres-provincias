@@ -403,6 +403,27 @@ export const Cotizaciones = () => {
     await syncEstadoItem(cot.item_id);
   };
 
+  const quitarItemDeCotizaciones = async (item: ItemRow) => {
+    if (!isAdmin) return;
+    if (!confirm("¿Quitar este ítem del módulo Cotizaciones?")) return;
+    const { error: cotError } = await supabase.from("cotizaciones_items" as any).delete().eq("item_id", item.id);
+    if (cotError) {
+      toast({ title: "Error", description: cotError.message, variant: "destructive" });
+      return;
+    }
+    const { error: itemError } = await supabase
+      .from("pedido_items")
+      .update({ estado_cotizacion: null } as any)
+      .eq("id", item.id);
+    if (itemError) {
+      toast({ title: "No se pudo actualizar el ítem", description: itemError.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Ítem quitado de Cotizaciones" });
+    setExpanded((current) => current === item.id ? null : current);
+    await loadAll();
+  };
+
   const enviarAPedido = async (item: ItemRow) => {
     if (!isAdmin) return;
     const cots = cotsByItem.get(item.id) || [];
@@ -691,6 +712,11 @@ export const Cotizaciones = () => {
                   {isAdmin && elegida && (
                     <Button size="sm" variant="command" type="button" onClick={() => enviarAPedido(item)}>
                       <Send className="h-4 w-4" /> {estado === "enviado_a_pedido" ? "Actualizar pedido" : "Enviar a pedido"}
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <Button size="sm" variant="ghost" type="button" className="text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
+                      <Trash2 className="h-4 w-4" /> Quitar
                     </Button>
                   )}
                   <Button size="sm" variant="ghost" type="button" onClick={() => setExpanded(isExpanded ? null : item.id)}>
