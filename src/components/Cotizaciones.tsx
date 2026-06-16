@@ -705,6 +705,11 @@ export const Cotizaciones = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {isAdmin && (
+                    <Button size="sm" variant="outline" type="button" className="border-destructive/40 text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
+                      <Trash2 className="h-4 w-4" /> Quitar de cotizaciones
+                    </Button>
+                  )}
+                  {isAdmin && (
                     <Button size="sm" variant="outline" type="button" onClick={() => openNew(item.id)}>
                       <Plus className="h-4 w-4" /> Nueva cotización
                     </Button>
@@ -712,11 +717,6 @@ export const Cotizaciones = () => {
                   {isAdmin && elegida && (
                     <Button size="sm" variant="command" type="button" onClick={() => enviarAPedido(item)}>
                       <Send className="h-4 w-4" /> {estado === "enviado_a_pedido" ? "Actualizar pedido" : "Enviar a pedido"}
-                    </Button>
-                  )}
-                  {isAdmin && (
-                    <Button size="sm" variant="ghost" type="button" className="text-destructive hover:text-destructive" onClick={() => quitarItemDeCotizaciones(item)}>
-                      <Trash2 className="h-4 w-4" /> Quitar
                     </Button>
                   )}
                   <Button size="sm" variant="ghost" type="button" onClick={() => setExpanded(isExpanded ? null : item.id)}>
