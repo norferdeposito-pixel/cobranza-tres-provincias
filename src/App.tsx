@@ -23,7 +23,7 @@ const App = () => (
               path="/"
               element={
                 <RequireUserProfile>
-                  <InsuranceCollections />
+                  <Index />
                 </RequireUserProfile>
               }
             />

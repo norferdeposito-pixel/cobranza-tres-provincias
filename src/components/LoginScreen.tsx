@@ -27,13 +27,12 @@ export const LoginScreen = () => {
       >
         <div className="space-y-4 text-center">
           <img
-            src="/gestion-san-miguel-logo.png"
-            alt="Gestion San Miguel"
-            className="mx-auto h-24 w-24 object-contain"
+            src="/norfer-logo.svg"
+            alt="NORFER - Industrias en movimiento"
+            className="mx-auto h-auto w-full max-w-[300px]"
           />
           <div>
-            <p className="text-3xl font-extrabold tracking-normal text-foreground">GESTION SAN MIGUEL</p>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">Sistema de gestion y cobranza</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
           </div>
           <div className="h-px bg-border" />
         </div>
