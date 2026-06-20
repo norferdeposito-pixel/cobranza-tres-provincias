@@ -1181,8 +1181,20 @@ const InsuranceCollections = () => {
 
     const officeCollectorFor = (dependency: string) => {
       const counts = officeByDependency.get(dependency);
-      if (!counts || counts.size === 0) return "OFICINA";
-      return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es-AR"))[0][0];
+      if (counts && counts.size > 0) {
+        return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es-AR"))[0][0];
+      }
+      const officeFallbackByDependency: Record<string, string> = {
+        "238": "SAN MARTIN OFICINA",
+        "241": "MEDRANO OFICINA",
+        "261": "SANTA ROSA OFICINA",
+        "268": "TUNUYAN OFICINA",
+        "269": "SAN MARTIN OFICINA",
+        "313": "SAN MARTIN OFICINA",
+        "327": "TUNUYAN OFICINA",
+        "328": "SAN MARTIN OFICINA",
+      };
+      return officeFallbackByDependency[dependency] || "OFICINA";
     };
 
     const previousFor = (incoming: Affiliate) => {
