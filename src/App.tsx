@@ -8,8 +8,10 @@ import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { UserProfileProvider } from "@/contexts/UserProfileContext";
 import { RequireUserProfile } from "@/components/RequireUserProfile";
+import { isCollectionsApp } from "@/lib/appBrand";
 
 const queryClient = new QueryClient();
+const collectionsDeployment = isCollectionsApp();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -23,7 +25,7 @@ const App = () => (
               path="/"
               element={
                 <RequireUserProfile>
-                  <Index />
+                  {collectionsDeployment ? <InsuranceCollections /> : <Index />}
                 </RequireUserProfile>
               }
             />

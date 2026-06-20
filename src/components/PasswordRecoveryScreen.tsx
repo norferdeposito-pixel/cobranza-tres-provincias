@@ -4,8 +4,10 @@ import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isCollectionsApp } from "@/lib/appBrand";
 
 export const PasswordRecoveryScreen = () => {
+  const collectionsBrand = isCollectionsApp();
   const { clearPasswordRecovery, signOut } = useCurrentUserProfile();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -44,7 +46,14 @@ export const PasswordRecoveryScreen = () => {
     <main className="grid min-h-screen place-items-center bg-background p-4 text-foreground">
       <form onSubmit={handleSubmit} className="w-full max-w-md space-y-5 rounded-md border border-border bg-card p-7 shadow-command">
         <div className="space-y-5">
-          <img src="/norfer-logo.svg" alt="NORFER - Industrias en movimiento" className="mx-auto h-auto w-full max-w-[300px]" />
+          {collectionsBrand ? (
+            <div className="space-y-2 text-center">
+              <img src="/gestion-san-miguel-logo.png" alt="Gestión San Miguel" className="mx-auto h-24 w-24 object-contain" />
+              <p className="text-2xl font-semibold">GESTIÓN SAN MIGUEL</p>
+            </div>
+          ) : (
+            <img src="/norfer-logo.svg" alt="NORFER - Industrias en movimiento" className="mx-auto h-auto w-full max-w-[300px]" />
+          )}
           <div className="h-px bg-border" />
         </div>
         <div className="space-y-1">

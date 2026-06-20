@@ -3,8 +3,10 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isCollectionsApp } from "@/lib/appBrand";
 
 export const LoginScreen = () => {
+  const collectionsBrand = isCollectionsApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,13 +28,20 @@ export const LoginScreen = () => {
         className="w-full max-w-md space-y-5 rounded-md border border-border bg-card p-7 shadow-command"
       >
         <div className="space-y-4 text-center">
-          <img
-            src="/norfer-logo.svg"
-            alt="NORFER - Industrias en movimiento"
-            className="mx-auto h-auto w-full max-w-[300px]"
-          />
+          {collectionsBrand ? (
+            <div className="space-y-2">
+              <img src="/gestion-san-miguel-logo.png" alt="Gestión San Miguel" className="mx-auto h-24 w-24 object-contain" />
+              <p className="text-2xl font-semibold">GESTIÓN SAN MIGUEL</p>
+            </div>
+          ) : (
+            <img
+              src="/norfer-logo.svg"
+              alt="NORFER - Industrias en movimiento"
+              className="mx-auto h-auto w-full max-w-[300px]"
+            />
+          )}
           <div>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">Gestión de órdenes de compra</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">{collectionsBrand ? "Sistema de afiliados y cobranza" : "Gestión de órdenes de compra"}</p>
           </div>
           <div className="h-px bg-border" />
         </div>
