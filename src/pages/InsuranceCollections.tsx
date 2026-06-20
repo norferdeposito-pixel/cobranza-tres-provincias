@@ -289,7 +289,7 @@ const isCollectionPlanCode = (rawPlan: string) => {
 const looksLikeTresProvinciasCollection = (rows: string[][]) => {
   return rows.some((row) => {
     const headers = row.map((cell) => normalizeHeader(cell));
-    return headers.includes("POLIZA") && headers.includes("APELLIDO") && headers.includes("NOMBRE") && headers.some((cell) => cell.includes("COBRADOR"));
+    return headers.includes("POLIZA") && headers.includes("PLAN") && headers.includes("APELLIDO") && headers.includes("NOMBRE");
   });
 };
 
@@ -1161,14 +1161,61 @@ const InsuranceCollections = () => {
     setAffiliateDialogOpen(false);
   };
 
-  const importAffiliates = (imported: Affiliate[]) => {
+  const prepareMonthlyImport = (imported: Affiliate[]) => {
     const currentById = new Map(affiliates.map((item) => [item.id, item]));
-    const merged = imported.map((item) => {
-      const previous = currentById.get(item.id);
-      return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: item.dependency || previous.dependency, collector: previous.collector || item.collector || "OFICINA", request: previous.request || item.request || "", latestNews: previous.latestNews || item.latestNews || "", selectedForMonthly: true } : item;
+    const currentByPolicy = new Map<string, Affiliate[]>();
+    const officeByDependency = new Map<string, Map<string, number>>();
+
+    affiliates.forEach((item) => {
+      const policyRows = currentByPolicy.get(item.policyNumber) || [];
+      policyRows.push(item);
+      currentByPolicy.set(item.policyNumber, policyRows);
+
+      const collector = normalizeCollectorName(item.collector || "OFICINA");
+      const dependency = item.dependency || "SIN DEFINIR";
+      if (!collector.includes("OFICINA")) return;
+      const counts = officeByDependency.get(dependency) || new Map<string, number>();
+      counts.set(collector, (counts.get(collector) || 0) + 1);
+      officeByDependency.set(dependency, counts);
     });
-    const importedCollectors = uniqueSorted(merged.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
-    setAffiliates(merged);
+
+    const officeCollectorFor = (dependency: string) => {
+      const counts = officeByDependency.get(dependency);
+      if (!counts || counts.size === 0) return "OFICINA";
+      return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es-AR"))[0][0];
+    };
+
+    const previousFor = (incoming: Affiliate) => {
+      const exact = currentById.get(incoming.id);
+      if (exact) return exact;
+      const samePolicy = currentByPolicy.get(incoming.policyNumber) || [];
+      if (samePolicy.length === 1) return samePolicy[0];
+      return samePolicy.find((item) => item.plan === incoming.plan)
+        || samePolicy.find((item) => item.fullName === incoming.fullName)
+        || null;
+    };
+
+    return imported.map((incoming) => {
+      const previous = previousFor(incoming);
+      if (previous) return { ...incoming, id: previous.id, collector: previous.collector || officeCollectorFor(incoming.dependency) };
+      return { ...incoming, collector: officeCollectorFor(incoming.dependency) };
+    });
+  };
+
+  const importAffiliates = (imported: Affiliate[]) => {
+    const prepared = prepareMonthlyImport(imported);
+    const currentById = new Map(affiliates.map((item) => [item.id, item]));
+    const merged = prepared.map((item) => {
+      const previous = currentById.get(item.id);
+      return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: item.dependency || previous.dependency, collector: previous.collector || item.collector || "OFICINA", request: previous.request || item.request || "", latestNews: previous.latestNews || item.latestNews || "", selectedForMonthly: true } : { ...item, selectedForMonthly: true };
+    });
+    const importedIds = new Set(merged.map((item) => item.id));
+    const retained = affiliates
+      .filter((item) => !importedIds.has(item.id))
+      .map((item) => ({ ...item, selectedForMonthly: false }));
+    const nextAffiliates = [...merged, ...retained];
+    const importedCollectors = uniqueSorted(nextAffiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
+    setAffiliates(nextAffiliates);
     setCollectorRecords((current) => normalizeCollectorRecords([
       ...current,
       ...importedCollectors.map((collector) => defaultCollectorConfig(collector)),
@@ -1179,13 +1226,14 @@ const InsuranceCollections = () => {
         .filter((item) => item.selectedForMonthly)
         .map((item) => ({ month: activeMonth, affiliateId: item.id, tickets: Math.max(0, item.sourceTickets || 0) })),
     ]);
-    setImportMessage(`Base importada: ${merged.length} afiliados cargados por dependencia y cobrador para ${activeMonth}.`);
+    setImportMessage(`Cobranza importada: ${merged.length} afiliados para ${activeMonth}. La base general conserva ${retained.length} pólizas sin tickets en este listado.`);
     setAffiliateImportPreview(null);
   };
 
   const previewAffiliates = (imported: Affiliate[], source: string, duplicatedCount: number) => {
-    setAffiliateImportPreview(buildAffiliateImportPreview(imported, affiliates, source, duplicatedCount));
-    setImportMessage(`${source}: ${imported.length} afiliados listos para revisar antes de aplicar.`);
+    const prepared = prepareMonthlyImport(imported);
+    setAffiliateImportPreview(buildAffiliateImportPreview(prepared, affiliates, source, duplicatedCount));
+    setImportMessage(`${source}: ${prepared.length} afiliados listos para revisar antes de aplicar.`);
   };
 
   const importCsv = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1666,6 +1714,7 @@ const InsuranceCollections = () => {
                     {affiliateImportPreview.newRows.slice(0, 12).map((item) => (
                       <div key={`new-${item.id}`} className="rounded-md bg-surface-subtle px-3 py-2 text-sm">
                         <strong>{item.fullName || "Sin nombre"}</strong>
+                        <p className="mt-1 text-xs font-medium text-foreground">Dep. {item.dependency || "-"} Â· Destino inicial: {item.collector || "OFICINA"}</p>
                         <p className="text-xs text-muted-foreground">Póliza {item.policyNumber || "-"} · {item.plan} · {item.sourceTickets || 0} tickets · {currency.format(item.value)}</p>
                       </div>
                     ))}
