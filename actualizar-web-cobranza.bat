@@ -14,8 +14,8 @@ if errorlevel 1 (
 )
 
 git remote set-url origin https://github.com/norferdeposito-pixel/cobranza-tres-provincias.git
-git config user.name "jgcpys-2534"
-git config user.email "jgcpys@gmail.com"
+git config user.name "norferdeposito-pixel"
+git config user.email "282736621+norferdeposito-pixel@users.noreply.github.com"
 
 echo.
 echo Preparando version para publicar...
