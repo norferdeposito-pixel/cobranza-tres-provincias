@@ -1499,6 +1499,92 @@ const InsuranceCollections = () => {
     URL.revokeObjectURL(url);
   };
 
+  const exportCollectorReportExcel = async () => {
+    if (!selectedCollectorSummary) return;
+    const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
+    const metricLabel = (value: string) => ({ value, fontWeight: "bold" as const, backgroundColor: "#E8F0F8" });
+    const headerCell = (value: string) => ({
+      value,
+      fontWeight: "bold" as const,
+      backgroundColor: "#0B5CAD",
+      textColor: "#FFFFFF",
+      align: "center" as const,
+      wrap: true,
+    });
+
+    const summaryData: any[][] = [
+      [{ value: "REPORTE DE COBRANZA", columnSpan: 2, fontWeight: "bold", fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" }],
+      [metricLabel("Cobrador"), selectedCollectorName || "COBRADOR"],
+      [metricLabel("Período"), activeMonth],
+      [metricLabel("Dependencias"), selectedCollectorSummary.dependencies.join(", ") || "-"],
+      [null, null],
+      [headerCell("Indicador"), headerCell("Resultado")],
+      [metricLabel("Afiliados asignados"), selectedCollectorSummary.affiliates],
+      [metricLabel("Tickets recibidos"), selectedCollectorSummary.tickets],
+      [metricLabel("Tickets cobrados"), selectedCollectorSummary.chargedTickets],
+      [metricLabel("Tickets devueltos"), selectedCollectorSummary.pendingTickets],
+      [metricLabel("Tickets cobrados en efectivo"), selectedCollectorStats.cashTickets],
+      [metricLabel("Monto tickets en efectivo"), moneyCell(selectedCollectorStats.cashAmount)],
+      [metricLabel("Tickets cobrados por transferencia"), selectedCollectorStats.transferTickets],
+      [metricLabel("Monto tickets por transferencia"), moneyCell(selectedCollectorStats.transferAmount)],
+      [metricLabel("Recibos cobrados"), selectedCollectorStats.receiptCount],
+      [metricLabel("Monto recibos"), moneyCell(selectedCollectorStats.receiptAmount)],
+      [metricLabel("Recibos en efectivo"), selectedCollectorStats.receiptCashCount],
+      [metricLabel("Monto recibos en efectivo"), moneyCell(selectedCollectorStats.receiptCashAmount)],
+      [metricLabel("Recibos por transferencia"), selectedCollectorStats.receiptTransferCount],
+      [metricLabel("Monto recibos por transferencia"), moneyCell(selectedCollectorStats.receiptTransferAmount)],
+      [metricLabel("Cobranza total en efectivo"), moneyCell(selectedCollectorStats.totalCashAmount)],
+      [metricLabel("Cobranza total por transferencia"), moneyCell(selectedCollectorStats.totalTransferAmount)],
+      [metricLabel("Monto total cobrado"), moneyCell(selectedCollectorStats.totalCollectionAmount)],
+      [metricLabel("Porcentaje de comisión"), { value: selectedCollectorSummary.appliedCommissionRate / 100, type: Number, format: "0%", align: "right" }],
+      [metricLabel("Monto comisión"), moneyCell(selectedCollectorStats.reportCommissionAmount)],
+      [metricLabel("Monto a rendir"), moneyCell(selectedCollectorStats.reportRenditionAmount)],
+      [metricLabel("Monto pendiente/devoluciones"), moneyCell(selectedCollectorStats.pendingAmount)],
+    ];
+
+    const returnedData: any[][] = [
+      [
+        headerCell("Nombre y apellido"),
+        headerCell("Póliza"),
+        headerCell("Plan"),
+        headerCell("Dependencia"),
+        headerCell("Tickets devueltos"),
+        headerCell("Monto pendiente"),
+      ],
+      ...selectedCollectorStats.returnedRows.map(({ affiliate, pendingTickets, pendingAmount }) => [
+        affiliate.fullName,
+        affiliate.policyNumber || "-",
+        affiliate.plan,
+        affiliate.dependency || "-",
+        pendingTickets,
+        moneyCell(pendingAmount),
+      ]),
+    ];
+
+    if (selectedCollectorStats.returnedRows.length === 0) {
+      returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 6, align: "center", fontWeight: "bold" }]);
+    }
+
+    const safeCollectorName = (selectedCollectorName || "cobrador").toLocaleLowerCase("es-AR").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    await writeExcelFile([
+      {
+        data: summaryData,
+        sheet: "Resumen",
+        columns: [{ width: 38 }, { width: 24 }],
+        showGridLines: false,
+        stickyRowsCount: 1,
+      },
+      {
+        data: returnedData,
+        sheet: "Devoluciones",
+        columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 20 }, { width: 20 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+    ]).toFile(`reporte-cobranza-${safeCollectorName}-${activeMonth}.xlsx`);
+  };
+
   const addTransferRender = () => {
     const amount = parseNumber(transferRenderForm.amount);
     if (amount <= 0 && !transferRenderForm.proof.trim()) return;
@@ -2997,7 +3083,10 @@ const InsuranceCollections = () => {
 
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCollectorReportOpen(false)}>Cerrar</Button>
-                <Button type="button" variant="command" onClick={() => window.print()}>Imprimir</Button>
+                <Button type="button" variant="command" onClick={exportCollectorReportExcel}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Descargar Excel
+                </Button>
               </div>
             </div>
           )}
