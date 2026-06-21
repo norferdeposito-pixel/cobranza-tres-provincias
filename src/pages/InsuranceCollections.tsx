@@ -4,7 +4,6 @@ import {
   Calculator,
   CheckSquare,
   ClipboardList,
-  Download,
   FileSpreadsheet,
   Smartphone,
   Users,
@@ -1483,20 +1482,116 @@ const InsuranceCollections = () => {
     setReceiptForm({ receiptNumber: "", fullName: "", collector: selectedCollectorName || "OFICINA", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
   };
 
-  const exportAffiliatesCsv = () => {
-    const escapeCsv = (value: string | number | boolean) => {
-      const text = String(value ?? "");
-      return /[",\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+  const exportAffiliatesExcel = async () => {
+    const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const monthlyByAffiliate = new Map(
+      monthlyItems
+        .filter((item) => item.month === activeMonth)
+        .map((item) => [item.affiliateId, item.tickets]),
+    );
+    const rows = affiliates
+      .map((affiliate) => {
+        const tickets = Math.max(0, monthlyByAffiliate.get(affiliate.id) || 0);
+        return { affiliate, tickets, monthlyAmount: tickets * affiliate.value };
+      })
+      .sort((a, b) => Number(a.tickets === 0) - Number(b.tickets === 0)
+        || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
+
+    const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
+    const headerCell = (value: string) => ({ value, fontWeight: "bold" as const, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" as const, wrap: true });
+    const titleCell = (value: string, columnSpan: number) => ({ value, columnSpan, fontWeight: "bold" as const, fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" as const });
+    const statusCell = (tickets: number) => tickets > 0
+      ? { value: "EN COBRANZA", fontWeight: "bold" as const, textColor: "#166534", backgroundColor: "#DCFCE7", align: "center" as const }
+      : { value: "SIN TICKETS", fontWeight: "bold" as const, textColor: "#991B1B", backgroundColor: "#FEE2E2", align: "center" as const };
+
+    const baseData: any[][] = [
+      [titleCell("BASE GENERAL DE AFILIADOS", 9)],
+      [{ value: `Período: ${activeMonth}`, columnSpan: 9, fontWeight: "bold", align: "center" }],
+      [{ value: `${affiliates.length} afiliados · ${rows.filter((row) => row.tickets > 0).length} con tickets · ${rows.filter((row) => row.tickets === 0).length} sin tickets`, columnSpan: 9, align: "center" }],
+      [null],
+      [
+        headerCell("Nombre y apellido"),
+        headerCell("Póliza"),
+        headerCell("Plan"),
+        headerCell("Dependencia"),
+        headerCell("Cobrador"),
+        headerCell("Valor por ticket"),
+        headerCell("Tickets del mes"),
+        headerCell("Total mensual"),
+        headerCell("Estado"),
+      ],
+      ...rows.map(({ affiliate, tickets, monthlyAmount }) => [
+        affiliate.fullName,
+        affiliate.policyNumber || "-",
+        affiliate.plan,
+        affiliate.dependency || "-",
+        affiliate.collector || "OFICINA",
+        moneyCell(affiliate.value),
+        { value: tickets, type: Number, align: "center" },
+        moneyCell(monthlyAmount),
+        statusCell(tickets),
+      ]),
+    ];
+
+    const buildSummary = (groupName: "collector" | "dependency") => {
+      const groups = new Map<string, { affiliates: number; withTickets: number; withoutTickets: number; tickets: number; amount: number }>();
+      rows.forEach(({ affiliate, tickets, monthlyAmount }) => {
+        const key = groupName === "collector" ? affiliate.collector || "OFICINA" : affiliate.dependency || "SIN DEFINIR";
+        const current = groups.get(key) || { affiliates: 0, withTickets: 0, withoutTickets: 0, tickets: 0, amount: 0 };
+        current.affiliates += 1;
+        current.withTickets += tickets > 0 ? 1 : 0;
+        current.withoutTickets += tickets === 0 ? 1 : 0;
+        current.tickets += tickets;
+        current.amount += monthlyAmount;
+        groups.set(key, current);
+      });
+      return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], "es-AR", { numeric: true }));
     };
-    const header = ["Nombre y apellido", "Numero de poliza", "Plan", "Valor", "Telefono", "Direccion", "Dependencia", "Cobrador", "Pedido", "Novedad", "Seleccionado mensual"].join(",");
-    const rows = affiliates.map((item) => [item.fullName, item.policyNumber, item.plan, item.value, item.phone, item.address, item.dependency || "001", item.collector || "OFICINA", item.request || "", item.latestNews || "", item.selectedForMonthly ? "SI" : "NO"].map(escapeCsv).join(","));
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "base-afiliados.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+
+    const summarySheet = (title: string, firstHeader: string, summaryRows: ReturnType<typeof buildSummary>): any[][] => [
+      [titleCell(title, 6)],
+      [{ value: `Período: ${activeMonth}`, columnSpan: 6, fontWeight: "bold", align: "center" }],
+      [null],
+      [headerCell(firstHeader), headerCell("Afiliados"), headerCell("Con tickets"), headerCell("Sin tickets"), headerCell("Tickets"), headerCell("Importe asignado")],
+      ...summaryRows.map(([name, summary]) => [
+        name,
+        summary.affiliates,
+        summary.withTickets,
+        summary.withoutTickets,
+        summary.tickets,
+        moneyCell(summary.amount),
+      ]),
+      [
+        { value: "TOTAL", fontWeight: "bold", backgroundColor: "#E8F0F8" },
+        { value: affiliates.length, fontWeight: "bold" },
+        { value: rows.filter((row) => row.tickets > 0).length, fontWeight: "bold" },
+        { value: rows.filter((row) => row.tickets === 0).length, fontWeight: "bold" },
+        { value: rows.reduce((sum, row) => sum + row.tickets, 0), fontWeight: "bold" },
+        { ...moneyCell(rows.reduce((sum, row) => sum + row.monthlyAmount, 0)), fontWeight: "bold" },
+      ],
+    ];
+
+    await writeExcelFile([
+      {
+        data: baseData,
+        sheet: "Base de afiliados",
+        columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 26 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 16 }],
+        orientation: "landscape",
+        stickyRowsCount: 5,
+      },
+      {
+        data: summarySheet("RESUMEN POR COBRADOR", "Cobrador", buildSummary("collector")),
+        sheet: "Por cobrador",
+        columns: [{ width: 30 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 20 }],
+        stickyRowsCount: 4,
+      },
+      {
+        data: summarySheet("RESUMEN POR DEPENDENCIA", "Dependencia", buildSummary("dependency")),
+        sheet: "Por dependencia",
+        columns: [{ width: 22 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 20 }],
+        stickyRowsCount: 4,
+      },
+    ]).toFile(`base-afiliados-${activeMonth}.xlsx`);
   };
 
   const exportCollectorReportExcel = async () => {
@@ -1755,9 +1850,9 @@ const InsuranceCollections = () => {
               Importar CSV cobranza
               <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
             </label>}
-            {isOfficeUser && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportAffiliatesCsv}>
-              <Download className="h-4 w-4" />
-              Exportar base
+            {isOfficeUser && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportAffiliatesExcel}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Exportar base Excel
             </Button>}
             {canUseManualSync && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
               Cargar online
