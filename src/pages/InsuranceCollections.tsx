@@ -1484,6 +1484,7 @@ const InsuranceCollections = () => {
 
   const exportAffiliatesExcel = async () => {
     const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const { getOrderOfSiblings, getSelfClosingTagMarkup, insertElementMarkupAccordingToOrderOfSiblings } = await import("write-excel-file/utility");
     const monthlyByAffiliate = new Map(
       monthlyItems
         .filter((item) => item.month === activeMonth)
@@ -1498,6 +1499,11 @@ const InsuranceCollections = () => {
         || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
 
     const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
+    const numberCell = (value: number) => ({ value, type: Number, format: "0", align: "right" as const });
+    const numericTextCell = (value: string, fallback = "-") => {
+      const clean = String(value || "").replace(/\D/g, "");
+      return clean ? numberCell(Number(clean)) : fallback;
+    };
     const headerCell = (value: string) => ({ value, fontWeight: "bold" as const, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" as const, wrap: true });
     const titleCell = (value: string, columnSpan: number) => ({ value, columnSpan, fontWeight: "bold" as const, fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" as const });
     const statusCell = (tickets: number) => tickets > 0
@@ -1522,12 +1528,12 @@ const InsuranceCollections = () => {
       ],
       ...rows.map(({ affiliate, tickets, monthlyAmount }) => [
         affiliate.fullName,
-        affiliate.policyNumber || "-",
+        numericTextCell(affiliate.policyNumber),
         affiliate.plan,
-        affiliate.dependency || "-",
+        numericTextCell(affiliate.dependency || ""),
         affiliate.collector || "OFICINA",
         moneyCell(affiliate.value),
-        { value: tickets, type: Number, align: "center" },
+        { ...numberCell(tickets), align: "center" },
         moneyCell(monthlyAmount),
         statusCell(tickets),
       ]),
@@ -1554,22 +1560,48 @@ const InsuranceCollections = () => {
       [null],
       [headerCell(firstHeader), headerCell("Afiliados"), headerCell("Con tickets"), headerCell("Sin tickets"), headerCell("Tickets"), headerCell("Importe asignado")],
       ...summaryRows.map(([name, summary]) => [
-        name,
-        summary.affiliates,
-        summary.withTickets,
-        summary.withoutTickets,
-        summary.tickets,
+        firstHeader === "Dependencia" ? numericTextCell(name, name) : name,
+        numberCell(summary.affiliates),
+        numberCell(summary.withTickets),
+        numberCell(summary.withoutTickets),
+        numberCell(summary.tickets),
         moneyCell(summary.amount),
       ]),
       [
         { value: "TOTAL", fontWeight: "bold", backgroundColor: "#E8F0F8" },
-        { value: affiliates.length, fontWeight: "bold" },
-        { value: rows.filter((row) => row.tickets > 0).length, fontWeight: "bold" },
-        { value: rows.filter((row) => row.tickets === 0).length, fontWeight: "bold" },
-        { value: rows.reduce((sum, row) => sum + row.tickets, 0), fontWeight: "bold" },
+        { ...numberCell(affiliates.length), fontWeight: "bold" },
+        { ...numberCell(rows.filter((row) => row.tickets > 0).length), fontWeight: "bold" },
+        { ...numberCell(rows.filter((row) => row.tickets === 0).length), fontWeight: "bold" },
+        { ...numberCell(rows.reduce((sum, row) => sum + row.tickets, 0)), fontWeight: "bold" },
         { ...moneyCell(rows.reduce((sum, row) => sum + row.monthlyAmount, 0)), fontWeight: "bold" },
       ],
     ];
+
+    const collectorSummaryRows = buildSummary("collector");
+    const dependencySummaryRows = buildSummary("dependency");
+    const filterRanges = [
+      `A5:I${5 + rows.length}`,
+      `A4:F${4 + collectorSummaryRows.length + 1}`,
+      `A4:F${4 + dependencySummaryRows.length + 1}`,
+    ];
+    const autoFilterFeature: any = {
+      files: {
+        transform: {
+          "xl/worksheets/sheet{id}.xml": {
+            transform: (content: string, _options: unknown, properties: { sheetIndex: number }) => {
+              const ref = filterRanges[properties.sheetIndex];
+              if (!ref) return content;
+              return insertElementMarkupAccordingToOrderOfSiblings(
+                content,
+                getSelfClosingTagMarkup("autoFilter", { ref }),
+                getOrderOfSiblings("xl/worksheets/sheet{id}.xml", "worksheet"),
+                "worksheet",
+              );
+            },
+          },
+        },
+      },
+    };
 
     await writeExcelFile([
       {
@@ -1580,18 +1612,18 @@ const InsuranceCollections = () => {
         stickyRowsCount: 5,
       },
       {
-        data: summarySheet("RESUMEN POR COBRADOR", "Cobrador", buildSummary("collector")),
+        data: summarySheet("RESUMEN POR COBRADOR", "Cobrador", collectorSummaryRows),
         sheet: "Por cobrador",
         columns: [{ width: 30 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 20 }],
         stickyRowsCount: 4,
       },
       {
-        data: summarySheet("RESUMEN POR DEPENDENCIA", "Dependencia", buildSummary("dependency")),
+        data: summarySheet("RESUMEN POR DEPENDENCIA", "Dependencia", dependencySummaryRows),
         sheet: "Por dependencia",
         columns: [{ width: 22 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 20 }],
         stickyRowsCount: 4,
       },
-    ]).toFile(`base-afiliados-${activeMonth}.xlsx`);
+    ], { features: [autoFilterFeature] }).toFile(`base-afiliados-${activeMonth}.xlsx`);
   };
 
   const exportCollectorReportExcel = async () => {
