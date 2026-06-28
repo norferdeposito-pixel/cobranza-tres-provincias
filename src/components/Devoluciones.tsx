@@ -37,7 +37,7 @@ const emptyForm = (): DevolucionForm => ({
   numeroOc: "",
   numeroFactura: "",
   numeroNc: "",
-  estado: "PENDIENTE",
+  estado: "EN CURSO",
   observaciones: "",
 });
 
@@ -127,12 +127,18 @@ const formatDate = (value?: string | null) => {
 };
 
 const estadoClass: Record<string, string> = {
-  PENDIENTE: "border-warning/40 bg-warning/20 text-warning-foreground",
+  "EN CURSO": "border-warning/40 bg-warning/20 text-warning-foreground",
   TERMINADO: "border-success/30 bg-success/10 text-success",
   ANULADO: "border-border bg-muted text-muted-foreground",
 };
 
-// Touchpoint: keeps Vercel deployment in sync after reconnecting the Git integration.
+const normalizeEstado = (estado?: string | null, numeroNc?: string | null) => {
+  if (upperText(numeroNc)) return "TERMINADO";
+  const cleanEstado = upperText(estado);
+  if (!cleanEstado || cleanEstado === "PENDIENTE") return "EN CURSO";
+  return cleanEstado;
+};
+
 export const Devoluciones = () => {
   const [rows, setRows] = useState<Devolucion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,15 +170,15 @@ export const Devoluciones = () => {
     const search = query.toLowerCase();
     return rows.filter((row) => {
       const matchesSearch = !search || `${row.proveedor || ""} ${row.numero_devolucion || ""} ${row.numero_oc || ""} ${row.numero_factura || ""} ${row.numero_nc || ""} ${row.observaciones || ""}`.toLowerCase().includes(search);
-      const matchesEstado = estadoFilter === "todos" || upperText(row.estado) === estadoFilter;
+      const matchesEstado = estadoFilter === "todos" || normalizeEstado(row.estado, row.numero_nc) === estadoFilter;
       return matchesSearch && matchesEstado;
     });
   }, [rows, query, estadoFilter]);
 
   const summary = {
     total: rows.length,
-    pendientes: rows.filter((row) => upperText(row.estado) === "PENDIENTE").length,
-    terminadas: rows.filter((row) => upperText(row.estado) === "TERMINADO").length,
+    enCurso: rows.filter((row) => normalizeEstado(row.estado, row.numero_nc) === "EN CURSO").length,
+    terminadas: rows.filter((row) => normalizeEstado(row.estado, row.numero_nc) === "TERMINADO").length,
   };
 
   const resetForm = () => {
@@ -189,7 +195,7 @@ export const Devoluciones = () => {
       numeroOc: row.numero_oc || "",
       numeroFactura: row.numero_factura || "",
       numeroNc: row.numero_nc || "",
-      estado: upperText(row.estado) || "PENDIENTE",
+      estado: normalizeEstado(row.estado, row.numero_nc),
       observaciones: row.observaciones || "",
     });
   };
@@ -205,7 +211,7 @@ export const Devoluciones = () => {
       numero_oc: upperText(form.numeroOc) || null,
       numero_factura: upperText(form.numeroFactura) || null,
       numero_nc: upperText(form.numeroNc) || null,
-      estado: upperText(form.estado) || "PENDIENTE",
+      estado: normalizeEstado(form.estado, form.numeroNc),
       observaciones: upperText(form.observaciones) || null,
     };
     const res = editingId
@@ -244,7 +250,7 @@ export const Devoluciones = () => {
       numero_oc: upperText(getFirstValue(row, ["n_oc", "numero_oc", "oc"])) || null,
       numero_factura: upperText(getFirstValue(row, ["n_factura", "numero_factura", "factura"])) || null,
       numero_nc: upperText(getFirstValue(row, ["n_nc", "numero_nc", "nc"])) || null,
-      estado: upperText(getFirstValue(row, ["estado"])) || "PENDIENTE",
+      estado: normalizeEstado(getFirstValue(row, ["estado"]), getFirstValue(row, ["n_nc", "numero_nc", "nc"])),
       observaciones: upperText(getFirstValue(row, ["observaciones", "obs"])) || null,
     })).filter((row) => row.fecha_devolucion && row.proveedor);
     if (payload.length === 0) {
@@ -265,7 +271,7 @@ export const Devoluciones = () => {
       <section className="grid gap-4 md:grid-cols-3">
         {[
           ["Total devoluciones", summary.total],
-          ["Pendientes", summary.pendientes],
+          ["En curso", summary.enCurso],
           ["Terminadas", summary.terminadas],
         ].map(([label, value]) => (
           <article key={label} className="rounded-md border bg-card p-5 shadow-command">
@@ -290,7 +296,7 @@ export const Devoluciones = () => {
           <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar proveedor, OC, factura, NC u observación" />
           <select value={estadoFilter} onChange={(event) => setEstadoFilter(event.target.value)} className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
             <option value="todos">Todos los estados</option>
-            <option value="PENDIENTE">Pendiente</option>
+            <option value="EN CURSO">En curso</option>
             <option value="TERMINADO">Terminado</option>
             <option value="ANULADO">Anulado</option>
           </select>
@@ -320,7 +326,7 @@ export const Devoluciones = () => {
                   <td className="px-5 py-4">{row.numero_oc || "-"}</td>
                   <td className="px-5 py-4">{row.numero_factura || "-"}</td>
                   <td className="px-5 py-4">{row.numero_nc || "-"}</td>
-                  <td className="px-5 py-4"><span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${estadoClass[upperText(row.estado)] || "border-border bg-secondary text-secondary-foreground"}`}>{row.estado || "-"}</span></td>
+                  <td className="px-5 py-4"><span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${estadoClass[normalizeEstado(row.estado, row.numero_nc)] || "border-border bg-secondary text-secondary-foreground"}`}>{normalizeEstado(row.estado, row.numero_nc)}</span></td>
                   <td className="max-w-[360px] px-5 py-4">{row.observaciones || "-"}</td>
                   <td className="px-5 py-4">
                     <div className="flex justify-end gap-2">
@@ -344,11 +350,11 @@ export const Devoluciones = () => {
           <div className="space-y-2"><Label htmlFor="dev-numero">N° devolución</Label><Input id="dev-numero" value={form.numeroDevolucion} onChange={(event) => setForm({ ...form, numeroDevolucion: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="dev-oc">N° OC</Label><Input id="dev-oc" value={form.numeroOc} onChange={(event) => setForm({ ...form, numeroOc: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="dev-factura">N° factura</Label><Input id="dev-factura" value={form.numeroFactura} onChange={(event) => setForm({ ...form, numeroFactura: event.target.value })} /></div>
-          <div className="space-y-2"><Label htmlFor="dev-nc">N° NC</Label><Input id="dev-nc" value={form.numeroNc} onChange={(event) => setForm({ ...form, numeroNc: event.target.value })} /></div>
+          <div className="space-y-2"><Label htmlFor="dev-nc">N° NC</Label><Input id="dev-nc" value={form.numeroNc} onChange={(event) => setForm({ ...form, numeroNc: event.target.value, estado: upperText(event.target.value) ? "TERMINADO" : form.estado })} /></div>
           <div className="space-y-2">
             <Label htmlFor="dev-estado">Estado</Label>
             <select id="dev-estado" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="PENDIENTE">PENDIENTE</option>
+              <option value="EN CURSO">EN CURSO</option>
               <option value="TERMINADO">TERMINADO</option>
               <option value="ANULADO">ANULADO</option>
             </select>
