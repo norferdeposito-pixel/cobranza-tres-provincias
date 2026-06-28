@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { nombre, email, password, rol, collectorName } = req.body || {};
+  const { nombre, email, password, rol, collectorName, permisos } = req.body || {};
   const cleanNombre = String(nombre || "").trim().toLocaleUpperCase("es-AR");
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanPassword = String(password || "");
@@ -88,6 +88,7 @@ export default async function handler(req, res) {
     email: cleanEmail,
     nombre: cleanNombre,
     rol: cleanRol,
+    permisos: Array.isArray(permisos) ? permisos.map((item) => String(item || "").trim()).filter(Boolean) : [],
     collector_name: String(collectorName || "").trim().toLocaleUpperCase("es-AR"),
     activo: true,
   };

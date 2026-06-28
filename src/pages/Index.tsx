@@ -67,6 +67,16 @@ type UsuarioForm = {
   email: string;
   password: string;
   rol: string;
+  permisos: string[];
+};
+
+type PerfilUsuario = {
+  id?: string;
+  nombre: string | null;
+  email: string;
+  rol: string | null;
+  permisos?: string[] | null;
+  activo?: boolean | null;
 };
 
 type PurchaseTotalBySupplier = {
@@ -549,7 +559,41 @@ const createEmptyItemForm = (): PedidoItemForm => ({
 });
 
 const createEmptySupplierForm = (): SupplierForm => ({ nombre: "", email: "", telefono: "", condicionPago: "", plazoPromedioDias: "" });
-const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "comercial" });
+const permissionOptions = [
+  { key: "ver_dashboard", label: "Ver dashboard" },
+  { key: "ver_pedidos", label: "Ver pedidos" },
+  { key: "crear_pedidos", label: "Crear pedidos" },
+  { key: "editar_pedidos", label: "Editar pedidos" },
+  { key: "cargar_recibidos", label: "Cargar recibidos" },
+  { key: "colocar_novedades", label: "Colocar novedades" },
+  { key: "ver_alertas", label: "Ver alertas" },
+  { key: "ver_cotizaciones", label: "Ver cotizaciones" },
+  { key: "ver_reportes", label: "Ver/generar reportes" },
+  { key: "ver_notas_credito", label: "Ver notas de crédito" },
+  { key: "cerrar_notas_credito", label: "Completar/cerrar NC" },
+  { key: "ver_clientes", label: "Ver clientes" },
+  { key: "ver_stock", label: "Ver stock" },
+  { key: "ver_devoluciones", label: "Ver devoluciones" },
+  { key: "ver_proveedores", label: "Ver proveedores" },
+  { key: "ver_usuarios", label: "Ver usuarios" },
+];
+
+const rolePermissionMap: Record<string, string[]> = {
+  admin: permissionOptions.map((item) => item.key),
+  compras: permissionOptions.map((item) => item.key),
+  comercial: ["ver_pedidos", "crear_pedidos", "ver_notas_credito", "ver_devoluciones"],
+  produccion: ["ver_pedidos", "crear_pedidos", "ver_notas_credito", "ver_devoluciones"],
+  vendedor: ["ver_pedidos", "crear_pedidos", "ver_notas_credito", "ver_devoluciones"],
+  consultor: ["ver_pedidos", "ver_reportes", "ver_cotizaciones", "ver_notas_credito"],
+  gerencia: ["ver_pedidos", "ver_reportes", "ver_cotizaciones", "ver_notas_credito"],
+  administracion: ["ver_notas_credito", "cerrar_notas_credito", "ver_clientes", "ver_devoluciones"],
+  contaduria: ["ver_pedidos", "ver_reportes", "ver_notas_credito", "ver_devoluciones"],
+  logistica: ["ver_pedidos", "crear_pedidos", "cargar_recibidos", "colocar_novedades", "ver_devoluciones"],
+  deposito: ["ver_pedidos", "crear_pedidos", "cargar_recibidos", "colocar_novedades", "ver_stock", "ver_devoluciones"],
+};
+
+const getDefaultPermissionsForRole = (rol: string) => rolePermissionMap[rol] || [];
+const createEmptyUsuarioForm = (): UsuarioForm => ({ nombre: "", email: "", password: "", rol: "comercial", permisos: getDefaultPermissionsForRole("comercial") });
 const createEmptyClienteNcForm = (): ClienteNcForm => ({ codigo: "", nombre: "", domicilio1: "", domicilio2: "", transporte: "" });
 const notaCreditoMotivos = [
   "ERROR DE MONEDA",
@@ -687,7 +731,9 @@ const Index = () => {
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [usuarioForm, setUsuarioForm] = useState<UsuarioForm>(() => createEmptyUsuarioForm());
+  const [usuarios, setUsuarios] = useState<PerfilUsuario[]>([]);
   const [isSavingUsuario, setIsSavingUsuario] = useState(false);
+  const [isSavingUsuarioPermisos, setIsSavingUsuarioPermisos] = useState<string | null>(null);
   const [clientesNc, setClientesNc] = useState<ClienteNc[]>([]);
   const [clienteNcForm, setClienteNcForm] = useState<ClienteNcForm>(() => createEmptyClienteNcForm());
   const [editingClienteNcId, setEditingClienteNcId] = useState<string | null>(null);
@@ -741,26 +787,30 @@ const Index = () => {
   const administracionRoles = ["administracion"];
   const contaduriaRoles = ["contaduria"];
   const logisticaRoles = ["deposito", "logistica"];
+  const currentPermissions = Array.isArray(currentUserProfile?.permisos) ? currentUserProfile.permisos : [];
+  const hasCustomPermissions = Array.isArray(currentUserProfile?.permisos);
+  const hasPermission = (permission: string, fallback: boolean) => hasCustomPermissions ? currentPermissions.includes(permission) : fallback;
   const isAdminRole = adminRoles.includes(userRol);
   const isVendedor = comercialRoles.includes(userRol);
   const isDeposito = logisticaRoles.includes(userRol);
-  const canSeePedidos = isAdminRole || isVendedor || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol) || isDeposito;
+  const canSeePedidos = hasPermission("ver_pedidos", isAdminRole || isVendedor || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol) || isDeposito);
   const isAdmin = isAdminRole || isVendedor; // controls cost columns visibility
   const canViewCosts = isAdminRole || isVendedor;
-  const canEditPedido = isAdminRole;
-  const canAddRecepcion = isAdminRole || isDeposito;
-  const canSeeAlertas = isAdminRole;
-  const canSeeReportes = isAdminRole || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol);
-  const canSeeProveedores = isAdminRole;
-  const canSeeUsuarios = isAdminRole;
-  const canSeeNotasCredito = isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol);
-  const canCloseNotasCredito = isAdminRole || administracionRoles.includes(userRol);
-  const canSeeClientesNc = isAdminRole || administracionRoles.includes(userRol);
-  const canCreatePedido = isAdminRole || isVendedor || isDeposito;
-  const canSendMessages = isAdminRole || isDeposito;
-  const canSeeCotizaciones = isAdminRole || consultorRoles.includes(userRol);
-  const canSeeStock = isAdminRole || isDeposito;
-  const canSeeDevoluciones = isAdminRole || isVendedor || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol) || isDeposito;
+  const canEditPedido = hasPermission("editar_pedidos", isAdminRole);
+  const canAddRecepcion = hasPermission("cargar_recibidos", isAdminRole || isDeposito);
+  const canSeeAlertas = hasPermission("ver_alertas", isAdminRole);
+  const canSeeReportes = hasPermission("ver_reportes", isAdminRole || consultorRoles.includes(userRol) || contaduriaRoles.includes(userRol));
+  const canSeeProveedores = hasPermission("ver_proveedores", isAdminRole);
+  const canSeeUsuarios = hasPermission("ver_usuarios", isAdminRole);
+  const canSeeNotasCredito = hasPermission("ver_notas_credito", isAdminRole || isVendedor || consultorRoles.includes(userRol) || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol));
+  const canCloseNotasCredito = hasPermission("cerrar_notas_credito", isAdminRole || administracionRoles.includes(userRol));
+  const canSeeClientesNc = hasPermission("ver_clientes", isAdminRole || administracionRoles.includes(userRol));
+  const canCreatePedido = hasPermission("crear_pedidos", isAdminRole || isVendedor || isDeposito);
+  const canSendMessages = hasPermission("colocar_novedades", isAdminRole || isDeposito);
+  const canSeeCotizaciones = hasPermission("ver_cotizaciones", isAdminRole || consultorRoles.includes(userRol));
+  const canSeeStock = hasPermission("ver_stock", isAdminRole || isDeposito);
+  const canSeeDevoluciones = hasPermission("ver_devoluciones", isAdminRole || isVendedor || administracionRoles.includes(userRol) || contaduriaRoles.includes(userRol) || isDeposito);
+  const canSeeDashboard = hasPermission("ver_dashboard", isAdminRole);
   const currentSeller = currentUserProfile?.nombre || "María";
   const visibleNavItems = navItems.filter((item) => {
     if (item.label === "Alertas") return canSeeAlertas;
@@ -773,7 +823,7 @@ const Index = () => {
     if (item.label === "Cotizaciones") return canSeeCotizaciones;
     if (item.label === "Stock") return canSeeStock;
     if (item.label === "Devoluciones") return canSeeDevoluciones;
-    if (item.label === "Dashboard") return isAdminRole;
+    if (item.label === "Dashboard") return canSeeDashboard;
     if (item.label === "Pedidos") return canSeePedidos;
     return true;
   });
@@ -915,6 +965,22 @@ const Index = () => {
     };
     loadNotasCredito();
   }, [canSeeNotasCredito, isPreviewMode]);
+
+  useEffect(() => {
+    const loadUsuarios = async () => {
+      if (!canSeeUsuarios || isPreviewMode) return;
+      const { data, error } = await supabase
+        .from("perfiles_usuarios" as any)
+        .select("id, nombre, email, rol, permisos, activo")
+        .order("nombre", { ascending: true });
+      if (error) {
+        setUsuarios([]);
+        return;
+      }
+      setUsuarios((data || []) as any);
+    };
+    loadUsuarios();
+  }, [canSeeUsuarios, isPreviewMode]);
 
   useEffect(() => {
     if (!selectedOrderId) {
@@ -2398,6 +2464,7 @@ Equipo NORFER`;
         email: safeText(usuarioForm.email),
         password: usuarioForm.password,
         rol: usuarioForm.rol,
+        permisos: usuarioForm.permisos,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -2409,10 +2476,35 @@ Equipo NORFER`;
     }
 
     setUsuarioForm(createEmptyUsuarioForm());
+    const { data: refreshedUsers } = await supabase
+      .from("perfiles_usuarios" as any)
+      .select("id, nombre, email, rol, permisos, activo")
+      .order("nombre", { ascending: true });
+    setUsuarios((refreshedUsers || []) as any);
     toast({
       title: result.userAlreadyExists ? "Perfil actualizado" : "Usuario creado",
       description: result.userAlreadyExists ? "El mail ya existía. Se actualizó nombre y rol; si no recuerda la contraseña, enviá recuperación desde Supabase." : "Ya puede iniciar sesión con el mail y contraseña cargados.",
     });
+  };
+
+  const togglePermission = (permissions: string[], permission: string) =>
+    permissions.includes(permission)
+      ? permissions.filter((item) => item !== permission)
+      : [...permissions, permission];
+
+  const updateUsuarioPermisos = async (usuario: PerfilUsuario, permisos: string[]) => {
+    setIsSavingUsuarioPermisos(usuario.email);
+    const { error } = await supabase
+      .from("perfiles_usuarios" as any)
+      .update({ permisos })
+      .eq("email", usuario.email);
+    setIsSavingUsuarioPermisos(null);
+    if (error) {
+      toast({ title: "No se pudieron guardar permisos", description: error.message, variant: "destructive" });
+      return;
+    }
+    setUsuarios((current) => current.map((item) => item.email === usuario.email ? { ...item, permisos } : item));
+    toast({ title: "Autorizaciones actualizadas" });
   };
 
   const updateNotaCreditoCodigo = async (codigoCliente: string) => {
@@ -3700,6 +3792,7 @@ Equipo NORFER`;
               </section>
             )}
             {activeSection === "Usuarios" && canSeeUsuarios && (
+              <section className="space-y-6">
               <section className="rounded-md border bg-card p-5 shadow-command">
                 <div className="flex flex-col gap-3 border-b pb-5 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -3723,7 +3816,10 @@ Equipo NORFER`;
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="user-role">Rol</Label>
-                    <select id="user-role" value={usuarioForm.rol} onChange={(event) => setUsuarioForm({ ...usuarioForm, rol: event.target.value })} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <select id="user-role" value={usuarioForm.rol} onChange={(event) => {
+                      const nextRole = event.target.value;
+                      setUsuarioForm({ ...usuarioForm, rol: nextRole, permisos: getDefaultPermissionsForRole(nextRole) });
+                    }} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                       <option value="comercial">Comercial / Producción</option>
                       <option value="consultor">Consultor / Gerencia</option>
                       <option value="administracion">Administración</option>
@@ -3733,6 +3829,30 @@ Equipo NORFER`;
                       <option value="admin">Admin</option>
                     </select>
                   </div>
+                  <div className="space-y-3 rounded-md border bg-surface-subtle p-4 md:col-span-2">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h4 className="font-semibold">Autorizaciones</h4>
+                        <p className="text-sm text-muted-foreground">Selecciona que puede ver o hacer este usuario.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => setUsuarioForm({ ...usuarioForm, permisos: permissionOptions.map((item) => item.key) })}>Tildar todo</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setUsuarioForm({ ...usuarioForm, permisos: [] })}>Destildar todo</Button>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {permissionOptions.map((permission) => (
+                        <label key={permission.key} className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium">
+                          <input
+                            type="checkbox"
+                            checked={usuarioForm.permisos.includes(permission.key)}
+                            onChange={() => setUsuarioForm({ ...usuarioForm, permisos: togglePermission(usuarioForm.permisos, permission.key) })}
+                          />
+                          {permission.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex items-end gap-3 md:col-span-2">
                     <Button type="submit" variant="command" disabled={isSavingUsuario}>
                       <UserPlus className="h-4 w-4" />
@@ -3740,6 +3860,50 @@ Equipo NORFER`;
                     </Button>
                   </div>
                 </form>
+              </section>
+              <section className="rounded-md border bg-card shadow-command">
+                <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Autorizaciones por usuario</h3>
+                    <p className="text-sm text-muted-foreground">Tilda o destilda permisos sin entrar a Supabase.</p>
+                  </div>
+                  <span className="rounded-md border bg-surface-subtle px-3 py-1 text-sm font-semibold text-muted-foreground">{usuarios.length}</span>
+                </div>
+                <div className="divide-y">
+                  {usuarios.map((usuario) => {
+                    const userPermissions = Array.isArray(usuario.permisos) ? usuario.permisos : getDefaultPermissionsForRole(normalizeRole(usuario.rol));
+                    const isSavingThisUser = isSavingUsuarioPermisos === usuario.email;
+                    return (
+                      <div key={usuario.email} className="space-y-3 p-5">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <h4 className="font-semibold">{usuario.nombre || usuario.email}</h4>
+                            <p className="text-sm text-muted-foreground">{usuario.email} - {usuario.rol || "sin rol"}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" variant="outline" disabled={isSavingThisUser} onClick={() => updateUsuarioPermisos(usuario, permissionOptions.map((item) => item.key))}>Tildar todo</Button>
+                            <Button type="button" size="sm" variant="outline" disabled={isSavingThisUser} onClick={() => updateUsuarioPermisos(usuario, [])}>Destildar todo</Button>
+                          </div>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          {permissionOptions.map((permission) => (
+                            <label key={`${usuario.email}-${permission.key}`} className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={userPermissions.includes(permission.key)}
+                                disabled={isSavingThisUser}
+                                onChange={() => updateUsuarioPermisos(usuario, togglePermission(userPermissions, permission.key))}
+                              />
+                              {permission.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {usuarios.length === 0 && <div className="p-8 text-center text-sm text-muted-foreground">No hay usuarios para mostrar.</div>}
+                </div>
+              </section>
               </section>
             )}
             {activeSection === "Reportes" && (

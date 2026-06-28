@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 export type CurrentUserProfile = {
   nombre: string;
   rol: string;
+  permisos?: string[] | null;
   collectorName?: string;
   active?: boolean;
 };
@@ -61,6 +62,7 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
           setCurrentUserProfile({
             nombre: d.nombre ?? "",
             rol: d.rol ?? "",
+            permisos: Array.isArray(d.permisos) ? d.permisos : null,
             collectorName: d.collector_name ?? d.cobrador ?? "",
             active: d.activo ?? d.active ?? true,
           });
