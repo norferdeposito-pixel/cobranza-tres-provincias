@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, Menu, MessageCircle, PackageCheck, Pencil, Plus, Printer, RotateCcw, Search, Send, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ClipboardList, Download, ExternalLink, Factory, FileText, FilePlus2, LayoutDashboard, LogOut, Menu, MessageCircle, PackageCheck, Paperclip, Pencil, Plus, Printer, RotateCcw, Search, Send, Trash2, Upload, UserPlus } from "lucide-react";
 import { Cotizaciones } from "@/components/Cotizaciones";
 import { Devoluciones } from "@/components/Devoluciones";
 import { StockModule } from "@/components/StockModule";
@@ -215,6 +215,16 @@ type PedidoAlerta = {
   estado: string;
 };
 
+type PedidoArchivo = {
+  id: string;
+  pedido_id: string | number;
+  nombre_archivo: string;
+  storage_path: string;
+  tipo_archivo?: string | null;
+  tamano_bytes?: number | null;
+  created_at?: string | null;
+};
+
 type PedidoNovedad = {
   id: string;
   pedido_id: string | number;
@@ -260,6 +270,8 @@ type AlertaListItem = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const pedidoArchivosBucket = "pedido-archivos";
+const pedidoArchivosAccept = ".pdf,.xls,.xlsx,.doc,.docx,.jpg,.jpeg,.png";
 
 const pedidoEstados = [
   "pedido_cargado",
@@ -651,6 +663,9 @@ const Index = () => {
   const [pedidoAlertas, setPedidoAlertas] = useState<PedidoAlerta[]>([]);
   const [pedidoNovedades, setPedidoNovedades] = useState<PedidoNovedad[]>([]);
   const [allPedidoNovedades, setAllPedidoNovedades] = useState<PedidoNovedad[]>([]);
+  const [pedidoArchivos, setPedidoArchivos] = useState<PedidoArchivo[]>([]);
+  const [selectedPedidoFiles, setSelectedPedidoFiles] = useState<File[]>([]);
+  const [isUploadingPedidoArchivo, setIsUploadingPedidoArchivo] = useState(false);
   const [novedadForm, setNovedadForm] = useState({ tipo: "general", mensaje: "", visibleVendedor: true });
   const [isSavingNovedad, setIsSavingNovedad] = useState(false);
   const [discountForm, setDiscountForm] = useState("");
@@ -906,6 +921,7 @@ const Index = () => {
       setPedidoItems([]);
       setPedidoAlertas([]);
       setPedidoNovedades([]);
+      setPedidoArchivos([]);
       return;
     }
 
@@ -918,12 +934,13 @@ const Index = () => {
         setPedidoItems(items);
         setPedidoAlertas(isActivePedidoForAlertas(selectedPedidoStatus) ? getDemoAlertas(selectedOrderId).filter((alerta) => !(isEntregaOriginalAlert(alerta.tipo) && safeText(selectedPedidoStatus).toLowerCase() === "recibido_parcial")) : []);
         setPedidoNovedades([]);
+        setPedidoArchivos([]);
         setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
         setIsLoadingItems(false);
         return;
       }
 
-      const [{ data, error }, { data: alertasData, error: alertasError }, { data: novedadesData }] = await Promise.all([
+      const [{ data, error }, { data: alertasData, error: alertasError }, { data: novedadesData }, { data: archivosData }] = await Promise.all([
         supabase
           .from("pedido_items")
           .select("id, descripcion, cantidad_pedida, cantidad_recibida, cantidad_pendiente, unidad, costo_unitario, moneda, cod_articulo, estado_entrega, estado_cotizacion")
@@ -937,6 +954,11 @@ const Index = () => {
         supabase
           .from("pedido_novedades" as any)
           .select("id, pedido_id, tipo, mensaje, visible_vendedor, created_by, created_at")
+          .eq("pedido_id", selectedOrderId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("pedido_archivos" as any)
+          .select("id, pedido_id, nombre_archivo, storage_path, tipo_archivo, tamano_bytes, created_at")
           .eq("pedido_id", selectedOrderId)
           .order("created_at", { ascending: false }),
       ]);
@@ -953,6 +975,7 @@ const Index = () => {
       setPedidoItems(items);
       setPedidoAlertas(isActivePedidoForAlertas(selectedPedidoStatus) ? ((alertasData || []) as PedidoAlerta[]).filter((alerta) => !(isEntregaOriginalAlert(alerta.tipo) && safeText(selectedPedidoStatus).toLowerCase() === "recibido_parcial")) : []);
       setPedidoNovedades((novedadesData || []) as any);
+      setPedidoArchivos((archivosData || []) as any);
       setReceptionForm({ itemId: items[0]?.id || "", quantity: "", date: today(), newEta: "", notes: "" });
       setIsLoadingItems(false);
     };
@@ -1459,6 +1482,80 @@ const Index = () => {
     );
   };
 
+  const buildPedidoArchivoPath = (pedidoId: string | number, file: File) => {
+    const extension = file.name.includes(".") ? file.name.split(".").pop() : "archivo";
+    const safeName = file.name
+      .replace(/\.[^/.]+$/, "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "archivo";
+    return `${pedidoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}.${extension}`;
+  };
+
+  const uploadPedidoFiles = async (pedidoId: string | number, files: File[]) => {
+    if (isPreviewMode || files.length === 0) return true;
+    setIsUploadingPedidoArchivo(true);
+    const insertedFiles: PedidoArchivo[] = [];
+
+    for (const file of files) {
+      const storagePath = buildPedidoArchivoPath(pedidoId, file);
+      const { error: uploadError } = await supabase.storage
+        .from(pedidoArchivosBucket)
+        .upload(storagePath, file, { contentType: file.type || "application/octet-stream", upsert: false });
+
+      if (uploadError) {
+        setIsUploadingPedidoArchivo(false);
+        toast({ title: "No se pudo subir archivo", description: uploadError.message, variant: "destructive" });
+        return false;
+      }
+
+      const { data: archivoData, error: archivoError } = await supabase
+        .from("pedido_archivos" as any)
+        .insert({
+          pedido_id: pedidoId,
+          nombre_archivo: file.name,
+          storage_path: storagePath,
+          tipo_archivo: file.type || null,
+          tamano_bytes: file.size,
+        })
+        .select("id, pedido_id, nombre_archivo, storage_path, tipo_archivo, tamano_bytes, created_at")
+        .maybeSingle();
+
+      if (archivoError) {
+        setIsUploadingPedidoArchivo(false);
+        toast({ title: "Archivo subido, pero no se pudo asociar al pedido", description: archivoError.message, variant: "destructive" });
+        return false;
+      }
+
+      if (archivoData) insertedFiles.push(archivoData as PedidoArchivo);
+    }
+
+    if (insertedFiles.length > 0) {
+      setPedidoArchivos((current) => [...insertedFiles, ...current]);
+    }
+    setIsUploadingPedidoArchivo(false);
+    return true;
+  };
+
+  const uploadFilesToSelectedOrder = async (files: FileList | null) => {
+    if (!selectedOrder || !files?.length) return;
+    const ok = await uploadPedidoFiles(selectedOrder.id, Array.from(files));
+    if (ok) toast({ title: "Archivo cargado", description: "Quedo asociado al pedido." });
+  };
+
+  const openPedidoArchivo = async (archivo: PedidoArchivo) => {
+    const { data, error } = await supabase.storage
+      .from(pedidoArchivosBucket)
+      .createSignedUrl(archivo.storage_path, 60 * 10);
+    if (error || !data?.signedUrl) {
+      toast({ title: "No se pudo abrir archivo", description: error?.message || "Archivo no disponible.", variant: "destructive" });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
   const addEditItemForm = () => {
     const id = `new-${Date.now()}`;
     setEditItemForms((current) => [...current, { ...createEmptyItemForm(), id }]);
@@ -1569,10 +1666,12 @@ const Index = () => {
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
       setPedidoItems(createdItems);
+      setPedidoArchivos([]);
       setPreviewItemsByOrderId((current) => ({ ...current, [String(createdOrder.id)]: createdItems }));
       setPedidoAlertas([]);
       setForm(createEmptyOrderForm());
       setItemForms([createEmptyItemForm()]);
+      setSelectedPedidoFiles([]);
       setIsSaving(false);
       toast({ title: "Pedido creado en preview", description: "El pedido quedó disponible para probar la interacción." });
       return;
@@ -1643,9 +1742,15 @@ const Index = () => {
       setOrders((current) => [createdOrder, ...current]);
       setSelectedOrderId(createdOrder.id);
       setPedidoItems((createdItems || []) as PedidoItem[]);
+      const filesUploaded = await uploadPedidoFiles(createdOrder.id, selectedPedidoFiles);
+      if (!filesUploaded) {
+        setIsSaving(false);
+        return;
+      }
     }
     setForm(createEmptyOrderForm());
     setItemForms([createEmptyItemForm()]);
+    setSelectedPedidoFiles([]);
     setIsSaving(false);
     toast({ title: "Pedido guardado", description: "La OC quedó registrada en pedidos." });
   };
@@ -2948,6 +3053,52 @@ Equipo NORFER`;
                     </div>
                   );
                 })()}
+                {selectedOrder && (
+                  <div className="border-b bg-card p-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h4 className="flex items-center gap-2 font-semibold"><Paperclip className="h-4 w-4" />Archivos del pedido</h4>
+                        <p className="text-sm text-muted-foreground">Cotizaciones, planos, imagenes o documentacion asociada.</p>
+                      </div>
+                      {canCreatePedido && (
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-semibold shadow-sm hover:bg-accent">
+                          <Upload className="h-4 w-4" />
+                          Subir archivo
+                          <input
+                            type="file"
+                            accept={pedidoArchivosAccept}
+                            multiple
+                            className="hidden"
+                            disabled={isUploadingPedidoArchivo}
+                            onChange={(event) => {
+                              uploadFilesToSelectedOrder(event.target.files);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {pedidoArchivos.map((archivo) => (
+                        <button
+                          key={archivo.id}
+                          type="button"
+                          onClick={() => openPedidoArchivo(archivo)}
+                          className="flex items-center justify-between gap-3 rounded-md border bg-surface-subtle px-3 py-2 text-left text-sm transition hover:bg-accent"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{archivo.nombre_archivo}</span>
+                            <span className="text-xs text-muted-foreground">{archivo.tamano_bytes ? `${(archivo.tamano_bytes / 1024).toLocaleString("es-AR", { maximumFractionDigits: 1 })} KB` : "Archivo adjunto"}</span>
+                          </span>
+                          <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      ))}
+                      {pedidoArchivos.length === 0 && (
+                        <p className="text-sm text-muted-foreground">Sin archivos adjuntos.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selectedOrder && isAdmin && pedidoItems.length > 0 && (
                   <div className="border-b bg-card p-4">
                     <div className="grid gap-3 rounded-md border bg-surface-subtle p-3 text-sm">
@@ -3334,9 +3485,32 @@ Equipo NORFER`;
                     </div>
                   </details>
 
+                  <div className="space-y-3 rounded-md border bg-surface-subtle p-3">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <h4 className="font-semibold">Archivos adjuntos</h4>
+                        <p className="text-sm text-muted-foreground">Cotizacion, plano, imagen u otra documentacion del pedido.</p>
+                      </div>
+                    </div>
+                    <Input
+                      type="file"
+                      accept={pedidoArchivosAccept}
+                      multiple
+                      onChange={(event) => setSelectedPedidoFiles(Array.from(event.target.files || []))}
+                    />
+                    {selectedPedidoFiles.length > 0 && (
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        {selectedPedidoFiles.map((file) => (
+                          <p key={`${file.name}-${file.size}`}>{file.name}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <Button className="w-full" variant="command" type="submit" disabled={isSaving}>
                     <CheckCircle2 className="h-4 w-4" />
-                    {isSaving ? "Guardando..." : "Guardar pedido"}
+                    {isSaving || isUploadingPedidoArchivo ? "Guardando..." : "Guardar pedido"}
                   </Button>
                 </form>
               </section>
