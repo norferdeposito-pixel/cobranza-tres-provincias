@@ -132,6 +132,7 @@ const estadoClass: Record<string, string> = {
   ANULADO: "border-border bg-muted text-muted-foreground",
 };
 
+// Touchpoint: keeps Vercel deployment in sync after reconnecting the Git integration.
 export const Devoluciones = () => {
   const [rows, setRows] = useState<Devolucion[]>([]);
   const [loading, setLoading] = useState(true);
