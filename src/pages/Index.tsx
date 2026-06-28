@@ -2611,7 +2611,7 @@ Equipo NORFER`;
               </div>
               <div>
                 <p className="text-sm text-sidebar-foreground/70">Compras</p>
-                <h1 className="text-xl font-semibold tracking-normal">OC Control</h1>
+                <h1 className="text-xl font-semibold tracking-normal">Gestion Norfer</h1>
               </div>
             </div>
           </div>
