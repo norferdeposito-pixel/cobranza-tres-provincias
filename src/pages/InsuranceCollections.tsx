@@ -24,7 +24,7 @@ import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
-type Section = "Base" | "CobradorMovil" | "Cobradores" | "Mensual" | "Cobranza" | "Recibos" | "Pedidos" | "Novedades" | "Totales" | "Rendicion" | "Usuarios";
+type Section = "Base" | "CobradorMovil" | "Cobradores" | "Caja" | "Mensual" | "Cobranza" | "Recibos" | "Pedidos" | "Novedades" | "Totales" | "Rendicion" | "Usuarios";
 
 type TransferData = {
   transactionNumber: string;
@@ -93,6 +93,23 @@ type Rendition = {
   transferRenders: Array<{ id: string; date: string; amount: number; proof: string }>;
 };
 
+type CashMovement = {
+  id: string;
+  date: string;
+  month: string;
+  office: string;
+  shift: string;
+  user: string;
+  type: "ingreso" | "egreso";
+  source: "SERVICIOS" | "PRE NECESIDAD" | "TRES PROVINCIAS" | "OTROS";
+  paymentMethod: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "OTRO";
+  receiptType: string;
+  receiptNumber: string;
+  concept: string;
+  amount: number;
+  notes: string;
+};
+
 type AffiliateForm = Omit<Affiliate, "id" | "selectedForMonthly">;
 
 type AffiliateImportPreview = {
@@ -120,6 +137,7 @@ type CloudSnapshot = {
   receipts: ReceiptCollection[];
   notes: AffiliateNote[];
   rendition: Rendition;
+  cashMovements: CashMovement[];
   collectorRecords: CollectorRecord[];
   customDependencies: string[];
   collectorWhatsapp: string;
@@ -142,6 +160,7 @@ const ticketCollectionsStorageKey = "insurance-ticket-collections-v2";
 const receiptsStorageKey = "insurance-receipts-v2";
 const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
+const cashMovementsStorageKey = "insurance-cash-movements-v1";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
@@ -498,6 +517,19 @@ const emptyAffiliateForm = (): AffiliateForm => ({
 });
 
 const emptyTransferForm = emptyTransfer;
+const emptyCashMovementForm = () => ({
+  date: today(),
+  office: "",
+  shift: "",
+  type: "ingreso" as CashMovement["type"],
+  source: "SERVICIOS" as CashMovement["source"],
+  paymentMethod: "EFECTIVO" as CashMovement["paymentMethod"],
+  receiptType: "",
+  receiptNumber: "",
+  concept: "",
+  amount: "",
+  notes: "",
+});
 const userRoleOptions = [
   { value: "cobrador", label: "Cobrador" },
   { value: "oficina", label: "Oficina" },
@@ -515,6 +547,10 @@ const InsuranceCollections = () => {
   const [ticketCollections, setTicketCollections] = useState<TicketCollection[]>(() => loadStorage(ticketCollectionsStorageKey, []));
   const [receipts, setReceipts] = useState<ReceiptCollection[]>(() => loadStorage(receiptsStorageKey, []));
   const [notes, setNotes] = useState<AffiliateNote[]>(() => loadStorage(notesStorageKey, []));
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => loadStorage(cashMovementsStorageKey, []));
+  const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
+  const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
+  const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [rendition, setRendition] = useState<Rendition>(() => {
     const stored = loadStorage<any>(renditionStorageKey, { cashRenders: [], transferRenders: [] });
     return {
@@ -602,15 +638,25 @@ const InsuranceCollections = () => {
   const canUseManualSync = isOfficeUser && !isCollectorUser;
   const currentCollectorName = normalizeCollectorName(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
 
+  const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
+
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
   useEffect(() => saveStorage(ticketCollectionsStorageKey, ticketCollections), [ticketCollections]);
   useEffect(() => saveStorage(receiptsStorageKey, receipts), [receipts]);
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
+  useEffect(() => saveStorage(cashMovementsStorageKey, cashMovements), [cashMovements]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
   useEffect(() => saveStorage(dependenciesStorageKey, customDependencies), [customDependencies]);
+
+  useEffect(() => {
+    setCashMovementForm((current) => {
+      if (current.amount || current.concept || current.receiptNumber || current.notes) return current;
+      return { ...current, date: defaultCashDateForActiveMonth() };
+    });
+  }, [activeMonth]);
 
   const buildCloudSnapshot = (overrides: Partial<CloudSnapshot> = {}): CloudSnapshot => ({
     affiliates: overrides.affiliates ?? affiliates,
@@ -619,6 +665,7 @@ const InsuranceCollections = () => {
     receipts: overrides.receipts ?? receipts,
     notes: overrides.notes ?? notes,
     rendition: overrides.rendition ?? rendition,
+    cashMovements: overrides.cashMovements ?? cashMovements,
     collectorRecords: overrides.collectorRecords ?? collectorRecords,
     customDependencies: overrides.customDependencies ?? customDependencies,
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
@@ -631,6 +678,7 @@ const InsuranceCollections = () => {
     setTicketCollections(Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections : []);
     setReceipts(Array.isArray(snapshot.receipts) ? snapshot.receipts : []);
     setNotes(Array.isArray(snapshot.notes) ? snapshot.notes : []);
+    setCashMovements(Array.isArray(snapshot.cashMovements) ? snapshot.cashMovements : []);
     setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
@@ -713,7 +761,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, cashMovements, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1081,6 +1129,70 @@ const InsuranceCollections = () => {
         return b.pendingTickets - a.pendingTickets || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR");
       });
   }, [activeMonth, affiliates, currentCollectorName, isOfficeUser, monthlyItems, ticketCollections]);
+
+  const cashOfficeOptions = useMemo(() => {
+    return uniqueSorted(cashMovements.map((item) => item.office).filter(Boolean));
+  }, [cashMovements]);
+
+  const visibleCashMovements = useMemo(() => {
+    return cashMovements
+      .filter((item) => item.month === activeMonth)
+      .filter((item) => cashOfficeFilter === "todos" || item.office === cashOfficeFilter)
+      .filter((item) => cashTypeFilter === "todos" || item.type === cashTypeFilter)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [activeMonth, cashMovements, cashOfficeFilter, cashTypeFilter]);
+
+  const cashTotals = useMemo(() => {
+    const totals = {
+      income: 0,
+      expense: 0,
+      balance: 0,
+      cash: 0,
+      card: 0,
+      transfer: 0,
+      other: 0,
+    };
+    visibleCashMovements.forEach((item) => {
+      const signed = item.type === "ingreso" ? item.amount : -item.amount;
+      if (item.type === "ingreso") totals.income += item.amount;
+      else totals.expense += item.amount;
+      totals.balance += signed;
+      if (item.paymentMethod === "EFECTIVO") totals.cash += signed;
+      if (item.paymentMethod === "TARJETA") totals.card += signed;
+      if (item.paymentMethod === "TRANSFERENCIA") totals.transfer += signed;
+      if (item.paymentMethod === "OTRO") totals.other += signed;
+    });
+    return totals;
+  }, [visibleCashMovements]);
+
+  const saveCashMovement = (event: FormEvent) => {
+    event.preventDefault();
+    const amount = parseMoney(cashMovementForm.amount);
+    if (!cashMovementForm.date || amount <= 0) return;
+    const movement: CashMovement = {
+      id: `cash-${Date.now()}`,
+      date: cashMovementForm.date,
+      month: cashMovementForm.date.slice(0, 7),
+      office: cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA",
+      shift: cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
+      user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      type: cashMovementForm.type,
+      source: cashMovementForm.source,
+      paymentMethod: cashMovementForm.paymentMethod,
+      receiptType: cashMovementForm.receiptType.trim().toLocaleUpperCase("es-AR"),
+      receiptNumber: cashMovementForm.receiptNumber.trim().toLocaleUpperCase("es-AR"),
+      concept: cashMovementForm.concept.trim().toLocaleUpperCase("es-AR"),
+      amount,
+      notes: cashMovementForm.notes.trim().toLocaleUpperCase("es-AR"),
+    };
+    setCashMovements((current) => [movement, ...current]);
+    setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office: current.office, shift: current.shift }));
+  };
+
+  const deleteCashMovement = (id: string) => {
+    if (!window.confirm("Eliminar este movimiento de caja?")) return;
+    setCashMovements((current) => current.filter((item) => item.id !== id));
+  };
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -1847,10 +1959,11 @@ const InsuranceCollections = () => {
   };
 
   useEffect(() => {
+    if (activeSection === "Caja" && isOfficeUser) return;
     if (!visibleNavItems.some((item) => item.id === activeSection)) {
       setActiveSection(visibleNavItems[0]?.id || "CobradorMovil");
     }
-  }, [activeSection, visibleNavItems]);
+  }, [activeSection, isOfficeUser, visibleNavItems]);
 
   return (
     <main className="min-h-screen bg-background text-foreground" onInputCapture={forceUppercaseInput}>
@@ -1902,10 +2015,28 @@ const InsuranceCollections = () => {
 
       <div className="grid w-full gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="rounded-md border bg-card p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start">
-          <div className="flex items-center justify-between gap-3 lg:block">
+          <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Módulo</p>
-            <h2 className="text-base font-semibold sm:text-lg lg:mt-1">Cobranza Tres Provincias</h2>
-            <p className="hidden text-xs text-muted-foreground sm:block lg:mt-1">Cartera, cobradores, tickets y rendición.</p>
+            <div className="mt-2 grid gap-2">
+              <button
+                type="button"
+                className={`rounded-md border p-3 text-left transition ${activeSection !== "Caja" ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-accent"}`}
+                onClick={() => setActiveSection(isOfficeUser ? "Base" : "CobradorMovil")}
+              >
+                <span className="block text-base font-semibold leading-tight">Cobranza Tres Provincias</span>
+                <span className={`mt-1 block text-xs ${activeSection !== "Caja" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>Cartera, cobradores, tickets y rendición.</span>
+              </button>
+              {isOfficeUser && (
+                <button
+                  type="button"
+                  className={`rounded-md border p-3 text-left transition ${activeSection === "Caja" ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-accent"}`}
+                  onClick={() => setActiveSection("Caja")}
+                >
+                  <span className="block text-base font-semibold leading-tight">Caja</span>
+                  <span className={`mt-1 block text-xs ${activeSection === "Caja" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>Movimientos, ingresos, egresos y saldos.</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">{currentUserProfile?.nombre || userEmail || "Usuario"}</p>
@@ -1972,31 +2103,35 @@ const InsuranceCollections = () => {
           </section>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          {[
-            ["Afiliados", visibleAffiliatesCount, isOfficeUser ? "Clientes en base" : "Tu cartera asignada"],
-            ["Seleccionados", visibleSelectedCount, isOfficeUser ? "Pasan a cobranza mensual" : "En tu cobranza mensual"],
-            ["Tickets mensuales", visibleMonthlyTickets, isOfficeUser ? "Tickets recibidos" : "Tus tickets recibidos"],
-            ["Pedidos", requestRows.filter((item) => !item.answered).length, isOfficeUser ? "Solicitudes pendientes" : "Tus pedidos pendientes"],
-            ["Novedades", visibleNotesCount, isOfficeUser ? "Cargadas en el mes" : "Tus novedades del mes"],
-            ["Total a rendir", currency.format(visibleTotalToRender), visibleTotalLabel],
-          ].map(([label, value, helper]) => (
-            <div key={String(label)} className="rounded-md border bg-card p-3 shadow-command sm:p-4">
-              <p className="text-sm font-medium text-muted-foreground">{String(label)}</p>
-              <p className="mt-2 text-2xl font-semibold sm:text-3xl">{String(value)}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{String(helper)}</p>
-            </div>
-          ))}
-        </section>
+        {activeSection !== "Caja" && (
+          <>
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {[
+                ["Afiliados", visibleAffiliatesCount, isOfficeUser ? "Clientes en base" : "Tu cartera asignada"],
+                ["Seleccionados", visibleSelectedCount, isOfficeUser ? "Pasan a cobranza mensual" : "En tu cobranza mensual"],
+                ["Tickets mensuales", visibleMonthlyTickets, isOfficeUser ? "Tickets recibidos" : "Tus tickets recibidos"],
+                ["Pedidos", requestRows.filter((item) => !item.answered).length, isOfficeUser ? "Solicitudes pendientes" : "Tus pedidos pendientes"],
+                ["Novedades", visibleNotesCount, isOfficeUser ? "Cargadas en el mes" : "Tus novedades del mes"],
+                ["Total a rendir", currency.format(visibleTotalToRender), visibleTotalLabel],
+              ].map(([label, value, helper]) => (
+                <div key={String(label)} className="rounded-md border bg-card p-3 shadow-command sm:p-4">
+                  <p className="text-sm font-medium text-muted-foreground">{String(label)}</p>
+                  <p className="mt-2 text-2xl font-semibold sm:text-3xl">{String(value)}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{String(helper)}</p>
+                </div>
+              ))}
+            </section>
 
-        <nav className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 sm:flex sm:flex-wrap">
-          {visibleNavItems.map(({ id, label, icon: Icon }) => (
-            <Button key={id} type="button" className="justify-start sm:justify-center" variant={activeSection === id ? "command" : "ghost"} onClick={() => setActiveSection(id)}>
-              <Icon className="h-4 w-4" />
-              {label}
-            </Button>
-          ))}
-        </nav>
+            <nav className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 sm:flex sm:flex-wrap">
+              {visibleNavItems.map(({ id, label, icon: Icon }) => (
+                <Button key={id} type="button" className="justify-start sm:justify-center" variant={activeSection === id ? "command" : "ghost"} onClick={() => setActiveSection(id)}>
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </Button>
+              ))}
+            </nav>
+          </>
+        )}
 
         {activeSection === "Base" && (
           <section className="overflow-hidden rounded-md border bg-card">
@@ -2604,6 +2739,176 @@ const InsuranceCollections = () => {
                   {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={13}>Todavía no hay cobradores cargados.</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </section>
+        )}
+
+        {activeSection === "Caja" && isOfficeUser && (
+          <section className="grid gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
+            <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
+              <div className="border-b p-4">
+                <h2 className="font-semibold">Caja</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Carga de ingresos y egresos por oficina, usuario y turno.</p>
+              </div>
+              <div className="grid gap-3 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Fecha</Label>
+                    <Input type="date" value={cashMovementForm.date} onChange={(event) => setCashMovementForm((current) => ({ ...current, date: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Oficina</Label>
+                    <Input value={cashMovementForm.office} onChange={(event) => setCashMovementForm((current) => ({ ...current, office: event.target.value }))} placeholder="EJ: TUNUYAN" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Turno</Label>
+                    <Input value={cashMovementForm.shift} onChange={(event) => setCashMovementForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MAÑANA" />
+                  </div>
+                  <div>
+                    <Label>Tipo</Label>
+                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.type} onChange={(event) => setCashMovementForm((current) => ({ ...current, type: event.target.value as CashMovement["type"] }))}>
+                      <option value="ingreso">Ingreso</option>
+                      <option value="egreso">Egreso</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Origen</Label>
+                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.source} onChange={(event) => setCashMovementForm((current) => ({ ...current, source: event.target.value as CashMovement["source"] }))}>
+                      <option value="SERVICIOS">Servicios</option>
+                      <option value="PRE NECESIDAD">Pre Necesidad</option>
+                      <option value="TRES PROVINCIAS">Tres Provincias</option>
+                      <option value="OTROS">Otros</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Medio de pago</Label>
+                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.paymentMethod} onChange={(event) => setCashMovementForm((current) => ({ ...current, paymentMethod: event.target.value as CashMovement["paymentMethod"] }))}>
+                      <option value="EFECTIVO">Efectivo</option>
+                      <option value="TARJETA">Tarjeta</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Tipo comprobante</Label>
+                    <Input value={cashMovementForm.receiptType} onChange={(event) => setCashMovementForm((current) => ({ ...current, receiptType: event.target.value }))} placeholder="RECIBO / TICKET" />
+                  </div>
+                  <div>
+                    <Label>N° comprobante</Label>
+                    <Input value={cashMovementForm.receiptNumber} onChange={(event) => setCashMovementForm((current) => ({ ...current, receiptNumber: event.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Concepto</Label>
+                  <Input value={cashMovementForm.concept} onChange={(event) => setCashMovementForm((current) => ({ ...current, concept: event.target.value }))} placeholder="DETALLE DEL MOVIMIENTO" />
+                </div>
+                <div>
+                  <Label>Monto</Label>
+                  <Input inputMode="decimal" value={cashMovementForm.amount} onChange={(event) => setCashMovementForm((current) => ({ ...current, amount: event.target.value }))} placeholder="$ 0" />
+                </div>
+                <div>
+                  <Label>Observación</Label>
+                  <Textarea value={cashMovementForm.notes} onChange={(event) => setCashMovementForm((current) => ({ ...current, notes: event.target.value }))} />
+                </div>
+                <Button type="submit" variant="command">Agregar movimiento</Button>
+              </div>
+            </form>
+
+            <div className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
+                <SummaryBox label="Egresos" value={currency.format(cashTotals.expense)} />
+                <SummaryBox label="Saldo caja" value={currency.format(cashTotals.balance)} />
+                <SummaryBox label="Movimientos" value={String(visibleCashMovements.length)} />
+              </div>
+
+              <div className="rounded-md border bg-card">
+                <div className="grid gap-3 border-b p-4 md:grid-cols-[1fr_180px_180px]">
+                  <div>
+                    <h3 className="font-semibold">Movimientos de caja</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
+                  </div>
+                  <select className="h-10 rounded-md border bg-background px-3 text-sm" value={cashOfficeFilter} onChange={(event) => setCashOfficeFilter(event.target.value)}>
+                    <option value="todos">Todas las oficinas</option>
+                    {cashOfficeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+                  </select>
+                  <select className="h-10 rounded-md border bg-background px-3 text-sm" value={cashTypeFilter} onChange={(event) => setCashTypeFilter(event.target.value)}>
+                    <option value="todos">Ingresos y egresos</option>
+                    <option value="ingreso">Ingresos</option>
+                    <option value="egreso">Egresos</option>
+                  </select>
+                </div>
+                <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Efectivo</p>
+                    <p className="text-lg font-semibold">{currency.format(cashTotals.cash)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Tarjeta</p>
+                    <p className="text-lg font-semibold">{currency.format(cashTotals.card)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Transferencia</p>
+                    <p className="text-lg font-semibold">{currency.format(cashTotals.transfer)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Otro</p>
+                    <p className="text-lg font-semibold">{currency.format(cashTotals.other)}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <thead className="bg-surface-subtle text-left text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Oficina</th>
+                        <th className="px-4 py-3">Turno</th>
+                        <th className="px-4 py-3">Tipo</th>
+                        <th className="px-4 py-3">Origen</th>
+                        <th className="px-4 py-3">Medio</th>
+                        <th className="px-4 py-3">Comprobante</th>
+                        <th className="px-4 py-3">Concepto</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3">Usuario</th>
+                        <th className="px-4 py-3 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleCashMovements.map((item) => (
+                        <tr key={item.id} className="border-t">
+                          <td className="px-4 py-3">{item.date}</td>
+                          <td className="px-4 py-3">{item.office}</td>
+                          <td className="px-4 py-3">{item.shift || "-"}</td>
+                          <td className="px-4 py-3 font-medium">{item.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
+                          <td className="px-4 py-3">{item.source}</td>
+                          <td className="px-4 py-3">{item.paymentMethod}</td>
+                          <td className="px-4 py-3">{[item.receiptType, item.receiptNumber].filter(Boolean).join(" ") || "-"}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{item.concept || "-"}</p>
+                            {item.notes && <p className="mt-1 text-xs text-muted-foreground">{item.notes}</p>}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-semibold ${item.type === "egreso" ? "text-destructive" : ""}`}>{currency.format(item.amount)}</td>
+                          <td className="px-4 py-3">{item.user}</td>
+                          <td className="px-4 py-3 text-right">
+                            <Button type="button" size="sm" variant="outline" onClick={() => deleteCashMovement(item.id)}>Eliminar</Button>
+                          </td>
+                        </tr>
+                      ))}
+                      {visibleCashMovements.length === 0 && (
+                        <tr>
+                          <td className="px-4 py-8 text-center text-muted-foreground" colSpan={11}>No hay movimientos de caja cargados para este periodo.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </section>
         )}
