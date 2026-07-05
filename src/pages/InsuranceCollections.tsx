@@ -2847,7 +2847,15 @@ const InsuranceCollections = () => {
                 </div>
                 <div>
                   <Label>Observación</Label>
-                  <Textarea value={cashMovementForm.notes} onChange={(event) => setCashMovementForm((current) => ({ ...current, notes: event.target.value }))} />
+                  {cashMovementForm.type === "egreso" && cashMovementForm.concept === "OTROS GASTOS" && (
+                    <p className="mb-2 text-xs font-medium text-destructive">DETALLAR EL GASTO EN OBSERVACIONES.</p>
+                  )}
+                  <Textarea
+                    value={cashMovementForm.notes}
+                    onChange={(event) => setCashMovementForm((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder={cashMovementForm.type === "egreso" && cashMovementForm.concept === "OTROS GASTOS" ? "DETALLE DE OTROS GASTOS" : ""}
+                    required={cashMovementForm.type === "egreso" && cashMovementForm.concept === "OTROS GASTOS"}
+                  />
                 </div>
                 <Button type="submit" variant="command">Agregar movimiento</Button>
               </div>
