@@ -530,6 +530,22 @@ const emptyCashMovementForm = () => ({
   amount: "",
   notes: "",
 });
+const cashExpenseConcepts = [
+  "SERVICIO DE BUFETE",
+  "PANADERIA",
+  "COMBUSTIBLE",
+  "SERVICIO DE CATERING",
+  "REPARACION DE VEHICULOS",
+  "REPARACION DE EDIFICIO",
+  "COMPRAS ARTICULOS FUNERARIOS",
+  "LIBRERIA",
+  "SUELDOS",
+  "COMISIONES",
+  "RETIRO DE EFECTIVO",
+  "DEPOSITO EN EFECTIVO",
+  "PRODUCCIONES",
+  "OTROS GASTOS",
+];
 const userRoleOptions = [
   { value: "cobrador", label: "Cobrador" },
   { value: "oficina", label: "Oficina" },
@@ -2768,7 +2784,11 @@ const InsuranceCollections = () => {
                   </div>
                   <div>
                     <Label>Tipo</Label>
-                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.type} onChange={(event) => setCashMovementForm((current) => ({ ...current, type: event.target.value as CashMovement["type"] }))}>
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={cashMovementForm.type}
+                      onChange={(event) => setCashMovementForm((current) => ({ ...current, type: event.target.value as CashMovement["type"], concept: "" }))}
+                    >
                       <option value="ingreso">Ingreso</option>
                       <option value="egreso">Egreso</option>
                     </select>
@@ -2806,7 +2826,20 @@ const InsuranceCollections = () => {
                 </div>
                 <div>
                   <Label>Concepto</Label>
-                  <Input value={cashMovementForm.concept} onChange={(event) => setCashMovementForm((current) => ({ ...current, concept: event.target.value }))} placeholder="DETALLE DEL MOVIMIENTO" />
+                  {cashMovementForm.type === "egreso" ? (
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={cashMovementForm.concept}
+                      onChange={(event) => setCashMovementForm((current) => ({ ...current, concept: event.target.value }))}
+                    >
+                      <option value="">SELECCIONAR EGRESO</option>
+                      {cashExpenseConcepts.map((concept) => (
+                        <option key={concept} value={concept}>{concept}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input value={cashMovementForm.concept} onChange={(event) => setCashMovementForm((current) => ({ ...current, concept: event.target.value }))} placeholder="DETALLE DEL MOVIMIENTO" />
+                  )}
                 </div>
                 <div>
                   <Label>Monto</Label>
