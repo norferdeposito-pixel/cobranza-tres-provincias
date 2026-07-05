@@ -110,6 +110,16 @@ type CashMovement = {
   notes: string;
 };
 
+type CashOpeningBalance = {
+  id: string;
+  date: string;
+  month: string;
+  office: string;
+  user: string;
+  amount: number;
+  notes: string;
+};
+
 type AffiliateForm = Omit<Affiliate, "id" | "selectedForMonthly">;
 
 type AffiliateImportPreview = {
@@ -138,6 +148,7 @@ type CloudSnapshot = {
   notes: AffiliateNote[];
   rendition: Rendition;
   cashMovements: CashMovement[];
+  cashOpeningBalances: CashOpeningBalance[];
   collectorRecords: CollectorRecord[];
   customDependencies: string[];
   collectorWhatsapp: string;
@@ -161,6 +172,7 @@ const receiptsStorageKey = "insurance-receipts-v2";
 const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
 const cashMovementsStorageKey = "insurance-cash-movements-v1";
+const cashOpeningBalancesStorageKey = "insurance-cash-opening-balances-v1";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
@@ -530,6 +542,12 @@ const emptyCashMovementForm = () => ({
   amount: "",
   notes: "",
 });
+const emptyCashOpeningForm = () => ({
+  date: today(),
+  office: "",
+  amount: "",
+  notes: "",
+});
 const cashExpenseConcepts = [
   "SERVICIO DE BUFETE",
   "PANADERIA",
@@ -564,7 +582,9 @@ const InsuranceCollections = () => {
   const [receipts, setReceipts] = useState<ReceiptCollection[]>(() => loadStorage(receiptsStorageKey, []));
   const [notes, setNotes] = useState<AffiliateNote[]>(() => loadStorage(notesStorageKey, []));
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => loadStorage(cashMovementsStorageKey, []));
+  const [cashOpeningBalances, setCashOpeningBalances] = useState<CashOpeningBalance[]>(() => loadStorage(cashOpeningBalancesStorageKey, []));
   const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
+  const [cashOpeningForm, setCashOpeningForm] = useState(emptyCashOpeningForm);
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [rendition, setRendition] = useState<Rendition>(() => {
@@ -662,6 +682,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(receiptsStorageKey, receipts), [receipts]);
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
   useEffect(() => saveStorage(cashMovementsStorageKey, cashMovements), [cashMovements]);
+  useEffect(() => saveStorage(cashOpeningBalancesStorageKey, cashOpeningBalances), [cashOpeningBalances]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
@@ -670,6 +691,10 @@ const InsuranceCollections = () => {
   useEffect(() => {
     setCashMovementForm((current) => {
       if (current.amount || current.concept || current.receiptNumber || current.notes) return current;
+      return { ...current, date: defaultCashDateForActiveMonth() };
+    });
+    setCashOpeningForm((current) => {
+      if (current.amount || current.notes) return current;
       return { ...current, date: defaultCashDateForActiveMonth() };
     });
   }, [activeMonth]);
@@ -682,6 +707,7 @@ const InsuranceCollections = () => {
     notes: overrides.notes ?? notes,
     rendition: overrides.rendition ?? rendition,
     cashMovements: overrides.cashMovements ?? cashMovements,
+    cashOpeningBalances: overrides.cashOpeningBalances ?? cashOpeningBalances,
     collectorRecords: overrides.collectorRecords ?? collectorRecords,
     customDependencies: overrides.customDependencies ?? customDependencies,
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
@@ -695,6 +721,7 @@ const InsuranceCollections = () => {
     setReceipts(Array.isArray(snapshot.receipts) ? snapshot.receipts : []);
     setNotes(Array.isArray(snapshot.notes) ? snapshot.notes : []);
     setCashMovements(Array.isArray(snapshot.cashMovements) ? snapshot.cashMovements : []);
+    setCashOpeningBalances(Array.isArray(snapshot.cashOpeningBalances) ? snapshot.cashOpeningBalances : []);
     setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
@@ -777,7 +804,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, cashMovements, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1147,8 +1174,11 @@ const InsuranceCollections = () => {
   }, [activeMonth, affiliates, currentCollectorName, isOfficeUser, monthlyItems, ticketCollections]);
 
   const cashOfficeOptions = useMemo(() => {
-    return uniqueSorted(cashMovements.map((item) => item.office).filter(Boolean));
-  }, [cashMovements]);
+    return uniqueSorted([
+      ...cashMovements.map((item) => item.office).filter(Boolean),
+      ...cashOpeningBalances.map((item) => item.office).filter(Boolean),
+    ]);
+  }, [cashMovements, cashOpeningBalances]);
 
   const visibleCashMovements = useMemo(() => {
     return cashMovements
@@ -1158,8 +1188,15 @@ const InsuranceCollections = () => {
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [activeMonth, cashMovements, cashOfficeFilter, cashTypeFilter]);
 
+  const visibleCashOpeningBalances = useMemo(() => {
+    return cashOpeningBalances
+      .filter((item) => item.month === activeMonth)
+      .filter((item) => cashOfficeFilter === "todos" || item.office === cashOfficeFilter);
+  }, [activeMonth, cashOpeningBalances, cashOfficeFilter]);
+
   const cashTotals = useMemo(() => {
     const totals = {
+      opening: 0,
       income: 0,
       expense: 0,
       balance: 0,
@@ -1168,6 +1205,11 @@ const InsuranceCollections = () => {
       transfer: 0,
       other: 0,
     };
+    visibleCashOpeningBalances.forEach((item) => {
+      totals.opening += item.amount;
+      totals.balance += item.amount;
+      totals.cash += item.amount;
+    });
     visibleCashMovements.forEach((item) => {
       const signed = item.type === "ingreso" ? item.amount : -item.amount;
       if (item.type === "ingreso") totals.income += item.amount;
@@ -1179,7 +1221,31 @@ const InsuranceCollections = () => {
       if (item.paymentMethod === "OTRO") totals.other += signed;
     });
     return totals;
-  }, [visibleCashMovements]);
+  }, [visibleCashMovements, visibleCashOpeningBalances]);
+
+  const saveCashOpeningBalance = (event: FormEvent) => {
+    event.preventDefault();
+    const amount = parseMoney(cashOpeningForm.amount);
+    const office = cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA";
+    if (!cashOpeningForm.date || amount < 0) return;
+    const month = cashOpeningForm.date.slice(0, 7);
+    const alreadyExists = cashOpeningBalances.some((item) => item.month === month && item.office === office);
+    if (alreadyExists) {
+      setCloudStatus(`La caja de ${office} ya tiene saldo inicial cargado para ${month}.`);
+      return;
+    }
+    const opening: CashOpeningBalance = {
+      id: `cash-opening-${Date.now()}`,
+      date: cashOpeningForm.date,
+      month,
+      office,
+      user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      amount,
+      notes: cashOpeningForm.notes.trim().toLocaleUpperCase("es-AR"),
+    };
+    setCashOpeningBalances((current) => [opening, ...current]);
+    setCashOpeningForm((current) => ({ ...emptyCashOpeningForm(), date: defaultCashDateForActiveMonth(), office: current.office }));
+  };
 
   const saveCashMovement = (event: FormEvent) => {
     event.preventDefault();
@@ -1209,6 +1275,9 @@ const InsuranceCollections = () => {
     if (!window.confirm("Eliminar este movimiento de caja?")) return;
     setCashMovements((current) => current.filter((item) => item.id !== id));
   };
+
+  const cashOpeningFormOffice = cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA";
+  const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -2761,6 +2830,39 @@ const InsuranceCollections = () => {
 
         {activeSection === "Caja" && isOfficeUser && (
           <section className="grid gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
+            <div className="grid gap-4">
+            <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
+              <div className="border-b p-4">
+                <h2 className="font-semibold">Estado inicial de caja</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Carga por unica vez el saldo con el que arranca la caja.</p>
+              </div>
+              <div className="grid gap-3 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Fecha</Label>
+                    <Input type="date" value={cashOpeningForm.date} onChange={(event) => setCashOpeningForm((current) => ({ ...current, date: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Oficina</Label>
+                    <Input value={cashOpeningForm.office} onChange={(event) => setCashOpeningForm((current) => ({ ...current, office: event.target.value }))} placeholder="EJ: TUNUYAN" />
+                  </div>
+                </div>
+                <div>
+                  <Label>Saldo inicial</Label>
+                  <Input inputMode="decimal" value={cashOpeningForm.amount} onChange={(event) => setCashOpeningForm((current) => ({ ...current, amount: event.target.value }))} placeholder="$ 0" />
+                </div>
+                <div>
+                  <Label>Observación</Label>
+                  <Textarea value={cashOpeningForm.notes} onChange={(event) => setCashOpeningForm((current) => ({ ...current, notes: event.target.value }))} placeholder="DETALLE DEL ESTADO INICIAL" />
+                </div>
+                {cashOpeningAlreadyExists && (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    YA EXISTE SALDO INICIAL PARA {cashOpeningFormOffice} EN {cashOpeningForm.date.slice(0, 7)}.
+                  </p>
+                )}
+                <Button type="submit" variant="command" disabled={cashOpeningAlreadyExists}>Cargar saldo inicial</Button>
+              </div>
+            </form>
             <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
               <div className="border-b p-4">
                 <h2 className="font-semibold">Caja</h2>
@@ -2860,9 +2962,11 @@ const InsuranceCollections = () => {
                 <Button type="submit" variant="command">Agregar movimiento</Button>
               </div>
             </form>
+            </div>
 
             <div className="grid gap-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <SummaryBox label="Saldo inicial" value={currency.format(cashTotals.opening)} />
                 <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
                 <SummaryBox label="Egresos" value={currency.format(cashTotals.expense)} />
                 <SummaryBox label="Saldo caja" value={currency.format(cashTotals.balance)} />
@@ -2903,6 +3007,25 @@ const InsuranceCollections = () => {
                     <p className="text-lg font-semibold">{currency.format(cashTotals.other)}</p>
                   </div>
                 </div>
+                {visibleCashOpeningBalances.length > 0 && (
+                  <div className="border-b p-4">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Saldos iniciales cargados</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {visibleCashOpeningBalances.map((item) => (
+                        <div key={item.id} className="rounded-md border bg-background p-3 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{item.office}</p>
+                              <p className="text-xs text-muted-foreground">{item.date} · {item.user}</p>
+                            </div>
+                            <p className="font-semibold">{currency.format(item.amount)}</p>
+                          </div>
+                          {item.notes && <p className="mt-2 text-xs text-muted-foreground">{item.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[980px] text-sm">
                     <thead className="bg-surface-subtle text-left text-xs uppercase text-muted-foreground">
