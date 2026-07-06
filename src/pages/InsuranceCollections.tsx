@@ -728,12 +728,43 @@ const InsuranceCollections = () => {
     if (snapshot.activeMonth) setActiveMonth(snapshot.activeMonth);
   };
 
+  const validateCloudSnapshotBeforeSave = async (snapshot: CloudSnapshot) => {
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) return { ok: false, message: `No se pudo verificar la base online: ${error.message}` };
+
+    const onlineSnapshot = data?.data as Partial<CloudSnapshot> | undefined;
+    const onlineCount = Array.isArray(onlineSnapshot?.affiliates) ? onlineSnapshot.affiliates.length : 0;
+    const nextCount = Array.isArray(snapshot.affiliates) ? snapshot.affiliates.length : 0;
+    const isDangerousShrink = onlineCount >= 1000 && nextCount > 0 && nextCount < onlineCount * 0.8;
+
+    if (isDangerousShrink) {
+      const updatedAt = data?.updated_at ? ` Ultima base online: ${new Date(data.updated_at).toLocaleString("es-AR")}.` : "";
+      return {
+        ok: false,
+        message: `Proteccion activa: no se guardo online porque esta pantalla tiene ${nextCount} afiliados y la base online tiene ${onlineCount}.${updatedAt} Primero usá Cargar online.`,
+      };
+    }
+
+    return { ok: true, message: "" };
+  };
+
   const saveCloudSnapshot = async (overrides: Partial<CloudSnapshot> = {}) => {
     setCloudBusy(true);
     setCloudStatus("Guardando en la base online...");
+    const snapshot = buildCloudSnapshot(overrides);
+    const validation = await validateCloudSnapshotBeforeSave(snapshot);
+    if (!validation.ok) {
+      setCloudBusy(false);
+      setCloudStatus(validation.message);
+      return;
+    }
     const { error } = await supabase
       .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(overrides), updated_at: new Date().toISOString() }, { onConflict: "key" });
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
     setCloudBusy(false);
     if (error) {
       setCloudStatus(`No se pudo guardar online: ${error.message}`);
@@ -743,9 +774,15 @@ const InsuranceCollections = () => {
   };
 
   const saveCloudSnapshotSilent = async () => {
+    const snapshot = buildCloudSnapshot();
+    const validation = await validateCloudSnapshotBeforeSave(snapshot);
+    if (!validation.ok) {
+      setCloudStatus(validation.message);
+      return;
+    }
     const { error } = await supabase
       .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: buildCloudSnapshot(), updated_at: new Date().toISOString() }, { onConflict: "key" });
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
     if (error) {
       setCloudStatus(`No se pudo sincronizar online: ${error.message}`);
       return;
