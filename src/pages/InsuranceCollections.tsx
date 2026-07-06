@@ -70,10 +70,12 @@ type ReceiptCollection = {
   id: string;
   collectionMonth: string;
   receiptNumber: string;
+  policyNumber?: string;
   fullName: string;
   collector?: string;
   plan: PlanType;
   paidMonth: string;
+  paidMonths?: string[];
   monthCount: number;
   monthlyAmount: number;
   paymentMethod: PaymentMethod;
@@ -185,6 +187,13 @@ const addMonths = (month: string, amount: number) => {
   const [year, monthIndex] = month.split("-").map((value) => Number(value));
   const date = new Date(year, (monthIndex || 1) - 1 + amount, 1);
   return date.toISOString().slice(0, 7);
+};
+const monthLabel = (month: string) => {
+  const [year, monthIndex] = month.split("-").map((value) => Number(value));
+  if (!year || !monthIndex) return month || "-";
+  return new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, monthIndex - 1, 1)))
+    .toLocaleUpperCase("es-AR");
 };
 function normalizeCollectorName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
@@ -646,11 +655,13 @@ const InsuranceCollections = () => {
   const [mobileNoteText, setMobileNoteText] = useState("");
   const [receiptForm, setReceiptForm] = useState({
     receiptNumber: "",
+    policyNumber: "",
     fullName: "",
     collector: "OFICINA",
     plan: "A 238" as PlanType,
     paidMonth: "",
-    monthCount: "1",
+    paidMonths: [] as string[],
+    monthCount: "0",
     monthlyAmount: "",
     paymentMethod: "E" as PaymentMethod,
     transfer: emptyTransfer(),
@@ -1130,6 +1141,40 @@ const InsuranceCollections = () => {
     const collected = new Set([...plans, ...affiliates.map((item) => item.plan), ...receipts.map((item) => item.plan)]);
     return Array.from(collected).filter(Boolean).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
   }, [affiliates, receipts]);
+
+  const findReceiptAffiliate = (policyNumber: string, plan?: PlanType) => {
+    const policy = policyNumber.trim();
+    if (!policy) return null;
+    const candidates = affiliates
+      .filter((affiliate) => affiliate.policyNumber === policy)
+      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .sort((a, b) => Number(b.selectedForMonthly) - Number(a.selectedForMonthly)
+        || (b.sourceTickets || 0) - (a.sourceTickets || 0)
+        || a.fullName.localeCompare(b.fullName, "es-AR"));
+    return candidates.find((affiliate) => affiliate.plan === plan) || candidates[0] || null;
+  };
+
+  const receiptPolicyCandidates = useMemo(() => {
+    const policy = receiptForm.policyNumber.trim();
+    if (!policy) return [];
+    return affiliates
+      .filter((affiliate) => affiliate.policyNumber === policy)
+      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .sort((a, b) => a.plan.localeCompare(b.plan, "es-AR", { numeric: true }));
+  }, [affiliates, currentCollectorName, isOfficeUser, receiptForm.policyNumber]);
+
+  const receiptPlanOptions = useMemo(() => {
+    const policyPlans = uniqueSorted(receiptPolicyCandidates.map((affiliate) => affiliate.plan));
+    return policyPlans.length ? policyPlans : availablePlans;
+  }, [availablePlans, receiptPolicyCandidates]);
+
+  const selectedReceiptAffiliate = useMemo(() => {
+    return receiptPolicyCandidates.find((affiliate) => affiliate.plan === receiptForm.plan) || receiptPolicyCandidates[0] || null;
+  }, [receiptForm.plan, receiptPolicyCandidates]);
+
+  const receiptMonthOptions = useMemo(() => {
+    return Array.from({ length: 18 }, (_, index) => addMonths(activeMonth, -index));
+  }, [activeMonth]);
 
   const totalsByPlan = useMemo(() => {
     return availablePlans.map((plan) => {
@@ -1706,22 +1751,89 @@ const InsuranceCollections = () => {
     setMobileNoteText("");
   };
 
+  const applyReceiptAffiliate = (affiliate: Affiliate | null) => {
+    if (!affiliate) return;
+    setReceiptForm((current) => ({
+      ...current,
+      policyNumber: affiliate.policyNumber,
+      fullName: affiliate.fullName,
+      collector: isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
+      plan: affiliate.plan,
+      monthlyAmount: affiliate.value ? String(affiliate.value) : current.monthlyAmount,
+    }));
+  };
+
+  const updateReceiptPolicy = (value: string) => {
+    const policyNumber = value.replace(/\D/g, "");
+    const affiliate = findReceiptAffiliate(policyNumber, receiptForm.plan);
+    if (affiliate) {
+      applyReceiptAffiliate(affiliate);
+      return;
+    }
+    setReceiptForm((current) => ({ ...current, policyNumber }));
+  };
+
+  const updateReceiptPlan = (plan: PlanType) => {
+    const affiliate = findReceiptAffiliate(receiptForm.policyNumber, plan);
+    if (affiliate) {
+      applyReceiptAffiliate(affiliate);
+      return;
+    }
+    setReceiptForm((current) => ({ ...current, plan }));
+  };
+
+  const updateReceiptPaidMonth = (month: string, checked: boolean) => {
+    setReceiptForm((current) => {
+      const paidMonths = checked
+        ? uniqueSorted([...current.paidMonths, month])
+        : current.paidMonths.filter((item) => item !== month);
+      return {
+        ...current,
+        paidMonths,
+        paidMonth: paidMonths[0] || "",
+        monthCount: String(paidMonths.length),
+      };
+    });
+  };
+
+  const resetReceiptForm = () => {
+    setReceiptForm({
+      receiptNumber: "",
+      policyNumber: "",
+      fullName: "",
+      collector: selectedCollectorName || "OFICINA",
+      plan: "A 238",
+      paidMonth: "",
+      paidMonths: [],
+      monthCount: "0",
+      monthlyAmount: "",
+      paymentMethod: "E",
+      transfer: emptyTransfer(),
+    });
+  };
+
   const saveReceipt = (event: FormEvent) => {
     event.preventDefault();
+    if (!receiptForm.paidMonths.length) {
+      alert("Seleccioná al menos un mes que paga el afiliado.");
+      return;
+    }
     setReceipts((current) => [...current, {
       id: `receipt-${Date.now()}`,
       collectionMonth: activeMonth,
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
+      policyNumber: receiptForm.policyNumber.trim(),
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
       collector: normalizeCollectorName(isOfficeUser ? receiptForm.collector || selectedCollectorName || "OFICINA" : currentCollectorName || "OFICINA"),
       plan: receiptForm.plan,
-      paidMonth: receiptForm.paidMonth,
-      monthCount: Math.max(1, parseNumber(receiptForm.monthCount)),
+      paidMonth: receiptForm.paidMonths[0] || receiptForm.paidMonth,
+      paidMonths: receiptForm.paidMonths,
+      monthCount: receiptForm.paidMonths.length,
       monthlyAmount: parseMoney(receiptForm.monthlyAmount),
       paymentMethod: receiptForm.paymentMethod,
       transfer: receiptForm.paymentMethod === "T" ? receiptForm.transfer : undefined,
     }]);
-    setReceiptForm({ receiptNumber: "", fullName: "", collector: selectedCollectorName || "OFICINA", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
+    resetReceiptForm();
   };
 
   const exportAffiliatesExcel = async () => {
@@ -1994,7 +2106,7 @@ const InsuranceCollections = () => {
     setCollectionTransfer(emptyTransfer());
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
-    setReceiptForm({ receiptNumber: "", fullName: "", collector: selectedCollectorName || "OFICINA", plan: "A 238", paidMonth: "", monthCount: "1", monthlyAmount: "", paymentMethod: "E", transfer: emptyTransfer() });
+    resetReceiptForm();
     setNextCollectionMonth(addMonths(targetMonth, 1));
     setImportMessage(`Nueva cobranza preparada para ${targetMonth}. Ahora podés importar el listado actualizado.`);
   };
@@ -2203,7 +2315,7 @@ const InsuranceCollections = () => {
                     {affiliateImportPreview.newRows.slice(0, 12).map((item) => (
                       <div key={`new-${item.id}`} className="rounded-md bg-surface-subtle px-3 py-2 text-sm">
                         <strong>{item.fullName || "Sin nombre"}</strong>
-                        <p className="mt-1 text-xs font-medium text-foreground">Dep. {item.dependency || "-"} Â· Destino inicial: {item.collector || "OFICINA"}</p>
+                        <p className="mt-1 text-xs font-medium text-foreground">Dep. {item.dependency || "-"} · Destino inicial: {item.collector || "OFICINA"}</p>
                         <p className="text-xs text-muted-foreground">Póliza {item.policyNumber || "-"} · {item.plan} · {item.sourceTickets || 0} tickets · {currency.format(item.value)}</p>
                       </div>
                     ))}
@@ -3217,15 +3329,40 @@ const InsuranceCollections = () => {
             <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveReceipt}>
               <h2 className="font-semibold">Registrar recibo sin ticket</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value })} /></div>
-                <div className="space-y-2"><Label>Nombre y apellido</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value })} required /></div>
+                <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value.toLocaleUpperCase("es-AR") })} /></div>
+                <div className="space-y-2"><Label>N° de póliza</Label><Input inputMode="numeric" value={receiptForm.policyNumber} onChange={(event) => updateReceiptPolicy(event.target.value)} placeholder="EJ: 31774" /></div>
+                <div className="space-y-2"><Label>Apellido y nombre</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value.toLocaleUpperCase("es-AR") })} required /></div>
                 <div className="space-y-2"><Label>Cobrador</Label><select value={isOfficeUser ? receiptForm.collector : currentCollectorName} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} disabled={!isOfficeUser} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{(isOfficeUser ? collectors : [currentCollectorName]).filter(Boolean).map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
-                <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => setReceiptForm({ ...receiptForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
-                <div className="space-y-2"><Label>Mes que paga</Label><Input type="month" value={receiptForm.paidMonth} onChange={(event) => setReceiptForm({ ...receiptForm, paidMonth: event.target.value })} /></div>
-                <div className="space-y-2"><Label>Cant. de meses</Label><Input type="number" min="1" value={receiptForm.monthCount} onChange={(event) => setReceiptForm({ ...receiptForm, monthCount: event.target.value })} /></div>
+                <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => updateReceiptPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{receiptPlanOptions.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+                <div className="space-y-2">
+                  <Label>Meses que paga</Label>
+                  <details className="rounded-md border border-input bg-background">
+                    <summary className="cursor-pointer px-3 py-2 text-sm">
+                      {receiptForm.paidMonths.length ? receiptForm.paidMonths.map(monthLabel).join(" / ") : "SELECCIONAR MESES"}
+                    </summary>
+                    <div className="max-h-56 overflow-auto border-t p-2">
+                      {receiptMonthOptions.map((month) => (
+                        <label key={month} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-surface-subtle">
+                          <input
+                            type="checkbox"
+                            checked={receiptForm.paidMonths.includes(month)}
+                            onChange={(event) => updateReceiptPaidMonth(month, event.target.checked)}
+                          />
+                          <span>{monthLabel(month)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+                <div className="space-y-2"><Label>Cant. de meses</Label><Input readOnly value={receiptForm.monthCount} className="bg-surface-subtle" /></div>
                 <div className="space-y-2"><Label>Monto mensual</Label><Input value={receiptForm.monthlyAmount} onChange={(event) => setReceiptForm({ ...receiptForm, monthlyAmount: event.target.value })} required /></div>
                 <div className="space-y-2"><Label>Método de pago</Label><select value={receiptForm.paymentMethod} onChange={(event) => setReceiptForm({ ...receiptForm, paymentMethod: event.target.value as PaymentMethod })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
+              {selectedReceiptAffiliate && (
+                <p className="mt-3 rounded-md border bg-surface-subtle px-3 py-2 text-sm text-muted-foreground">
+                  Datos encontrados: {selectedReceiptAffiliate.fullName} - Póliza {selectedReceiptAffiliate.policyNumber} - {selectedReceiptAffiliate.plan} - Cobrador {selectedReceiptAffiliate.collector || "OFICINA"}
+                </p>
+              )}
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command">Guardar recibo</Button></div>
             </form>
@@ -3784,12 +3921,16 @@ const RecentReceipts = ({ receipts }: { receipts: ReceiptCollection[] }) => (
   <aside className="rounded-md border bg-card p-4">
     <h2 className="font-semibold">Últimos recibos</h2>
     <div className="mt-3 space-y-3">
-      {receipts.slice(-8).reverse().map((item) => (
-        <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
-          <strong>{item.fullName}</strong>
-          <p className="text-muted-foreground">Recibo {item.receiptNumber} · {item.plan} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
-        </div>
-      ))}
+      {receipts.slice(-8).reverse().map((item) => {
+        const paidMonths = item.paidMonths?.length ? item.paidMonths.map(monthLabel).join(" / ") : monthLabel(item.paidMonth);
+        return (
+          <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
+            <strong>{item.fullName}</strong>
+            <p className="text-muted-foreground">Recibo {item.receiptNumber} · Póliza {item.policyNumber || "-"} · {item.plan}</p>
+            <p className="text-muted-foreground">{paidMonths} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
+          </div>
+        );
+      })}
       {receipts.length === 0 && <p className="text-sm text-muted-foreground">Sin recibos registrados.</p>}
     </div>
   </aside>
