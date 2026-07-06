@@ -636,7 +636,6 @@ const InsuranceCollections = () => {
   const [newsAffiliateId, setNewsAffiliateId] = useState("");
   const [newsText, setNewsText] = useState("");
   const [collectionPolicy, setCollectionPolicy] = useState("");
-  const [collectionPlan, setCollectionPlan] = useState<PlanType>("A 238");
   const [collectionTickets, setCollectionTickets] = useState("1");
   const [collectionMethod, setCollectionMethod] = useState<PaymentMethod>("E");
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
@@ -926,12 +925,22 @@ const InsuranceCollections = () => {
       }));
   }, [activeMonth, affiliates, monthlyItems]);
 
+  const selectedMonthlyCandidates = useMemo(() => {
+    const policy = collectionPolicy.trim();
+    if (!policy) return [];
+    return affiliates
+      .filter((item) => item.policyNumber === policy)
+      .filter((item) => isOfficeUser || normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName);
+  }, [affiliates, collectionPolicy, currentCollectorName, isOfficeUser]);
+
   const selectedMonthlyAffiliate = useMemo(() => {
-    const affiliate = affiliates.find((item) => item.policyNumber === collectionPolicy.trim() && item.plan === collectionPlan) || null;
-    if (!affiliate) return null;
-    if (!isOfficeUser && normalizeCollectorName(affiliate.collector || "OFICINA") !== currentCollectorName) return null;
-    return affiliate;
-  }, [affiliates, collectionPlan, collectionPolicy, currentCollectorName, isOfficeUser]);
+    if (mobileSelectedAffiliateId) {
+      return selectedMonthlyCandidates.find((item) => item.id === mobileSelectedAffiliateId) || null;
+    }
+    return selectedMonthlyCandidates
+      .slice()
+      .sort((a, b) => getPendingTickets(b.id) - getPendingTickets(a.id) || a.fullName.localeCompare(b.fullName, "es-AR"))[0] || null;
+  }, [getPendingTickets, mobileSelectedAffiliateId, selectedMonthlyCandidates]);
 
   const selectedMonthlyItem = selectedMonthlyAffiliate ? monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id) : null;
   const alreadyChargedTickets = selectedMonthlyAffiliate
@@ -1045,7 +1054,6 @@ const InsuranceCollections = () => {
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
     setCollectionPolicy(affiliate.policyNumber);
-    setCollectionPlan(affiliate.plan);
     setCollectionTickets(String(Math.max(0, getPendingTickets(affiliate.id))));
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
@@ -3120,14 +3128,19 @@ const InsuranceCollections = () => {
           <section className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_420px]">
             <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveTicketCollection}>
               <h2 className="font-semibold">Registrar cobranza por tickets</h2>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="mt-4 grid gap-4">
                 <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => setCollectionPolicy(event.target.value)} /></div>
-                <div className="space-y-2"><Label>Plan</Label><select value={collectionPlan} onChange={(event) => setCollectionPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
               </div>
               {selectedMonthlyAffiliate && (
                 <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-sm">
                   <strong>{selectedMonthlyAffiliate.fullName}</strong>
+                  <p className="text-muted-foreground">Póliza {selectedMonthlyAffiliate.policyNumber} · Plan detectado: {selectedMonthlyAffiliate.plan}</p>
                   <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
+                  {selectedMonthlyCandidates.length > 1 && (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                      Esta póliza tiene {selectedMonthlyCandidates.length} registros. Se toma el que tiene tickets pendientes.
+                    </p>
+                  )}
                   {selectedMonthlyAffiliate.request?.trim() && (
                     <div className="mt-3 rounded-md border border-red-300 bg-red-100 p-3 text-red-950">
                       <p className="font-semibold">Pedido pendiente para el cobrador</p>
