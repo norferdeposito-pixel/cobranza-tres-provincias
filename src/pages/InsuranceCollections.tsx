@@ -80,6 +80,9 @@ type ReceiptCollection = {
   monthlyAmount: number;
   paymentMethod: PaymentMethod;
   transfer?: TransferData;
+  status?: "activo" | "anulado";
+  voidedAt?: string;
+  voidReason?: string;
 };
 
 type AffiliateNote = {
@@ -666,6 +669,7 @@ const InsuranceCollections = () => {
     paymentMethod: "E" as PaymentMethod,
     transfer: emptyTransfer(),
   });
+  const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
@@ -878,6 +882,7 @@ const InsuranceCollections = () => {
   }, [isAdminUser]);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
+  const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
 
   const getPendingTickets = (affiliateId: string) => {
     const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliateId);
@@ -1055,7 +1060,7 @@ const InsuranceCollections = () => {
     const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value || 0) * collection.ticketsCharged;
     const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
     const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
-    const receiptsForCollector = receipts.filter((receipt) => {
+    const receiptsForCollector = activeReceipts.filter((receipt) => {
       const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : affiliateCollectorByName.get(normalizeHeader(receipt.fullName));
       return receipt.collectionMonth === activeMonth && receiptCollector === normalizedCollector;
     });
@@ -1097,7 +1102,7 @@ const InsuranceCollections = () => {
       newsCount: notesForCollector.length,
       latestNotes: notesForCollector.slice(0, 6),
     };
-  }, [activeMonth, affiliates, affiliatesById, notes, receipts, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
+  }, [activeMonth, activeReceipts, affiliates, affiliatesById, notes, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
 
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
@@ -1180,7 +1185,7 @@ const InsuranceCollections = () => {
     return availablePlans.map((plan) => {
       const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
       const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && affiliatesById.get(item.affiliateId)?.plan === plan);
-      const receiptsForPlan = receipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
+      const receiptsForPlan = activeReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return (affiliate?.value || 0) * collection.ticketsCharged;
@@ -1208,7 +1213,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [activeMonth, affiliatesById, availablePlans, monthlyRows, receipts, ticketCollections]);
+  }, [activeMonth, activeReceipts, affiliatesById, availablePlans, monthlyRows, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -1797,6 +1802,7 @@ const InsuranceCollections = () => {
   };
 
   const resetReceiptForm = () => {
+    setEditingReceiptId(null);
     setReceiptForm({
       receiptNumber: "",
       policyNumber: "",
@@ -1812,14 +1818,50 @@ const InsuranceCollections = () => {
     });
   };
 
+  const editReceipt = (receipt: ReceiptCollection) => {
+    setEditingReceiptId(receipt.id);
+    setReceiptForm({
+      receiptNumber: receipt.receiptNumber || "",
+      policyNumber: receipt.policyNumber || "",
+      fullName: receipt.fullName || "",
+      collector: receipt.collector || selectedCollectorName || "OFICINA",
+      plan: receipt.plan || "A 238",
+      paidMonth: receipt.paidMonth || "",
+      paidMonths: receipt.paidMonths?.length ? receipt.paidMonths : receipt.paidMonth ? [receipt.paidMonth] : [],
+      monthCount: String(receipt.paidMonths?.length || receipt.monthCount || 0),
+      monthlyAmount: receipt.monthlyAmount ? String(receipt.monthlyAmount) : "",
+      paymentMethod: receipt.paymentMethod || "E",
+      transfer: receipt.transfer || emptyTransfer(),
+    });
+  };
+
+  const voidReceipt = (receiptId: string) => {
+    if (!isAdminUser) return;
+    if (!window.confirm("¿Anular este recibo? Quedará visible, pero no sumará en totales ni rendición.")) return;
+    setReceipts((current) => current.map((receipt) => receipt.id === receiptId ? {
+      ...receipt,
+      status: "anulado",
+      voidedAt: new Date().toISOString(),
+      voidReason: "ANULADO POR ADMINISTRADOR",
+    } : receipt));
+    if (editingReceiptId === receiptId) resetReceiptForm();
+  };
+
+  const deleteReceipt = (receiptId: string) => {
+    if (!isAdminUser) return;
+    if (!window.confirm("¿Eliminar definitivamente este recibo? Esta acción no se puede deshacer.")) return;
+    setReceipts((current) => current.filter((receipt) => receipt.id !== receiptId));
+    if (editingReceiptId === receiptId) resetReceiptForm();
+  };
+
   const saveReceipt = (event: FormEvent) => {
     event.preventDefault();
     if (!receiptForm.paidMonths.length) {
       alert("Seleccioná al menos un mes que paga el afiliado.");
       return;
     }
-    setReceipts((current) => [...current, {
-      id: `receipt-${Date.now()}`,
+    const receiptPayload: ReceiptCollection = {
+      id: editingReceiptId || `receipt-${Date.now()}`,
       collectionMonth: activeMonth,
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       policyNumber: receiptForm.policyNumber.trim(),
@@ -1832,7 +1874,13 @@ const InsuranceCollections = () => {
       monthlyAmount: parseMoney(receiptForm.monthlyAmount),
       paymentMethod: receiptForm.paymentMethod,
       transfer: receiptForm.paymentMethod === "T" ? receiptForm.transfer : undefined,
-    }]);
+      status: receipts.find((receipt) => receipt.id === editingReceiptId)?.status || "activo",
+      voidedAt: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidedAt,
+      voidReason: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidReason,
+    };
+    setReceipts((current) => editingReceiptId
+      ? current.map((receipt) => receipt.id === editingReceiptId ? receiptPayload : receipt)
+      : [...current, receiptPayload]);
     resetReceiptForm();
   };
 
@@ -3327,7 +3375,7 @@ const InsuranceCollections = () => {
         {activeSection === "Recibos" && (
           <section className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_420px]">
             <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveReceipt}>
-              <h2 className="font-semibold">Registrar recibo sin ticket</h2>
+              <h2 className="font-semibold">{editingReceiptId ? "Editar recibo" : "Registrar recibo sin ticket"}</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value.toLocaleUpperCase("es-AR") })} /></div>
                 <div className="space-y-2"><Label>N° de póliza</Label><Input inputMode="numeric" value={receiptForm.policyNumber} onChange={(event) => updateReceiptPolicy(event.target.value)} placeholder="EJ: 31774" /></div>
@@ -3364,9 +3412,12 @@ const InsuranceCollections = () => {
                 </p>
               )}
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
-              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command">Guardar recibo</Button></div>
+              <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row">
+                {editingReceiptId && <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={resetReceiptForm}>Cancelar edición</Button>}
+                <Button type="submit" className="w-full sm:w-auto" variant="command">{editingReceiptId ? "Guardar cambios" : "Guardar recibo"}</Button>
+              </div>
             </form>
-            <RecentReceipts receipts={visibleReceipts} />
+            <ReceiptsList receipts={visibleReceipts} isAdminUser={isAdminUser} onEdit={editReceipt} onVoid={voidReceipt} onDelete={deleteReceipt} />
           </section>
         )}
 
@@ -3917,17 +3968,51 @@ const RecentTicketCollections = ({ collections, affiliatesById }: { collections:
   </aside>
 );
 
-const RecentReceipts = ({ receipts }: { receipts: ReceiptCollection[] }) => (
+const ReceiptsList = ({
+  receipts,
+  isAdminUser,
+  onEdit,
+  onVoid,
+  onDelete,
+}: {
+  receipts: ReceiptCollection[];
+  isAdminUser: boolean;
+  onEdit: (receipt: ReceiptCollection) => void;
+  onVoid: (receiptId: string) => void;
+  onDelete: (receiptId: string) => void;
+}) => (
   <aside className="rounded-md border bg-card p-4">
-    <h2 className="font-semibold">Últimos recibos</h2>
-    <div className="mt-3 space-y-3">
-      {receipts.slice(-8).reverse().map((item) => {
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h2 className="font-semibold">Recibos cargados</h2>
+        <p className="text-xs text-muted-foreground">{receipts.length} recibo(s) en el período visible</p>
+      </div>
+    </div>
+    <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
+      {receipts.slice().reverse().map((item) => {
         const paidMonths = item.paidMonths?.length ? item.paidMonths.map(monthLabel).join(" / ") : monthLabel(item.paidMonth);
+        const isVoided = item.status === "anulado";
         return (
-          <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
-            <strong>{item.fullName}</strong>
-            <p className="text-muted-foreground">Recibo {item.receiptNumber} · Póliza {item.policyNumber || "-"} · {item.plan}</p>
-            <p className="text-muted-foreground">{paidMonths} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
+          <div key={item.id} className={`rounded-md border p-3 text-sm ${isVoided ? "border-red-200 bg-red-50 text-red-950" : "bg-surface-subtle"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <strong>{item.fullName}</strong>
+                <p className="text-muted-foreground">Recibo {item.receiptNumber} · Póliza {item.policyNumber || "-"} · {item.plan}</p>
+                <p className="text-muted-foreground">{paidMonths} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
+                {item.collector && <p className="text-xs text-muted-foreground">Cobrador: {item.collector}</p>}
+                {isVoided && <p className="mt-2 text-xs font-semibold uppercase text-red-700">Anulado</p>}
+              </div>
+              <span className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${isVoided ? "bg-red-600 text-white" : "bg-emerald-100 text-emerald-700"}`}>
+                {isVoided ? "Anulado" : "Activo"}
+              </span>
+            </div>
+            {isAdminUser && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => onEdit(item)}>Editar</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => onVoid(item.id)} disabled={isVoided}>Anular</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => onDelete(item.id)}>Eliminar</Button>
+              </div>
+            )}
           </div>
         );
       })}
