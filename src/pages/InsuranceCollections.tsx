@@ -680,6 +680,7 @@ const InsuranceCollections = () => {
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
+  const [lastCloudLoadedAt, setLastCloudLoadedAt] = useState("");
   const autoSaveTimer = useRef<number | null>(null);
   const userRole = (currentUserProfile?.rol || "").trim().toLowerCase();
   const isAdminUser = userRole === "admin";
@@ -755,12 +756,34 @@ const InsuranceCollections = () => {
     const onlineCount = Array.isArray(onlineSnapshot?.affiliates) ? onlineSnapshot.affiliates.length : 0;
     const nextCount = Array.isArray(snapshot.affiliates) ? snapshot.affiliates.length : 0;
     const isDangerousShrink = onlineCount >= 1000 && nextCount > 0 && nextCount < onlineCount * 0.8;
+    const onlineCollections = Array.isArray(onlineSnapshot?.ticketCollections) ? onlineSnapshot.ticketCollections.length : 0;
+    const nextCollections = Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections.length : 0;
+    const onlineReceipts = Array.isArray(onlineSnapshot?.receipts) ? onlineSnapshot.receipts.length : 0;
+    const nextReceipts = Array.isArray(snapshot.receipts) ? snapshot.receipts.length : 0;
+    const isLosingMovements = (onlineCollections > nextCollections) || (onlineReceipts > nextReceipts);
+    const onlineUpdatedAt = data?.updated_at ? new Date(data.updated_at).getTime() : 0;
+    const loadedAt = lastCloudLoadedAt ? new Date(lastCloudLoadedAt).getTime() : 0;
+    const remoteChangedAfterLoad = onlineUpdatedAt > 0 && loadedAt > 0 && onlineUpdatedAt > loadedAt + 1000;
 
     if (isDangerousShrink) {
       const updatedAt = data?.updated_at ? ` Ultima base online: ${new Date(data.updated_at).toLocaleString("es-AR")}.` : "";
       return {
         ok: false,
         message: `Proteccion activa: no se guardo online porque esta pantalla tiene ${nextCount} afiliados y la base online tiene ${onlineCount}.${updatedAt} Primero usá Cargar online.`,
+      };
+    }
+
+    if (isLosingMovements) {
+      return {
+        ok: false,
+        message: `Proteccion activa: no se guardo online porque esta pantalla tiene menos movimientos que la base online. Primero usá Cargar online.`,
+      };
+    }
+
+    if (remoteChangedAfterLoad) {
+      return {
+        ok: false,
+        message: "Proteccion activa: otra PC actualizo la base online. Se cancelo el guardado; usá Cargar online antes de guardar.",
       };
     }
 
@@ -785,6 +808,7 @@ const InsuranceCollections = () => {
       setCloudStatus(`No se pudo guardar online: ${error.message}`);
       return;
     }
+    setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Guardado online ${new Date().toLocaleString("es-AR")}`);
   };
 
@@ -802,6 +826,7 @@ const InsuranceCollections = () => {
       setCloudStatus(`No se pudo sincronizar online: ${error.message}`);
       return;
     }
+    setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Sincronizado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
@@ -838,6 +863,7 @@ const InsuranceCollections = () => {
       return;
     }
     applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
+    setLastCloudLoadedAt(data.updated_at || new Date().toISOString());
     setCloudStatus(`Datos online cargados. Ultima actualizacion: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
     setCloudReady(true);
   };
