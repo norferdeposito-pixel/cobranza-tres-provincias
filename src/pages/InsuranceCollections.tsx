@@ -909,19 +909,35 @@ const InsuranceCollections = () => {
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
+  const monthlyTicketsByAffiliate = useMemo(() => {
+    const rows = new Map<string, number>();
+    monthlyItems
+      .filter((item) => item.month === activeMonth)
+      .forEach((item) => rows.set(item.affiliateId, item.tickets || 0));
+    return rows;
+  }, [activeMonth, monthlyItems]);
+  const chargedTicketsByAffiliate = useMemo(() => {
+    const rows = new Map<string, number>();
+    ticketCollections
+      .filter((item) => item.month === activeMonth)
+      .forEach((item) => rows.set(item.affiliateId, (rows.get(item.affiliateId) || 0) + item.ticketsCharged));
+    return rows;
+  }, [activeMonth, ticketCollections]);
+  const affiliateSearchTextById = useMemo(() => {
+    return new Map(affiliates.map((item) => [
+      item.id,
+      `${item.fullName} ${item.policyNumber} ${item.plan} ${item.dependency} ${item.collector || "OFICINA"}`.toLocaleUpperCase("es-AR"),
+    ]));
+  }, [affiliates]);
 
   const getPendingTickets = (affiliateId: string) => {
-    const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliateId);
-    const charged = ticketCollections
-      .filter((item) => item.month === activeMonth && item.affiliateId === affiliateId)
-      .reduce((sum, item) => sum + item.ticketsCharged, 0);
-    return Math.max((monthly?.tickets || 0) - charged, 0);
+    return Math.max((monthlyTicketsByAffiliate.get(affiliateId) || 0) - (chargedTicketsByAffiliate.get(affiliateId) || 0), 0);
   };
 
   const filteredAffiliates = useMemo(() => {
     const normalized = query.trim().toLocaleUpperCase("es-AR");
     return affiliates
-      .filter((item) => !normalized || `${item.fullName} ${item.policyNumber} ${item.plan} ${item.dependency} ${item.collector || "OFICINA"}`.toLocaleUpperCase("es-AR").includes(normalized))
+      .filter((item) => !normalized || (affiliateSearchTextById.get(item.id) || "").includes(normalized))
       .filter((item) => isOfficeUser || normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName)
       .filter((item) => dependencyFilter === "todos" || (item.dependency || "SIN DEFINIR") === dependencyFilter)
       .filter((item) => collectorFilter === "todos" || normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collectorFilter))
@@ -935,7 +951,7 @@ const InsuranceCollections = () => {
         if (pendingFilter === "mayor" || pendingFilter === "con") return getPendingTickets(b.id) - getPendingTickets(a.id);
         return 0;
       });
-  }, [activeMonth, affiliates, collectorFilter, currentCollectorName, dependencyFilter, isOfficeUser, pendingFilter, query, monthlyItems, ticketCollections]);
+  }, [affiliateSearchTextById, affiliates, chargedTicketsByAffiliate, collectorFilter, currentCollectorName, dependencyFilter, isOfficeUser, monthlyTicketsByAffiliate, pendingFilter, query]);
 
   const dependencies = useMemo(() => {
     return uniqueSorted([...customDependencies, ...affiliates.map((item) => item.dependency || "SIN DEFINIR")]);
@@ -2543,7 +2559,7 @@ const InsuranceCollections = () => {
                         </select>
                       </td>
                       <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
-                      <td className="w-20 px-2 py-3 text-center">{monthlyItems.find((monthly) => monthly.month === activeMonth && monthly.affiliateId === item.id)?.tickets || 0}</td>
+                      <td className="w-20 px-2 py-3 text-center">{monthlyTicketsByAffiliate.get(item.id) || 0}</td>
                       <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
                       <td className="w-96 px-3 py-3">
                         <div className="flex items-start gap-2">
