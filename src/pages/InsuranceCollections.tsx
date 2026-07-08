@@ -4200,12 +4200,35 @@ const TransferFields = ({ value, onChange }: { value: TransferData; onChange: (v
   </div>
 );
 
-const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => (
+const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => {
+  const [policySearch, setPolicySearch] = useState("");
+  const normalizedSearch = policySearch.trim().replace(/\D/g, "");
+  const filteredCollections = collections.filter((item) => {
+    if (!normalizedSearch) return true;
+    const affiliate = affiliatesById.get(item.affiliateId);
+    return (affiliate?.policyNumber || "").replace(/\D/g, "").includes(normalizedSearch);
+  });
+
+  return (
   <div className="mt-6 rounded-md border bg-background p-4">
-    <h2 className="font-semibold">Detalle de tickets cobrados</h2>
-    <p className="text-xs text-muted-foreground">{collections.length} cobro(s) visible(s)</p>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 className="font-semibold">Detalle de tickets cobrados</h2>
+        <p className="text-xs text-muted-foreground">{filteredCollections.length} de {collections.length} cobro(s) visible(s)</p>
+      </div>
+      <div className="w-full sm:max-w-xs">
+        <Label htmlFor="ticket-policy-search">Buscar por poliza</Label>
+        <Input
+          id="ticket-policy-search"
+          inputMode="numeric"
+          value={policySearch}
+          onChange={(event) => setPolicySearch(event.target.value)}
+          placeholder="N de poliza"
+        />
+      </div>
+    </div>
     <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
-      {collections.slice().reverse().map((item) => {
+      {filteredCollections.slice().reverse().map((item) => {
         const affiliate = affiliatesById.get(item.affiliateId);
         return (
           <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
@@ -4221,10 +4244,11 @@ const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = fa
           </div>
         );
       })}
-      {collections.length === 0 && <p className="text-sm text-muted-foreground">Sin cobros registrados.</p>}
+      {filteredCollections.length === 0 && <p className="text-sm text-muted-foreground">Sin cobros registrados.</p>}
     </div>
   </div>
-);
+  );
+};
 
 const ReceiptsList = ({
   receipts,
