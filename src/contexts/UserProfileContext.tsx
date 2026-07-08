@@ -38,6 +38,23 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mustUpdatePassword, setMustUpdatePassword] = useState(false);
 
+  const buildProfileFromSession = async (userEmail: string): Promise<CurrentUserProfile | null> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const user = sessionData.session?.user;
+    if (!user?.email || user.email.toLowerCase() !== userEmail.toLowerCase()) return null;
+    const metadata = user.user_metadata || {};
+    const role = String(metadata.rol || "cobrador").trim().toLowerCase();
+    const name = String(metadata.nombre || userEmail.split("@")[0] || "USUARIO").trim().toLocaleUpperCase("es-AR");
+    const collectorName = String(metadata.collectorName || metadata.collector_name || metadata.cobrador || name).trim().toLocaleUpperCase("es-AR");
+    return {
+      nombre: name,
+      rol: role,
+      permisos: Array.isArray(metadata.permisos) ? metadata.permisos : null,
+      collectorName,
+      active: true,
+    };
+  };
+
   const loadProfile = async (userEmail: string | null) => {
     setEmail(userEmail);
     setIsAuthenticated(!!userEmail);
@@ -73,7 +90,7 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
         }
       }
       if (error || !data) {
-        setCurrentUserProfile(null);
+        setCurrentUserProfile(await buildProfileFromSession(userEmail));
       } else {
         const d = data as any;
         if (d.activo === false || d.active === false) {

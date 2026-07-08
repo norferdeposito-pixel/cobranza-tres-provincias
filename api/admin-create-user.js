@@ -66,6 +66,8 @@ export default async function handler(req, res) {
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanPassword = String(password || "");
   const cleanRol = String(rol || "").trim().toLowerCase();
+  const cleanCollectorName = String(collectorName || "").trim().toLocaleUpperCase("es-AR");
+  const cleanPermisos = Array.isArray(permisos) ? permisos.map((item) => String(item || "").trim()).filter(Boolean) : [];
 
   if (!cleanNombre || !cleanEmail || !cleanPassword || !allowedRoles.has(cleanRol)) {
     json(res, 400, { error: "Completá nombre, email, contraseña y rol válido." });
@@ -80,7 +82,7 @@ export default async function handler(req, res) {
     email: cleanEmail,
     password: cleanPassword,
     email_confirm: true,
-    user_metadata: { nombre: cleanNombre, rol: cleanRol },
+    user_metadata: { nombre: cleanNombre, rol: cleanRol, collectorName: cleanCollectorName, permisos: cleanPermisos },
   });
 
   const userAlreadyExists = !!createError && createError.message.toLowerCase().includes("registered");
@@ -101,7 +103,7 @@ export default async function handler(req, res) {
     const { data: updatedUser, error: updateAuthError } = await adminClient.auth.admin.updateUserById(existingAuthUser.id, {
       password: cleanPassword,
       email_confirm: true,
-      user_metadata: { nombre: cleanNombre, rol: cleanRol },
+      user_metadata: { nombre: cleanNombre, rol: cleanRol, collectorName: cleanCollectorName, permisos: cleanPermisos },
     });
     if (updateAuthError) {
       json(res, 400, { error: updateAuthError.message });
@@ -120,8 +122,8 @@ export default async function handler(req, res) {
     email: cleanEmail,
     nombre: cleanNombre,
     rol: cleanRol,
-    permisos: Array.isArray(permisos) ? permisos.map((item) => String(item || "").trim()).filter(Boolean) : [],
-    collector_name: String(collectorName || "").trim().toLocaleUpperCase("es-AR"),
+    permisos: cleanPermisos,
+    collector_name: cleanCollectorName,
     activo: true,
   };
   const profileRequest = existingProfile
