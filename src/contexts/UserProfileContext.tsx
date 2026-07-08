@@ -47,11 +47,31 @@ export const UserProfileProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("perfiles_usuarios" as any)
         .select("*")
         .eq("email", userEmail)
         .maybeSingle();
+      if (error || !data) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (token) {
+          await fetch("/api/ensure-user-profile", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }).catch(() => null);
+          const retry = await supabase
+            .from("perfiles_usuarios" as any)
+            .select("*")
+            .eq("email", userEmail)
+            .maybeSingle();
+          data = retry.data;
+          error = retry.error;
+        }
+      }
       if (error || !data) {
         setCurrentUserProfile(null);
       } else {
