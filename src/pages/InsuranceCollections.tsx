@@ -652,6 +652,7 @@ const InsuranceCollections = () => {
   const [collectionTickets, setCollectionTickets] = useState("1");
   const [collectionMethod, setCollectionMethod] = useState<PaymentMethod>("E");
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
+  const [editingTicketCollectionId, setEditingTicketCollectionId] = useState<string | null>(null);
   const [mobileCollector, setMobileCollector] = useState("todos");
   const [mobileSearch, setMobileSearch] = useState("");
   const [mobileTicketFilter, setMobileTicketFilter] = useState<"pending" | "all" | "paid">("pending");
@@ -1042,7 +1043,9 @@ const InsuranceCollections = () => {
 
   const selectedMonthlyItem = selectedMonthlyAffiliate ? monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id) : null;
   const alreadyChargedTickets = selectedMonthlyAffiliate
-    ? ticketCollections.filter((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id).reduce((sum, item) => sum + item.ticketsCharged, 0)
+    ? ticketCollections
+      .filter((item) => item.month === activeMonth && item.affiliateId === selectedMonthlyAffiliate.id && item.id !== editingTicketCollectionId)
+      .reduce((sum, item) => sum + item.ticketsCharged, 0)
     : 0;
   const ticketsToCharge = Math.max((selectedMonthlyItem?.tickets || 0) - alreadyChargedTickets, 0);
   const hasUnansweredRequest = !!selectedMonthlyAffiliate?.request?.trim() && !selectedMonthlyAffiliate?.latestNews?.trim();
@@ -1787,19 +1790,52 @@ const InsuranceCollections = () => {
     }
     const tickets = Math.max(0, Math.min(parseNumber(collectionTickets), ticketsToCharge));
     if (tickets <= 0) return;
-    setTicketCollections((current) => [...current, {
-      id: `ticket-${Date.now()}`,
+    const payload: TicketCollection = {
+      id: editingTicketCollectionId || `ticket-${Date.now()}`,
       month: activeMonth,
       affiliateId: selectedMonthlyAffiliate.id,
       ticketsCharged: tickets,
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
-    }]);
+    };
+    setTicketCollections((current) => editingTicketCollectionId
+      ? current.map((item) => item.id === editingTicketCollectionId ? payload : item)
+      : [...current, payload]);
+    setEditingTicketCollectionId(null);
     setCollectionTickets("1");
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
+  };
+
+  const editTicketCollection = (collection: TicketCollection) => {
+    if (!isAdminUser) return;
+    const affiliate = affiliatesById.get(collection.affiliateId);
+    if (!affiliate) return;
+    setEditingTicketCollectionId(collection.id);
+    setCollectionPolicy(affiliate.policyNumber);
+    setMobileSelectedAffiliateId(affiliate.id);
+    setCollectionTickets(String(collection.ticketsCharged));
+    setCollectionMethod(collection.paymentMethod || "E");
+    setCollectionTransfer(collection.transfer || emptyTransfer());
+    setActiveSection("Cobranza");
+  };
+
+  const cancelTicketCollectionEdit = () => {
+    setEditingTicketCollectionId(null);
+    setCollectionPolicy("");
+    setCollectionTickets("1");
+    setCollectionMethod("E");
+    setCollectionTransfer(emptyTransfer());
+    setMobileSelectedAffiliateId("");
+  };
+
+  const deleteTicketCollection = (collectionId: string) => {
+    if (!isAdminUser) return;
+    if (!window.confirm("¿Eliminar este cobro de tickets? Esta acción corrige los totales y no se puede deshacer.")) return;
+    setTicketCollections((current) => current.filter((item) => item.id !== collectionId));
+    if (editingTicketCollectionId === collectionId) cancelTicketCollectionEdit();
   };
 
   const applyReceiptAffiliate = (affiliate: Affiliate | null) => {
@@ -3518,7 +3554,14 @@ const InsuranceCollections = () => {
         {activeSection === "Cobranza" && (
           <section className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_420px]">
             <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveTicketCollection}>
-              <h2 className="font-semibold">Registrar cobranza por tickets</h2>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="font-semibold">{editingTicketCollectionId ? "Editar cobranza por tickets" : "Registrar cobranza por tickets"}</h2>
+                {editingTicketCollectionId && (
+                  <Button type="button" variant="outline" size="sm" onClick={cancelTicketCollectionEdit}>
+                    Cancelar edicion
+                  </Button>
+                )}
+              </div>
               <div className="mt-4 grid gap-4">
                 <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => setCollectionPolicy(event.target.value)} /></div>
               </div>
@@ -3557,10 +3600,10 @@ const InsuranceCollections = () => {
               </div>
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
-              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button></div>
+              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
             </form>
             <div className="space-y-5">
-              <RecentTicketCollections collections={visibleTicketCollections} affiliatesById={affiliatesById} />
+              <RecentTicketCollections collections={visibleTicketCollections} affiliatesById={affiliatesById} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
               <RecentNotes notes={visibleNotes} affiliatesById={affiliatesById} />
             </div>
           </section>
@@ -4157,15 +4200,21 @@ const TransferFields = ({ value, onChange }: { value: TransferData; onChange: (v
   </div>
 );
 
-const RecentTicketCollections = ({ collections, affiliatesById }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate> }) => (
+const RecentTicketCollections = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => (
   <aside className="rounded-md border bg-card p-4">
     <h2 className="font-semibold">Últimos cobros</h2>
-    <div className="mt-3 space-y-3">
-      {collections.slice(-8).reverse().map((item) => {
+    <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
+      {(isAdminUser ? collections.slice().reverse() : collections.slice(-8).reverse()).map((item) => {
         const affiliate = affiliatesById.get(item.affiliateId);
         return (
           <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
             <strong>{affiliate?.fullName || "Afiliado"}</strong>
+            {isAdminUser && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => onEdit?.(item)}>Editar</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => onDelete?.(item.id)}>Eliminar</Button>
+              </div>
+            )}
             <p className="text-muted-foreground">{item.ticketsCharged} ticket(s) · {methodLabel(item.paymentMethod)} · {currency.format((affiliate?.value || 0) * item.ticketsCharged)}</p>
           </div>
         );
