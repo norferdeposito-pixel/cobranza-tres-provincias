@@ -3601,9 +3601,9 @@ const InsuranceCollections = () => {
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
+              <TicketCollectionsDetail collections={visibleTicketCollections} affiliatesById={affiliatesById} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
             </form>
             <div className="space-y-5">
-              <RecentTicketCollections collections={visibleTicketCollections} affiliatesById={affiliatesById} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
               <RecentNotes notes={visibleNotes} affiliatesById={affiliatesById} />
             </div>
           </section>
@@ -4200,15 +4200,17 @@ const TransferFields = ({ value, onChange }: { value: TransferData; onChange: (v
   </div>
 );
 
-const RecentTicketCollections = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => (
-  <aside className="rounded-md border bg-card p-4">
-    <h2 className="font-semibold">Últimos cobros</h2>
+const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => (
+  <div className="mt-6 rounded-md border bg-background p-4">
+    <h2 className="font-semibold">Detalle de tickets cobrados</h2>
+    <p className="text-xs text-muted-foreground">{collections.length} cobro(s) visible(s)</p>
     <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
-      {(isAdminUser ? collections.slice().reverse() : collections.slice(-8).reverse()).map((item) => {
+      {collections.slice().reverse().map((item) => {
         const affiliate = affiliatesById.get(item.affiliateId);
         return (
           <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
             <strong>{affiliate?.fullName || "Afiliado"}</strong>
+            <p className="text-xs text-muted-foreground">Poliza {affiliate?.policyNumber || "-"} - {affiliate?.plan || "-"} - Dep. {affiliate?.dependency || "-"}</p>
             {isAdminUser && (
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => onEdit?.(item)}>Editar</Button>
@@ -4221,7 +4223,7 @@ const RecentTicketCollections = ({ collections, affiliatesById, isAdminUser = fa
       })}
       {collections.length === 0 && <p className="text-sm text-muted-foreground">Sin cobros registrados.</p>}
     </div>
-  </aside>
+  </div>
 );
 
 const ReceiptsList = ({
@@ -4239,7 +4241,7 @@ const ReceiptsList = ({
   onDelete: (receiptId: string) => void;
   onExport: () => void;
 }) => (
-  <aside className="rounded-md border bg-card p-4">
+  <div className="mt-6 rounded-md border bg-background p-4">
     <div className="flex items-center justify-between gap-3">
       <div>
         <h2 className="font-semibold">Recibos cargados</h2>
@@ -4281,7 +4283,7 @@ const ReceiptsList = ({
       })}
       {receipts.length === 0 && <p className="text-sm text-muted-foreground">Sin recibos registrados.</p>}
     </div>
-  </aside>
+  </div>
 );
 
 const RecentNotes = ({ notes, affiliatesById }: { notes: AffiliateNote[]; affiliatesById: Map<string, Affiliate> }) => (
