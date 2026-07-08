@@ -1,11 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://mwbhjlyuitkgunchsyht.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_9PkFScfGvzwbziQ9AJWBgQ_gNqIld9B";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://yiovuyysgszyfltbbjpn.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_0qMU7y_oLzG5YUwxSwVwmg_cmQUUxwA";
 const allowedRoles = new Set(["admin", "oficina", "cobrador", "oficina_cobrador", "consulta", "compras", "vendedor", "deposito", "comercial", "produccion", "consultor", "gerencia", "administracion", "contaduria", "logistica"]);
 
 const json = (res, status, body) => {
   res.status(status).json(body);
+};
+
+const findAuthUserByEmail = async (adminClient, email) => {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) return { user: null, error };
+    const user = data?.users?.find((item) => String(item.email || "").toLowerCase() === email);
+    if (user) return { user, error: null };
+    if (!data?.users || data.users.length < 100) break;
+  }
+  return { user: null, error: null };
 };
 
 export default async function handler(req, res) {
@@ -65,7 +76,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
+  let { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
     email: cleanEmail,
     password: cleanPassword,
     email_confirm: true,
@@ -76,6 +87,27 @@ export default async function handler(req, res) {
   if (createError && !userAlreadyExists) {
     json(res, 400, { error: createError.message });
     return;
+  }
+  if (userAlreadyExists) {
+    const { user: existingAuthUser, error: findUserError } = await findAuthUserByEmail(adminClient, cleanEmail);
+    if (findUserError) {
+      json(res, 400, { error: findUserError.message });
+      return;
+    }
+    if (!existingAuthUser?.id) {
+      json(res, 400, { error: "El email ya existe, pero no se pudo encontrar el usuario para actualizar la clave." });
+      return;
+    }
+    const { data: updatedUser, error: updateAuthError } = await adminClient.auth.admin.updateUserById(existingAuthUser.id, {
+      password: cleanPassword,
+      email_confirm: true,
+      user_metadata: { nombre: cleanNombre, rol: cleanRol },
+    });
+    if (updateAuthError) {
+      json(res, 400, { error: updateAuthError.message });
+      return;
+    }
+    createdUser = updatedUser;
   }
 
   const { data: existingProfile } = await adminClient
