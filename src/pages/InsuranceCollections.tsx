@@ -81,6 +81,7 @@ type ReceiptCollection = {
   paymentMethod: PaymentMethod;
   transfer?: TransferData;
   status?: "activo" | "anulado";
+  isProduction?: boolean;
   voidedAt?: string;
   voidReason?: string;
 };
@@ -667,6 +668,7 @@ const InsuranceCollections = () => {
     monthCount: "0",
     monthlyAmount: "",
     paymentMethod: "E" as PaymentMethod,
+    isProduction: false,
     transfer: emptyTransfer(),
   });
   const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
@@ -909,6 +911,7 @@ const InsuranceCollections = () => {
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
+  const collectionReceipts = useMemo(() => activeReceipts.filter((receipt) => !receipt.isProduction), [activeReceipts]);
   const monthlyTicketsByAffiliate = useMemo(() => {
     const rows = new Map<string, number>();
     monthlyItems
@@ -1102,7 +1105,7 @@ const InsuranceCollections = () => {
     const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value || 0) * collection.ticketsCharged;
     const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
     const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
-    const receiptsForCollector = activeReceipts.filter((receipt) => {
+    const receiptsForCollector = collectionReceipts.filter((receipt) => {
       const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : affiliateCollectorByName.get(normalizeHeader(receipt.fullName));
       return receipt.collectionMonth === activeMonth && receiptCollector === normalizedCollector;
     });
@@ -1144,7 +1147,7 @@ const InsuranceCollections = () => {
       newsCount: notesForCollector.length,
       latestNotes: notesForCollector.slice(0, 6),
     };
-  }, [activeMonth, activeReceipts, affiliates, affiliatesById, notes, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
+  }, [activeMonth, affiliates, affiliatesById, collectionReceipts, notes, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
 
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
@@ -1220,14 +1223,15 @@ const InsuranceCollections = () => {
   }, [receiptForm.plan, receiptPolicyCandidates]);
 
   const receiptMonthOptions = useMemo(() => {
-    return Array.from({ length: 18 }, (_, index) => addMonths(activeMonth, -index));
+    const year = Number(activeMonth.split("-")[0]) || new Date().getFullYear();
+    return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
   }, [activeMonth]);
 
   const totalsByPlan = useMemo(() => {
     return availablePlans.map((plan) => {
       const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
       const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && affiliatesById.get(item.affiliateId)?.plan === plan);
-      const receiptsForPlan = activeReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
+      const receiptsForPlan = collectionReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return (affiliate?.value || 0) * collection.ticketsCharged;
@@ -1255,7 +1259,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [activeMonth, activeReceipts, affiliatesById, availablePlans, monthlyRows, ticketCollections]);
+  }, [activeMonth, affiliatesById, availablePlans, collectionReceipts, monthlyRows, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -1856,6 +1860,7 @@ const InsuranceCollections = () => {
       monthCount: "0",
       monthlyAmount: "",
       paymentMethod: "E",
+      isProduction: false,
       transfer: emptyTransfer(),
     });
   };
@@ -1873,6 +1878,7 @@ const InsuranceCollections = () => {
       monthCount: String(receipt.paidMonths?.length || receipt.monthCount || 0),
       monthlyAmount: receipt.monthlyAmount ? String(receipt.monthlyAmount) : "",
       paymentMethod: receipt.paymentMethod || "E",
+      isProduction: !!receipt.isProduction,
       transfer: receipt.transfer || emptyTransfer(),
     });
   };
@@ -1917,6 +1923,7 @@ const InsuranceCollections = () => {
       paymentMethod: receiptForm.paymentMethod,
       transfer: receiptForm.paymentMethod === "T" ? receiptForm.transfer : undefined,
       status: receipts.find((receipt) => receipt.id === editingReceiptId)?.status || "activo",
+      isProduction: receiptForm.isProduction,
       voidedAt: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidedAt,
       voidReason: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidReason,
     };
@@ -2137,6 +2144,45 @@ const InsuranceCollections = () => {
       returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 6, align: "center", fontWeight: "bold" }]);
     }
 
+    const chargedRows = ticketCollections
+      .filter((item) => item.month === activeMonth && selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId))
+      .map((collection) => {
+        const affiliate = affiliatesById.get(collection.affiliateId);
+        return {
+          collection,
+          affiliate,
+          amount: (affiliate?.value || 0) * collection.ticketsCharged,
+        };
+      })
+      .sort((a, b) => (a.affiliate?.fullName || "").localeCompare(b.affiliate?.fullName || "", "es-AR"));
+
+    const chargedData: any[][] = [
+      [
+        headerCell("Nombre y apellido"),
+        headerCell("Poliza"),
+        headerCell("Plan"),
+        headerCell("Dependencia"),
+        headerCell("Tickets cobrados"),
+        headerCell("Forma de pago"),
+        headerCell("Importe cobrado"),
+        headerCell("Comprobante"),
+      ],
+      ...chargedRows.map(({ collection, affiliate, amount }) => [
+        affiliate?.fullName || "-",
+        affiliate?.policyNumber || "-",
+        affiliate?.plan || "-",
+        affiliate?.dependency || "-",
+        collection.ticketsCharged,
+        methodLabel(collection.paymentMethod),
+        moneyCell(amount),
+        collection.transfer?.receiptNumber || collection.transfer?.transactionNumber || "-",
+      ]),
+    ];
+
+    if (chargedRows.length === 0) {
+      chargedData.push([{ value: "SIN TICKETS COBRADOS", columnSpan: 8, align: "center", fontWeight: "bold" }]);
+    }
+
     const safeCollectorName = (selectedCollectorName || "cobrador").toLocaleLowerCase("es-AR").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     await writeExcelFile([
       {
@@ -2153,7 +2199,113 @@ const InsuranceCollections = () => {
         orientation: "landscape",
         stickyRowsCount: 1,
       },
+      {
+        data: chargedData,
+        sheet: "Tickets cobrados",
+        columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
     ]).toFile(`reporte-cobranza-${safeCollectorName}-${activeMonth}.xlsx`);
+  };
+
+  const exportReceiptsExcel = async () => {
+    const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
+    const numberCell = (value: number) => ({ value, type: Number, format: "0", align: "right" as const });
+    const headerCell = (value: string) => ({
+      value,
+      fontWeight: "bold" as const,
+      backgroundColor: "#0B5CAD",
+      textColor: "#FFFFFF",
+      align: "center" as const,
+      wrap: true,
+    });
+    const titleCell = (value: string, columnSpan: number) => ({
+      value,
+      columnSpan,
+      fontWeight: "bold" as const,
+      fontSize: 16,
+      backgroundColor: "#0B5CAD",
+      textColor: "#FFFFFF",
+      align: "center" as const,
+    });
+    const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
+    const safeCollector = currentCollectorName.toLocaleLowerCase("es-AR").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "cobrador";
+    const rows = visibleReceipts
+      .slice()
+      .sort((a, b) => (a.collector || "").localeCompare(b.collector || "", "es-AR") || a.fullName.localeCompare(b.fullName, "es-AR"));
+
+    const receiptsData: any[][] = [
+      [titleCell("REPORTE DE RECIBOS", 14)],
+      [{ value: `Periodo: ${activeMonth}`, columnSpan: 14, fontWeight: "bold", align: "center" }],
+      [{ value: isOfficeUser ? "Vista administracion" : `Cobrador: ${currentCollectorName || "-"}`, columnSpan: 14, align: "center" }],
+      [null],
+      [
+        headerCell("Estado"),
+        headerCell("Tipo"),
+        headerCell("N recibo"),
+        headerCell("Apellido y nombre"),
+        headerCell("Poliza"),
+        headerCell("Plan"),
+        headerCell("Cobrador"),
+        headerCell("Meses pagados"),
+        headerCell("Cant. meses"),
+        headerCell("Monto mensual"),
+        headerCell("Total"),
+        headerCell("Metodo"),
+        headerCell("Comprobante"),
+        headerCell("Observacion"),
+      ],
+      ...rows.map((receipt) => [
+        receipt.status === "anulado" ? "ANULADO" : "ACTIVO",
+        receipt.isProduction ? "PRODUCCION" : "COBRANZA",
+        receipt.receiptNumber || "-",
+        receipt.fullName || "-",
+        receipt.policyNumber || "-",
+        receipt.plan || "-",
+        receipt.collector || "OFICINA",
+        receipt.paidMonths?.length ? receipt.paidMonths.map(monthLabel).join(" / ") : monthLabel(receipt.paidMonth),
+        numberCell(receipt.monthCount || 0),
+        moneyCell(receipt.monthlyAmount || 0),
+        moneyCell(receiptAmount(receipt)),
+        methodLabel(receipt.paymentMethod),
+        receipt.transfer?.receiptNumber || receipt.transfer?.transactionNumber || "-",
+        receipt.voidReason || "",
+      ]),
+    ];
+
+    if (rows.length === 0) {
+      receiptsData.push([{ value: "SIN RECIBOS CARGADOS", columnSpan: 14, align: "center", fontWeight: "bold" }]);
+    }
+
+    const activeCollectionReceipts = rows.filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction);
+    const productionReceipts = rows.filter((receipt) => receipt.status !== "anulado" && receipt.isProduction);
+    const voidedReceipts = rows.filter((receipt) => receipt.status === "anulado");
+    const summaryData: any[][] = [
+      [titleCell("RESUMEN DE RECIBOS", 4)],
+      [null],
+      [headerCell("Concepto"), headerCell("Cantidad"), headerCell("Importe"), headerCell("Aclaracion")],
+      ["Recibos de cobranza", numberCell(activeCollectionReceipts.length), moneyCell(activeCollectionReceipts.reduce((sum, receipt) => sum + receiptAmount(receipt), 0)), "Suman a cobranza"],
+      ["Recibos de produccion", numberCell(productionReceipts.length), moneyCell(productionReceipts.reduce((sum, receipt) => sum + receiptAmount(receipt), 0)), "No suman a cobranza"],
+      ["Recibos anulados", numberCell(voidedReceipts.length), moneyCell(voidedReceipts.reduce((sum, receipt) => sum + receiptAmount(receipt), 0)), "No suman"],
+    ];
+
+    await writeExcelFile([
+      {
+        data: receiptsData,
+        sheet: "Recibos",
+        columns: [{ width: 14 }, { width: 16 }, { width: 16 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 34 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 18 }, { width: 22 }, { width: 28 }],
+        orientation: "landscape",
+        stickyRowsCount: 5,
+      },
+      {
+        data: summaryData,
+        sheet: "Resumen",
+        columns: [{ width: 24 }, { width: 14 }, { width: 18 }, { width: 24 }],
+        stickyRowsCount: 3,
+      },
+    ]).toFile(`recibos-${isOfficeUser ? "general" : safeCollector}-${activeMonth}.xlsx`);
   };
 
   const addTransferRender = () => {
@@ -3448,6 +3600,19 @@ const InsuranceCollections = () => {
                 <div className="space-y-2"><Label>Monto mensual</Label><Input value={receiptForm.monthlyAmount} onChange={(event) => setReceiptForm({ ...receiptForm, monthlyAmount: event.target.value })} required /></div>
                 <div className="space-y-2"><Label>Método de pago</Label><select value={receiptForm.paymentMethod} onChange={(event) => setReceiptForm({ ...receiptForm, paymentMethod: event.target.value as PaymentMethod })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
+              <label className="mt-3 flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={receiptForm.isProduction}
+                  onChange={(event) => setReceiptForm({ ...receiptForm, isProduction: event.target.checked })}
+                />
+                <span>Produccion</span>
+              </label>
+              {receiptForm.isProduction && (
+                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                  Este recibo queda registrado como produccion y no suma a cobranza, rendicion ni comision.
+                </p>
+              )}
               {selectedReceiptAffiliate && (
                 <p className="mt-3 rounded-md border bg-surface-subtle px-3 py-2 text-sm text-muted-foreground">
                   Datos encontrados: {selectedReceiptAffiliate.fullName} - Póliza {selectedReceiptAffiliate.policyNumber} - {selectedReceiptAffiliate.plan} - Cobrador {selectedReceiptAffiliate.collector || "OFICINA"}
@@ -3459,7 +3624,7 @@ const InsuranceCollections = () => {
                 <Button type="submit" className="w-full sm:w-auto" variant="command">{editingReceiptId ? "Guardar cambios" : "Guardar recibo"}</Button>
               </div>
             </form>
-            <ReceiptsList receipts={visibleReceipts} isAdminUser={isAdminUser} onEdit={editReceipt} onVoid={voidReceipt} onDelete={deleteReceipt} />
+            <ReceiptsList receipts={visibleReceipts} isAdminUser={isAdminUser} onEdit={editReceipt} onVoid={voidReceipt} onDelete={deleteReceipt} onExport={exportReceiptsExcel} />
           </section>
         )}
 
@@ -4016,17 +4181,23 @@ const ReceiptsList = ({
   onEdit,
   onVoid,
   onDelete,
+  onExport,
 }: {
   receipts: ReceiptCollection[];
   isAdminUser: boolean;
   onEdit: (receipt: ReceiptCollection) => void;
   onVoid: (receiptId: string) => void;
   onDelete: (receiptId: string) => void;
+  onExport: () => void;
 }) => (
   <aside className="rounded-md border bg-card p-4">
     <div className="flex items-center justify-between gap-3">
       <div>
         <h2 className="font-semibold">Recibos cargados</h2>
+        <Button type="button" size="sm" variant="outline" className="mt-2" onClick={onExport}>
+          <FileSpreadsheet className="h-4 w-4" />
+          Excel
+        </Button>
         <p className="text-xs text-muted-foreground">{receipts.length} recibo(s) en el período visible</p>
       </div>
     </div>
@@ -4042,6 +4213,7 @@ const ReceiptsList = ({
                 <p className="text-muted-foreground">Recibo {item.receiptNumber} · Póliza {item.policyNumber || "-"} · {item.plan}</p>
                 <p className="text-muted-foreground">{paidMonths} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
                 {item.collector && <p className="text-xs text-muted-foreground">Cobrador: {item.collector}</p>}
+                {item.isProduction && <p className="mt-2 text-xs font-semibold uppercase text-amber-700">Produccion</p>}
                 {isVoided && <p className="mt-2 text-xs font-semibold uppercase text-red-700">Anulado</p>}
               </div>
               <span className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${isVoided ? "bg-red-600 text-white" : "bg-emerald-100 text-emerald-700"}`}>
