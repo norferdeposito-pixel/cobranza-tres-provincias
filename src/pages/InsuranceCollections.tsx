@@ -61,6 +61,12 @@ type TicketCollection = {
   id: string;
   month: string;
   affiliateId: string;
+  fullName?: string;
+  policyNumber?: string;
+  plan?: PlanType;
+  dependency?: string;
+  collector?: string;
+  ticketValue?: number;
   ticketsCharged: number;
   paymentMethod: PaymentMethod;
   transfer?: TransferData;
@@ -982,11 +988,11 @@ const InsuranceCollections = () => {
         return sum + (monthly?.tickets || 0) * affiliate.value;
       }, 0);
       const chargedTickets = ticketCollections
-        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizeCollectorName(collector))
         .reduce((sum, item) => sum + item.ticketsCharged, 0);
       const chargedAmount = ticketCollections
-        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizeCollectorName(collector))
-        .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value || 0) * item.ticketsCharged, 0);
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizeCollectorName(collector))
+        .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged, 0);
       const config = collectorConfigByName.get(normalizedCollector) || defaultCollectorConfig(collector);
       const effectiveness = assignedAmount > 0 ? (chargedAmount / assignedAmount) * 100 : 0;
       const bonusAchieved = config.bonusEnabled && effectiveness >= config.bonusThreshold;
@@ -1102,10 +1108,13 @@ const InsuranceCollections = () => {
 
   const selectedCollectorStats = useMemo(() => {
     const affiliateIds = new Set(selectedCollectorPortfolio.map((row) => row.affiliate.id));
-    const collections = ticketCollections.filter((item) => item.month === activeMonth && affiliateIds.has(item.affiliateId));
+    const collections = ticketCollections.filter((item) =>
+      item.month === activeMonth
+      && (affiliateIds.has(item.affiliateId) || normalizeCollectorName(item.collector || "") === normalizeCollectorName(selectedCollectorName || "OFICINA"))
+    );
     const cashCollections = collections.filter((item) => item.paymentMethod === "E");
     const transferCollections = collections.filter((item) => item.paymentMethod === "T");
-    const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value || 0) * collection.ticketsCharged;
+    const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
     const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
     const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
     const receiptsForCollector = collectionReceipts.filter((receipt) => {
@@ -1233,11 +1242,11 @@ const InsuranceCollections = () => {
   const totalsByPlan = useMemo(() => {
     return availablePlans.map((plan) => {
       const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
-      const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && affiliatesById.get(item.affiliateId)?.plan === plan);
+      const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.plan || item.plan) === plan);
       const receiptsForPlan = collectionReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
-        return (affiliate?.value || 0) * collection.ticketsCharged;
+        return (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
       };
       const receiptValue = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
       const ticketCash = collectionsForPlan.filter((item) => item.paymentMethod === "E");
@@ -1286,7 +1295,12 @@ const InsuranceCollections = () => {
     .reduce((sum, item) => sum + item.tickets, 0);
   const visibleNotes = notes.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId));
   const visibleNotesCount = visibleNotes.length;
-  const visibleTicketCollections = ticketCollections.filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId));
+  const visibleTicketCollections = ticketCollections.filter((item) => {
+    if (item.month !== activeMonth) return false;
+    if (isOfficeUser) return true;
+    if (visibleAffiliateIds.has(item.affiliateId)) return true;
+    return normalizeCollectorName(item.collector || "") === currentCollectorName;
+  });
   const visibleReceipts = receipts.filter((item) => {
     if (item.collectionMonth !== activeMonth) return false;
     if (isOfficeUser) return true;
@@ -1794,6 +1808,12 @@ const InsuranceCollections = () => {
       id: editingTicketCollectionId || `ticket-${Date.now()}`,
       month: activeMonth,
       affiliateId: selectedMonthlyAffiliate.id,
+      fullName: selectedMonthlyAffiliate.fullName,
+      policyNumber: selectedMonthlyAffiliate.policyNumber,
+      plan: selectedMonthlyAffiliate.plan,
+      dependency: selectedMonthlyAffiliate.dependency,
+      collector: normalizeCollectorName(selectedMonthlyAffiliate.collector || "OFICINA"),
+      ticketValue: selectedMonthlyAffiliate.value,
       ticketsCharged: tickets,
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
@@ -2181,16 +2201,20 @@ const InsuranceCollections = () => {
     }
 
     const chargedRows = ticketCollections
-      .filter((item) => item.month === activeMonth && selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId))
+      .filter((item) =>
+        item.month === activeMonth
+        && (selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId)
+          || normalizeCollectorName(item.collector || "") === normalizeCollectorName(selectedCollectorName || "OFICINA"))
+      )
       .map((collection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return {
           collection,
           affiliate,
-          amount: (affiliate?.value || 0) * collection.ticketsCharged,
+          amount: (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged,
         };
       })
-      .sort((a, b) => (a.affiliate?.fullName || "").localeCompare(b.affiliate?.fullName || "", "es-AR"));
+      .sort((a, b) => (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR"));
 
     const chargedData: any[][] = [
       [
@@ -2204,10 +2228,10 @@ const InsuranceCollections = () => {
         headerCell("Comprobante"),
       ],
       ...chargedRows.map(({ collection, affiliate, amount }) => [
-        affiliate?.fullName || "-",
-        affiliate?.policyNumber || "-",
-        affiliate?.plan || "-",
-        affiliate?.dependency || "-",
+        affiliate?.fullName || collection.fullName || "-",
+        affiliate?.policyNumber || collection.policyNumber || "-",
+        affiliate?.plan || collection.plan || "-",
+        affiliate?.dependency || collection.dependency || "-",
         collection.ticketsCharged,
         methodLabel(collection.paymentMethod),
         moneyCell(amount),
@@ -4206,7 +4230,7 @@ const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = fa
   const filteredCollections = collections.filter((item) => {
     if (!normalizedSearch) return true;
     const affiliate = affiliatesById.get(item.affiliateId);
-    return (affiliate?.policyNumber || "").replace(/\D/g, "").includes(normalizedSearch);
+    return (affiliate?.policyNumber || item.policyNumber || "").replace(/\D/g, "").includes(normalizedSearch);
   });
 
   return (
@@ -4230,17 +4254,22 @@ const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = fa
     <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
       {filteredCollections.slice().reverse().map((item) => {
         const affiliate = affiliatesById.get(item.affiliateId);
+        const fullName = affiliate?.fullName || item.fullName || "Afiliado";
+        const policyNumber = affiliate?.policyNumber || item.policyNumber || "-";
+        const plan = affiliate?.plan || item.plan || "-";
+        const dependency = affiliate?.dependency || item.dependency || "-";
+        const amountLabel = currency.format((affiliate?.value ?? item.ticketValue ?? 0) * item.ticketsCharged);
         return (
           <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
-            <strong>{affiliate?.fullName || "Afiliado"}</strong>
-            <p className="text-xs text-muted-foreground">Poliza {affiliate?.policyNumber || "-"} - {affiliate?.plan || "-"} - Dep. {affiliate?.dependency || "-"}</p>
+            <strong>{fullName}</strong>
+            <p className="text-xs text-muted-foreground">Poliza {policyNumber} - {plan} - Dep. {dependency}</p>
             {isAdminUser && (
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => onEdit?.(item)}>Editar</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => onDelete?.(item.id)}>Eliminar</Button>
               </div>
             )}
-            <p className="text-muted-foreground">{item.ticketsCharged} ticket(s) · {methodLabel(item.paymentMethod)} · {currency.format((affiliate?.value || 0) * item.ticketsCharged)}</p>
+            <p className="text-muted-foreground">{item.ticketsCharged} ticket(s) · {methodLabel(item.paymentMethod)} · {amountLabel}</p>
           </div>
         );
       })}
