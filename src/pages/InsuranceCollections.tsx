@@ -452,6 +452,12 @@ const saveStorage = (key: string, value: unknown) => {
 const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : method === "T" ? "Transferencia" : "Sin definir";
 
 const uniqueSorted = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
+const mergeRowsById = <T extends { id: string }>(onlineRows: T[], localRows: T[]) => {
+  const rows = new Map<string, T>();
+  onlineRows.forEach((row) => rows.set(row.id, row));
+  localRows.forEach((row) => rows.set(row.id, row));
+  return Array.from(rows.values());
+};
 
 const knownCollectorCommissions: Record<string, Pick<CollectorRecord, "commissionBase" | "bonusEnabled" | "bonusThreshold" | "bonusRate">> = {
   "ALCIDES OMAR": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
@@ -679,6 +685,7 @@ const InsuranceCollections = () => {
     transfer: emptyTransfer(),
   });
   const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
+  const [isSavingReceipt, setIsSavingReceipt] = useState(false);
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
@@ -851,6 +858,39 @@ const InsuranceCollections = () => {
     const nextAffiliates = affiliates.map((item) => item.id === affiliateId ? { ...item, ...normalizedPatch } : item);
     setAffiliates(nextAffiliates);
     await saveCloudSnapshot({ affiliates: nextAffiliates });
+  };
+
+  const saveReceiptsOnline = async (nextReceipts: ReceiptCollection[]) => {
+    setCloudStatus("Guardando recibos online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudieron guardar recibos online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineReceipts = Array.isArray(onlineSnapshot.receipts) ? onlineSnapshot.receipts : [];
+    const mergedReceipts = mergeRowsById(onlineReceipts, nextReceipts);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      receipts: mergedReceipts,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudieron guardar recibos online: ${saveError.message}`);
+      return;
+    }
+    setReceipts(mergedReceipts);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const loadCloudSnapshot = async () => {
@@ -1958,12 +1998,14 @@ const InsuranceCollections = () => {
     if (editingReceiptId === receiptId) resetReceiptForm();
   };
 
-  const saveReceipt = (event: FormEvent) => {
+  const saveReceipt = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSavingReceipt) return;
     if (!receiptForm.paidMonths.length) {
       alert("Seleccioná al menos un mes que paga el afiliado.");
       return;
     }
+    setIsSavingReceipt(true);
     const receiptPayload: ReceiptCollection = {
       id: editingReceiptId || `receipt-${Date.now()}`,
       collectionMonth: activeMonth,
@@ -1983,10 +2025,15 @@ const InsuranceCollections = () => {
       voidedAt: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidedAt,
       voidReason: receipts.find((receipt) => receipt.id === editingReceiptId)?.voidReason,
     };
+    const nextReceipts = editingReceiptId
+      ? receipts.map((receipt) => receipt.id === editingReceiptId ? receiptPayload : receipt)
+      : [...receipts, receiptPayload];
     setReceipts((current) => editingReceiptId
       ? current.map((receipt) => receipt.id === editingReceiptId ? receiptPayload : receipt)
-      : [...current, receiptPayload]);
+      : current.some((receipt) => receipt.id === receiptPayload.id) ? current : [...current, receiptPayload]);
     resetReceiptForm();
+    await saveReceiptsOnline(nextReceipts);
+    setIsSavingReceipt(false);
   };
 
   const exportAffiliatesExcel = async () => {
@@ -3688,7 +3735,7 @@ const InsuranceCollections = () => {
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
               <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row">
                 {editingReceiptId && <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={resetReceiptForm}>Cancelar edición</Button>}
-                <Button type="submit" className="w-full sm:w-auto" variant="command">{editingReceiptId ? "Guardar cambios" : "Guardar recibo"}</Button>
+                <Button type="submit" className="w-full sm:w-auto" variant="command" disabled={isSavingReceipt}>{isSavingReceipt ? "Guardando..." : editingReceiptId ? "Guardar cambios" : "Guardar recibo"}</Button>
               </div>
             </form>
             <ReceiptsList receipts={visibleReceipts} isAdminUser={isAdminUser} onEdit={editReceipt} onVoid={voidReceipt} onDelete={deleteReceipt} onExport={exportReceiptsExcel} />
