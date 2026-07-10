@@ -665,6 +665,7 @@ const InsuranceCollections = () => {
   const [collectionMethod, setCollectionMethod] = useState<PaymentMethod>("E");
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
   const [editingTicketCollectionId, setEditingTicketCollectionId] = useState<string | null>(null);
+  const [isSavingTicketCollection, setIsSavingTicketCollection] = useState(false);
   const [mobileCollector, setMobileCollector] = useState("todos");
   const [mobileSearch, setMobileSearch] = useState("");
   const [mobileTicketFilter, setMobileTicketFilter] = useState<"pending" | "all" | "paid">("pending");
@@ -891,6 +892,39 @@ const InsuranceCollections = () => {
     setReceipts(mergedReceipts);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
+  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[]) => {
+    setCloudStatus("Guardando tickets online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudieron guardar tickets online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
+    const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      ticketCollections: mergedTicketCollections,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudieron guardar tickets online: ${saveError.message}`);
+      return;
+    }
+    setTicketCollections(mergedTicketCollections);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const loadCloudSnapshot = async () => {
@@ -1835,8 +1869,9 @@ const InsuranceCollections = () => {
       : [...current, { month: activeMonth, affiliateId, tickets }]);
   };
 
-  const saveTicketCollection = (event: FormEvent) => {
+  const saveTicketCollection = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSavingTicketCollection) return;
     if (!selectedMonthlyAffiliate) return;
     if (hasUnansweredRequest) {
       alert("Esta póliza tiene un pedido pendiente. Para guardar el cobro, primero completá la novedad/respuesta.");
@@ -1844,6 +1879,7 @@ const InsuranceCollections = () => {
     }
     const tickets = Math.max(0, Math.min(parseNumber(collectionTickets), ticketsToCharge));
     if (tickets <= 0) return;
+    setIsSavingTicketCollection(true);
     const payload: TicketCollection = {
       id: editingTicketCollectionId || `ticket-${Date.now()}`,
       month: activeMonth,
@@ -1858,15 +1894,20 @@ const InsuranceCollections = () => {
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
     };
+    const nextTicketCollections = editingTicketCollectionId
+      ? ticketCollections.map((item) => item.id === editingTicketCollectionId ? payload : item)
+      : [...ticketCollections, payload];
     setTicketCollections((current) => editingTicketCollectionId
       ? current.map((item) => item.id === editingTicketCollectionId ? payload : item)
-      : [...current, payload]);
+      : current.some((item) => item.id === payload.id) ? current : [...current, payload]);
     setEditingTicketCollectionId(null);
     setCollectionTickets("1");
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
+    await saveTicketCollectionsOnline(nextTicketCollections);
+    setIsSavingTicketCollection(false);
   };
 
   const editTicketCollection = (collection: TicketCollection) => {
@@ -2997,7 +3038,7 @@ const InsuranceCollections = () => {
               </div>
 
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
-              <Button type="submit" className="mt-4 w-full" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>Guardar cobro</Button>
+              <Button type="submit" className="mt-4 w-full" variant="command" disabled={isSavingTicketCollection || !selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{isSavingTicketCollection ? "Guardando..." : "Guardar cobro"}</Button>
               {canUseManualSync && <Button type="button" className="mt-2 w-full" variant="outline" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>Guardar online</Button>}
             </form>
           </section>
@@ -3671,7 +3712,7 @@ const InsuranceCollections = () => {
               </div>
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
-              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={!selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
+              <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={isSavingTicketCollection || !selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{isSavingTicketCollection ? "Guardando..." : editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
               <TicketCollectionsDetail collections={visibleTicketCollections} affiliatesById={affiliatesById} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
             </form>
             <div className="space-y-5">
