@@ -627,6 +627,7 @@ const InsuranceCollections = () => {
   const [pendingFilter, setPendingFilter] = useState("todos");
   const [dependencyFilter, setDependencyFilter] = useState("todos");
   const [collectorFilter, setCollectorFilter] = useState("todos");
+  const [collectorPickerAffiliateId, setCollectorPickerAffiliateId] = useState<string | null>(null);
   const [collectorRecords, setCollectorRecords] = useState<CollectorRecord[]>(() => normalizeCollectorRecords(loadStorage(collectorsStorageKey, ["OFICINA"])));
   const [customDependencies, setCustomDependencies] = useState<string[]>(() => loadStorage(dependenciesStorageKey, []));
   const [newCollectorName, setNewCollectorName] = useState("");
@@ -991,6 +992,7 @@ const InsuranceCollections = () => {
   }, [isAdminUser]);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
+  const collectorPickerAffiliate = collectorPickerAffiliateId ? affiliatesById.get(collectorPickerAffiliateId) || null : null;
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
   const collectionReceipts = useMemo(() => activeReceipts.filter((receipt) => !receipt.isProduction), [activeReceipts]);
   const monthlyTicketsByAffiliate = useMemo(() => {
@@ -2854,9 +2856,9 @@ const InsuranceCollections = () => {
                         </select>
                       </td>
                       <td className="w-28 px-2 py-3">
-                        <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs" value={item.collector || "OFICINA"} onChange={(event) => updateAffiliateCollector(item.id, event.target.value)}>
-                          {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
-                        </select>
+                        <Button type="button" size="sm" variant="outline" className="h-auto min-h-8 w-full justify-start px-2 py-1 text-left text-xs" onClick={() => setCollectorPickerAffiliateId(item.id)}>
+                          {item.collector || "OFICINA"}
+                        </Button>
                       </td>
                       <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
                       <td className="w-20 px-2 py-3 text-center">{monthlyTicketsByAffiliate.get(item.id) || 0}</td>
@@ -4174,6 +4176,37 @@ const InsuranceCollections = () => {
             <div className="space-y-2 md:col-span-2"><Label>Novedad / respuesta</Label><Textarea className="min-h-24" value={affiliateForm.latestNews} onChange={(event) => setAffiliateForm({ ...affiliateForm, latestNews: event.target.value })} /></div>
             <div className="flex justify-end gap-2 md:col-span-2"><Button type="button" variant="outline" onClick={() => setAffiliateDialogOpen(false)}>Cancelar</Button><Button type="submit" variant="command">Guardar</Button></div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!collectorPickerAffiliateId} onOpenChange={(open) => !open && setCollectorPickerAffiliateId(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Cambiar cobrador</DialogTitle></DialogHeader>
+          {collectorPickerAffiliate && (
+            <div className="rounded-md border bg-surface-subtle p-3 text-sm">
+              <strong>{collectorPickerAffiliate.fullName}</strong>
+              <p className="text-muted-foreground">Poliza {collectorPickerAffiliate.policyNumber || "-"} - {collectorPickerAffiliate.plan} - Actual: {collectorPickerAffiliate.collector || "OFICINA"}</p>
+            </div>
+          )}
+          <div className="grid max-h-[55vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
+            {collectors.map((collector) => (
+              <Button
+                key={collector}
+                type="button"
+                variant={normalizeCollectorName(collectorPickerAffiliate?.collector || "OFICINA") === normalizeCollectorName(collector) ? "command" : "outline"}
+                className="justify-start"
+                onClick={() => {
+                  if (collectorPickerAffiliateId) updateAffiliateCollector(collectorPickerAffiliateId, collector);
+                  setCollectorPickerAffiliateId(null);
+                }}
+              >
+                {collector}
+              </Button>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setCollectorPickerAffiliateId(null)}>Cancelar</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
