@@ -1055,6 +1055,7 @@ const InsuranceCollections = () => {
     return collectors.map((collector) => {
       const normalizedCollector = normalizeCollectorName(collector);
       const assigned = affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === normalizedCollector);
+      const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
       const tickets = assigned.reduce((sum, affiliate) => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
         return sum + (monthly?.tickets || 0);
@@ -1063,14 +1064,18 @@ const InsuranceCollections = () => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
         return sum + (monthly?.tickets || 0) * affiliate.value;
       }, 0);
-      const chargedTickets = ticketCollections
-        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizeCollectorName(collector))
-        .reduce((sum, item) => sum + item.ticketsCharged, 0);
-      const chargedAmount = ticketCollections
-        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizeCollectorName(collector))
-        .reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged, 0);
+      const ticketCollectionsForCollector = ticketCollections
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizedCollector);
+      const receiptsForCollector = collectionReceipts.filter((receipt) => {
+        const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : affiliateCollectorByName.get(normalizeHeader(receipt.fullName));
+        return receipt.collectionMonth === activeMonth && receiptCollector === normalizedCollector;
+      });
+      const chargedTickets = ticketCollectionsForCollector.reduce((sum, item) => sum + item.ticketsCharged, 0);
+      const ticketChargedAmount = ticketCollectionsForCollector.reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged, 0);
+      const receiptAmount = receiptsForCollector.reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
+      const chargedAmount = ticketChargedAmount + receiptAmount;
       const config = collectorConfigByName.get(normalizedCollector) || defaultCollectorConfig(collector);
-      const effectiveness = assignedAmount > 0 ? (chargedAmount / assignedAmount) * 100 : 0;
+      const effectiveness = assignedAmount > 0 ? (ticketChargedAmount / assignedAmount) * 100 : 0;
       const bonusAchieved = config.bonusEnabled && effectiveness >= config.bonusThreshold;
       const appliedCommissionRate = bonusAchieved ? config.bonusRate : config.commissionBase;
       const commissionAmount = chargedAmount * (appliedCommissionRate / 100);
@@ -1084,6 +1089,9 @@ const InsuranceCollections = () => {
         chargedTickets,
         pendingTickets: Math.max(tickets - chargedTickets, 0),
         chargedAmount,
+        ticketChargedAmount,
+        receiptCount: new Set(receiptsForCollector.map((item) => `${item.receiptNumber}-${item.plan}`)).size,
+        receiptAmount,
         commissionBase: config.commissionBase,
         bonusEnabled: config.bonusEnabled,
         bonusThreshold: config.bonusThreshold,
@@ -1095,7 +1103,7 @@ const InsuranceCollections = () => {
         amountToRender: chargedAmount - commissionAmount,
       };
     });
-  }, [activeMonth, affiliates, affiliatesById, collectorConfigByName, collectorPhoneByName, collectors, monthlyItems, ticketCollections]);
+  }, [activeMonth, affiliates, affiliatesById, collectionReceipts, collectorConfigByName, collectorPhoneByName, collectors, monthlyItems, ticketCollections]);
 
   const monthlyRows = useMemo(() => {
     return affiliates
@@ -3199,11 +3207,13 @@ const InsuranceCollections = () => {
                   <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
                   <SummaryBox label="Tickets pendientes" value={String(selectedCollectorSummary.pendingTickets)} />
                   <SummaryBox label="Monto asignado" value={currency.format(selectedCollectorSummary.assignedAmount)} />
-                  <SummaryBox label="Cobrado" value={currency.format(selectedCollectorSummary.chargedAmount)} />
+                  <SummaryBox label="Tickets $" value={currency.format(selectedCollectorSummary.ticketChargedAmount)} />
+                  <SummaryBox label="Recibos" value={`${selectedCollectorSummary.receiptCount} - ${currency.format(selectedCollectorSummary.receiptAmount)}`} />
+                  <SummaryBox label="Cobrado total" value={currency.format(selectedCollectorSummary.chargedAmount)} />
                   <SummaryBox label="Pendiente $" value={currency.format(selectedCollectorStats.pendingAmount)} />
                   <SummaryBox label="Efectividad" value={`${selectedCollectorSummary.effectiveness.toFixed(1)}%`} />
-                  <SummaryBox label="Efectivo" value={currency.format(selectedCollectorStats.cashAmount)} />
-                  <SummaryBox label="Transferencia" value={currency.format(selectedCollectorStats.transferAmount)} />
+                  <SummaryBox label="Efectivo" value={currency.format(selectedCollectorStats.totalCashAmount)} />
+                  <SummaryBox label="Transferencia" value={currency.format(selectedCollectorStats.totalTransferAmount)} />
                   <SummaryBox label="Comisión" value={currency.format(selectedCollectorSummary.commissionAmount)} />
                   <SummaryBox label="A rendir" value={currency.format(selectedCollectorSummary.amountToRender)} />
                 </div>
@@ -3312,7 +3322,7 @@ const InsuranceCollections = () => {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1320px] text-xs sm:text-sm">
+              <table className="w-full min-w-[1480px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 text-left">Cobrador</th>
@@ -3322,7 +3332,9 @@ const InsuranceCollections = () => {
                     <th className="px-4 py-3 text-right">Tickets recibidos</th>
                     <th className="px-4 py-3 text-right">Tickets cobrados</th>
                     <th className="px-4 py-3 text-right">Tickets pendientes</th>
-                    <th className="px-4 py-3 text-right">Cobrado</th>
+                    <th className="px-4 py-3 text-right">Tickets $</th>
+                    <th className="px-4 py-3 text-right">Recibos</th>
+                    <th className="px-4 py-3 text-right">Cobrado total</th>
                     <th className="px-4 py-3 text-right">Efectividad</th>
                     <th className="px-4 py-3 text-right">% comisión</th>
                     <th className="px-4 py-3 text-right">Comisión</th>
@@ -3340,6 +3352,8 @@ const InsuranceCollections = () => {
                       <td className="px-4 py-3 text-right">{row.tickets}</td>
                       <td className="px-4 py-3 text-right">{row.chargedTickets}</td>
                       <td className="px-4 py-3 text-right">{row.pendingTickets}</td>
+                      <td className="px-4 py-3 text-right">{currency.format(row.ticketChargedAmount)}</td>
+                      <td className="px-4 py-3 text-right">{row.receiptCount} / {currency.format(row.receiptAmount)}</td>
                       <td className="px-4 py-3 text-right">{currency.format(row.chargedAmount)}</td>
                       <td className="px-4 py-3 text-right">{row.effectiveness.toFixed(1)}%</td>
                       <td className="px-4 py-3 text-right">
@@ -3370,7 +3384,7 @@ const InsuranceCollections = () => {
                       </td>
                     </tr>
                   ))}
-                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={13}>Todavía no hay cobradores cargados.</td></tr>}
+                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={15}>Todavía no hay cobradores cargados.</td></tr>}
                 </tbody>
               </table>
             </div>
