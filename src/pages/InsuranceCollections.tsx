@@ -4121,8 +4121,9 @@ const InsuranceCollections = () => {
                     Información correspondiente a {selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
                   </p>
                 </div>
-                <Button type="button" variant="command" onClick={() => setCollectorReportOpen(true)}>
-                  Ver reporte de cobranza
+                <Button type="button" variant="command" onClick={exportCollectorReportExcel}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Descargar reporte Excel
                 </Button>
               </div>
               {selectedCollectorSummary && (
