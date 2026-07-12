@@ -706,16 +706,9 @@ const InsuranceCollections = () => {
   const isCollectorUser = ["cobrador", "oficina_cobrador"].includes(userRole);
   const canUseManualSync = isOfficeUser && !isCollectorUser;
   const currentCollectorName = normalizeCollectorName(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
-  const officeDependencyScope = useMemo(() => {
-    if (isAdminUser || !isOfficeUser) return [];
-    if (currentCollectorName.includes("TUNUYAN")) return ["268", "327"];
-    if (currentCollectorName.includes("SAN MARTIN")) return ["238", "269", "328", "313"];
-    if (currentCollectorName.includes("SANTA ROSA")) return ["261"];
-    if (currentCollectorName.includes("MEDRANO")) return ["241"];
-    return [];
-  }, [currentCollectorName, isAdminUser, isOfficeUser]);
-  const hasOfficeDependencyScope = officeDependencyScope.length > 0;
-  const canSeeAllCobranza = isOfficeUser && !hasOfficeDependencyScope;
+  const officeCollectorScope = !isAdminUser && isOfficeUser && currentCollectorName ? currentCollectorName : "";
+  const hasOfficeCollectorScope = !!officeCollectorScope;
+  const canSeeAllCobranza = isOfficeUser && !hasOfficeCollectorScope;
 
   const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
 
@@ -1068,22 +1061,22 @@ const InsuranceCollections = () => {
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
   const collectorPickerAffiliate = collectorPickerAffiliateId ? affiliatesById.get(collectorPickerAffiliateId) || null : null;
   const canSeeAffiliateInCobranza = (affiliate: Affiliate) => {
-    if (hasOfficeDependencyScope) return officeDependencyScope.includes(affiliate.dependency || "SIN DEFINIR");
+    if (hasOfficeCollectorScope) return normalizeCollectorName(affiliate.collector || "OFICINA") === officeCollectorScope;
     if (isOfficeUser) return true;
     return normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName;
   };
   const canSeeTicketCollectionInCobranza = (collection: TicketCollection) => {
     const affiliate = affiliatesById.get(collection.affiliateId);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
-    if (hasOfficeDependencyScope) return officeDependencyScope.some((dependency) => (collection.dependency || "").includes(dependency) || (collection.plan || "").includes(dependency));
+    if (hasOfficeCollectorScope) return normalizeCollectorName(collection.collector || "") === officeCollectorScope;
     if (isOfficeUser) return true;
     return normalizeCollectorName(collection.collector || "") === currentCollectorName;
   };
   const canSeeReceiptInCobranza = (receipt: ReceiptCollection) => {
+    if (hasOfficeCollectorScope && normalizeCollectorName(receipt.collector || "") !== officeCollectorScope) return false;
     const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
       || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
-    if (hasOfficeDependencyScope) return officeDependencyScope.some((dependency) => (receipt.plan || "").includes(dependency));
     if (isOfficeUser) return true;
     return normalizeCollectorName(receipt.collector || "") === currentCollectorName;
   };
@@ -1131,13 +1124,15 @@ const InsuranceCollections = () => {
         if (pendingFilter === "mayor" || pendingFilter === "con") return getPendingTickets(b.id) - getPendingTickets(a.id);
         return 0;
       });
-  }, [affiliateSearchTextById, affiliates, chargedTicketsByAffiliate, collectorFilter, currentCollectorName, dependencyFilter, hasOfficeDependencyScope, isOfficeUser, monthlyTicketsByAffiliate, officeDependencyScope, pendingFilter, query]);
+  }, [affiliateSearchTextById, affiliates, chargedTicketsByAffiliate, collectorFilter, dependencyFilter, monthlyTicketsByAffiliate, pendingFilter, query]);
 
   const dependencies = useMemo(() => {
     return uniqueSorted([...customDependencies, ...affiliates.map((item) => item.dependency || "SIN DEFINIR")]);
   }, [affiliates, customDependencies]);
-  const visibleDependenciesForCobranza = hasOfficeDependencyScope
-    ? dependencies.filter((dependency) => officeDependencyScope.includes(dependency))
+  const visibleDependenciesForCobranza = hasOfficeCollectorScope
+    ? dependencies.filter((dependency) => affiliates.some((affiliate) =>
+      (affiliate.dependency || "SIN DEFINIR") === dependency && canSeeAffiliateInCobranza(affiliate),
+    ))
     : dependencies;
 
   const collectors = useMemo(() => {
@@ -1217,7 +1212,7 @@ const InsuranceCollections = () => {
     return affiliates
       .filter((item) => item.policyNumber === policy)
       .filter((item) => canSeeAffiliateInCobranza(item));
-  }, [affiliates, collectionPolicy, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope]);
+  }, [affiliates, collectionPolicy]);
 
   const selectedMonthlyAffiliate = useMemo(() => {
     if (mobileSelectedAffiliateId) {
@@ -1250,7 +1245,7 @@ const InsuranceCollections = () => {
         : canSeeAffiliateInCobranza(row.affiliate))
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
       .sort((a, b) => a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR") || b.pending - a.pending);
-  }, [activeMonth, canSeeAllCobranza, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, mobileCollector, mobileSearch, mobileTicketFilter, monthlyRows, officeDependencyScope, ticketCollections]);
+  }, [canSeeAllCobranza, mobileCollector, mobileSearch, mobileTicketFilter, monthlyRows]);
 
   const mobileSelectedAffiliate = useMemo(() => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
@@ -1266,7 +1261,7 @@ const InsuranceCollections = () => {
       );
     });
     return visibleNames.length ? visibleNames : [currentCollectorName].filter(Boolean);
-  }, [affiliates, canSeeAllCobranza, collectors, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope]);
+  }, [affiliates, canSeeAllCobranza, collectors, currentCollectorName]);
 
   const selectedCollectorName = !isOfficeUser && currentCollectorName
     ? currentCollectorName
@@ -1417,7 +1412,7 @@ const InsuranceCollections = () => {
       .filter((affiliate) => affiliate.policyNumber === policy)
       .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .sort((a, b) => a.plan.localeCompare(b.plan, "es-AR", { numeric: true }));
-  }, [affiliates, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope, receiptForm.policyNumber]);
+  }, [affiliates, receiptForm.policyNumber]);
 
   const receiptPlanOptions = useMemo(() => {
     const policyPlans = uniqueSorted(receiptPolicyCandidates.map((affiliate) => affiliate.plan));
@@ -1465,7 +1460,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [activeMonth, affiliates, affiliatesById, availablePlans, collectionReceipts, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, monthlyRows, officeDependencyScope, ticketCollections]);
+  }, [activeMonth, affiliatesById, availablePlans, collectionReceipts, monthlyRows, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -1500,7 +1495,7 @@ const InsuranceCollections = () => {
   }, 0) + visibleReceipts
     .filter((item) => item.status !== "anulado" && !item.isProduction)
     .reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
-  const visibleCommissionAmount = hasOfficeDependencyScope
+  const visibleCommissionAmount = hasOfficeCollectorScope
     ? visibleCollectorRows.reduce((sum, item) => sum + item.commissionAmount, 0)
     : commission;
   const newsAffiliateOptions = useMemo(() => {
@@ -1513,7 +1508,7 @@ const InsuranceCollections = () => {
   }, [affiliates, newsAffiliateQuery, visibleAffiliateIds]);
   const visibleTotalToRender = canSeeAllCobranza
     ? totalToRender
-    : hasOfficeDependencyScope
+    : hasOfficeCollectorScope
       ? visibleCollectionAmount - visibleCommissionAmount
       : selectedCollectorStats.reportRenditionAmount;
   const visibleTotalLabel = isOfficeUser ? "Cobrado menos comision" : "Tu cobranza menos comision";
