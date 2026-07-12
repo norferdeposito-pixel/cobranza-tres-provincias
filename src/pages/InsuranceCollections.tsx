@@ -928,6 +928,42 @@ const InsuranceCollections = () => {
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const deleteTicketCollectionOnline = async (collectionId: string, nextTicketCollections: TicketCollection[]) => {
+    setCloudStatus("Eliminando ticket online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo eliminar el ticket online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
+    const mergedTicketCollections = mergeRowsById(
+      onlineTicketCollections.filter((item) => item.id !== collectionId),
+      nextTicketCollections.filter((item) => item.id !== collectionId),
+    );
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      ticketCollections: mergedTicketCollections,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo eliminar el ticket online: ${saveError.message}`);
+      return;
+    }
+    setTicketCollections(mergedTicketCollections);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`Ticket eliminado online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
   const loadCloudSnapshot = async () => {
     setCloudBusy(true);
     setCloudStatus("Cargando datos online...");
@@ -1942,11 +1978,16 @@ const InsuranceCollections = () => {
     setMobileSelectedAffiliateId("");
   };
 
-  const deleteTicketCollection = (collectionId: string) => {
+  const deleteTicketCollection = async (collectionId: string) => {
     if (!isAdminUser) return;
+    if (isSavingTicketCollection) return;
     if (!window.confirm("¿Eliminar este cobro de tickets? Esta acción corrige los totales y no se puede deshacer.")) return;
-    setTicketCollections((current) => current.filter((item) => item.id !== collectionId));
+    setIsSavingTicketCollection(true);
+    const nextTicketCollections = ticketCollections.filter((item) => item.id !== collectionId);
+    setTicketCollections(nextTicketCollections);
     if (editingTicketCollectionId === collectionId) cancelTicketCollectionEdit();
+    await deleteTicketCollectionOnline(collectionId, nextTicketCollections);
+    setIsSavingTicketCollection(false);
   };
 
   const applyReceiptAffiliate = (affiliate: Affiliate | null) => {
