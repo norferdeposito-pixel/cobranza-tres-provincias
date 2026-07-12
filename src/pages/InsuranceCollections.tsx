@@ -928,6 +928,34 @@ const InsuranceCollections = () => {
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const ensureLatestOnlineDataBeforeReport = async () => {
+    setCloudStatus("Verificando base online antes del reporte...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo verificar la base online: ${error.message}`);
+      alert("No se pudo verificar la base online. Volve a intentar en unos segundos.");
+      return false;
+    }
+    if (!data?.data) return true;
+
+    const onlineUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
+    const loadedAt = lastCloudLoadedAt ? new Date(lastCloudLoadedAt).getTime() : 0;
+    if (!loadedAt || (onlineUpdatedAt > 0 && onlineUpdatedAt > loadedAt + 1000)) {
+      applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
+      setLastCloudLoadedAt(data.updated_at || new Date().toISOString());
+      setCloudStatus("La base online tenia cambios. Se actualizo la pantalla; volve a descargar el reporte.");
+      alert("Habia cambios online de otra PC. Actualice la pantalla con la ultima base. Volve a tocar Descargar reporte Excel.");
+      return false;
+    }
+
+    setCloudStatus(`Base online verificada ${new Date().toLocaleTimeString("es-AR")}`);
+    return true;
+  };
+
   const deleteTicketCollectionOnline = async (collectionId: string, nextTicketCollections: TicketCollection[]) => {
     setCloudStatus("Eliminando ticket online...");
     const { data, error } = await supabase
@@ -2274,6 +2302,8 @@ const InsuranceCollections = () => {
 
   const exportCollectorReportExcel = async () => {
     if (!selectedCollectorSummary) return;
+    const canExport = await ensureLatestOnlineDataBeforeReport();
+    if (!canExport) return;
     const { default: writeExcelFile } = await import("write-excel-file/browser");
     const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
     const metricLabel = (value: string) => ({ value, fontWeight: "bold" as const, backgroundColor: "#E8F0F8" });
