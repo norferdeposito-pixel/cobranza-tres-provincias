@@ -706,6 +706,16 @@ const InsuranceCollections = () => {
   const isCollectorUser = ["cobrador", "oficina_cobrador"].includes(userRole);
   const canUseManualSync = isOfficeUser && !isCollectorUser;
   const currentCollectorName = normalizeCollectorName(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
+  const officeDependencyScope = useMemo(() => {
+    if (isAdminUser || !isOfficeUser) return [];
+    if (currentCollectorName.includes("TUNUYAN")) return ["268", "327"];
+    if (currentCollectorName.includes("SAN MARTIN")) return ["238", "269", "328", "313"];
+    if (currentCollectorName.includes("SANTA ROSA")) return ["261"];
+    if (currentCollectorName.includes("MEDRANO")) return ["241"];
+    return [];
+  }, [currentCollectorName, isAdminUser, isOfficeUser]);
+  const hasOfficeDependencyScope = officeDependencyScope.length > 0;
+  const canSeeAllCobranza = isOfficeUser && !hasOfficeDependencyScope;
 
   const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
 
@@ -1057,6 +1067,26 @@ const InsuranceCollections = () => {
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
   const collectorPickerAffiliate = collectorPickerAffiliateId ? affiliatesById.get(collectorPickerAffiliateId) || null : null;
+  const canSeeAffiliateInCobranza = (affiliate: Affiliate) => {
+    if (hasOfficeDependencyScope) return officeDependencyScope.includes(affiliate.dependency || "SIN DEFINIR");
+    if (isOfficeUser) return true;
+    return normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName;
+  };
+  const canSeeTicketCollectionInCobranza = (collection: TicketCollection) => {
+    const affiliate = affiliatesById.get(collection.affiliateId);
+    if (affiliate) return canSeeAffiliateInCobranza(affiliate);
+    if (hasOfficeDependencyScope) return officeDependencyScope.some((dependency) => (collection.dependency || "").includes(dependency) || (collection.plan || "").includes(dependency));
+    if (isOfficeUser) return true;
+    return normalizeCollectorName(collection.collector || "") === currentCollectorName;
+  };
+  const canSeeReceiptInCobranza = (receipt: ReceiptCollection) => {
+    const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
+      || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
+    if (affiliate) return canSeeAffiliateInCobranza(affiliate);
+    if (hasOfficeDependencyScope) return officeDependencyScope.some((dependency) => (receipt.plan || "").includes(dependency));
+    if (isOfficeUser) return true;
+    return normalizeCollectorName(receipt.collector || "") === currentCollectorName;
+  };
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
   const collectionReceipts = useMemo(() => activeReceipts.filter((receipt) => !receipt.isProduction), [activeReceipts]);
   const monthlyTicketsByAffiliate = useMemo(() => {
@@ -1088,7 +1118,7 @@ const InsuranceCollections = () => {
     const normalized = query.trim().toLocaleUpperCase("es-AR");
     return affiliates
       .filter((item) => !normalized || (affiliateSearchTextById.get(item.id) || "").includes(normalized))
-      .filter((item) => isOfficeUser || normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName)
+      .filter((item) => canSeeAffiliateInCobranza(item))
       .filter((item) => dependencyFilter === "todos" || (item.dependency || "SIN DEFINIR") === dependencyFilter)
       .filter((item) => collectorFilter === "todos" || normalizeCollectorName(item.collector || "OFICINA") === normalizeCollectorName(collectorFilter))
       .filter((item) => {
@@ -1101,11 +1131,14 @@ const InsuranceCollections = () => {
         if (pendingFilter === "mayor" || pendingFilter === "con") return getPendingTickets(b.id) - getPendingTickets(a.id);
         return 0;
       });
-  }, [affiliateSearchTextById, affiliates, chargedTicketsByAffiliate, collectorFilter, currentCollectorName, dependencyFilter, isOfficeUser, monthlyTicketsByAffiliate, pendingFilter, query]);
+  }, [affiliateSearchTextById, affiliates, chargedTicketsByAffiliate, collectorFilter, currentCollectorName, dependencyFilter, hasOfficeDependencyScope, isOfficeUser, monthlyTicketsByAffiliate, officeDependencyScope, pendingFilter, query]);
 
   const dependencies = useMemo(() => {
     return uniqueSorted([...customDependencies, ...affiliates.map((item) => item.dependency || "SIN DEFINIR")]);
   }, [affiliates, customDependencies]);
+  const visibleDependenciesForCobranza = hasOfficeDependencyScope
+    ? dependencies.filter((dependency) => officeDependencyScope.includes(dependency))
+    : dependencies;
 
   const collectors = useMemo(() => {
     const rows = uniqueSorted([...collectorRecords.map((item) => item.name), ...affiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA"))]);
@@ -1183,8 +1216,8 @@ const InsuranceCollections = () => {
     if (!policy) return [];
     return affiliates
       .filter((item) => item.policyNumber === policy)
-      .filter((item) => isOfficeUser || normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName);
-  }, [affiliates, collectionPolicy, currentCollectorName, isOfficeUser]);
+      .filter((item) => canSeeAffiliateInCobranza(item));
+  }, [affiliates, collectionPolicy, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope]);
 
   const selectedMonthlyAffiliate = useMemo(() => {
     if (mobileSelectedAffiliateId) {
@@ -1212,30 +1245,43 @@ const InsuranceCollections = () => {
         pending: getPendingTickets(affiliate.id),
       }))
       .filter((row) => mobileTicketFilter === "all" || (mobileTicketFilter === "pending" ? row.pending > 0 : row.pending === 0 && (row.monthly.tickets || 0) > 0))
-      .filter((row) => isOfficeUser
+      .filter((row) => canSeeAllCobranza
         ? mobileCollector === "todos" || normalizeCollectorName(row.affiliate.collector || "OFICINA") === normalizeCollectorName(mobileCollector)
-        : normalizeCollectorName(row.affiliate.collector || "OFICINA") === currentCollectorName)
+        : canSeeAffiliateInCobranza(row.affiliate))
       .filter((row) => !normalized || `${row.affiliate.fullName} ${row.affiliate.policyNumber} ${row.affiliate.plan} ${row.affiliate.dependency}`.toLocaleUpperCase("es-AR").includes(normalized))
       .sort((a, b) => a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR") || b.pending - a.pending);
-  }, [activeMonth, currentCollectorName, isOfficeUser, mobileCollector, mobileSearch, mobileTicketFilter, monthlyRows, ticketCollections]);
+  }, [activeMonth, canSeeAllCobranza, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, mobileCollector, mobileSearch, mobileTicketFilter, monthlyRows, officeDependencyScope, ticketCollections]);
 
   const mobileSelectedAffiliate = useMemo(() => {
     return affiliates.find((item) => item.id === mobileSelectedAffiliateId) || selectedMonthlyAffiliate || null;
   }, [affiliates, mobileSelectedAffiliateId, selectedMonthlyAffiliate]);
 
+  const visibleCollectorsForCobranza = useMemo(() => {
+    if (canSeeAllCobranza) return collectors;
+    const visibleNames = collectors.filter((collector) => {
+      const normalizedCollector = normalizeCollectorName(collector);
+      return affiliates.some((affiliate) =>
+        normalizeCollectorName(affiliate.collector || "OFICINA") === normalizedCollector
+        && canSeeAffiliateInCobranza(affiliate)
+      );
+    });
+    return visibleNames.length ? visibleNames : [currentCollectorName].filter(Boolean);
+  }, [affiliates, canSeeAllCobranza, collectors, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope]);
+
   const selectedCollectorName = !isOfficeUser && currentCollectorName
     ? currentCollectorName
-    : collectorDetailName && collectors.includes(collectorDetailName)
+    : collectorDetailName && visibleCollectorsForCobranza.includes(collectorDetailName)
     ? collectorDetailName
-    : mobileCollector !== "todos" && collectors.includes(mobileCollector)
+      : mobileCollector !== "todos" && visibleCollectorsForCobranza.includes(mobileCollector)
       ? mobileCollector
-      : collectors[0] || "";
+      : visibleCollectorsForCobranza[0] || "";
   const selectedCollectorSummary = collectorRows.find((row) => row.collector === selectedCollectorName) || null;
+  const visibleCollectorRows = collectorRows.filter((row) => visibleCollectorsForCobranza.includes(row.collector));
   const selectedCollectorPortfolio = useMemo(() => {
     if (!selectedCollectorName) return [];
     const normalizedCollector = normalizeCollectorName(selectedCollectorName);
     return affiliates
-      .filter((affiliate) => normalizeCollectorName(affiliate.collector || "OFICINA") === normalizedCollector)
+      .filter((affiliate) => normalizeCollectorName(affiliate.collector || "OFICINA") === normalizedCollector && canSeeAffiliateInCobranza(affiliate))
       .map((affiliate) => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
         const chargedTickets = ticketCollections
@@ -1357,7 +1403,7 @@ const InsuranceCollections = () => {
     if (!policy) return null;
     const candidates = affiliates
       .filter((affiliate) => affiliate.policyNumber === policy)
-      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .sort((a, b) => Number(b.selectedForMonthly) - Number(a.selectedForMonthly)
         || (b.sourceTickets || 0) - (a.sourceTickets || 0)
         || a.fullName.localeCompare(b.fullName, "es-AR"));
@@ -1369,9 +1415,9 @@ const InsuranceCollections = () => {
     if (!policy) return [];
     return affiliates
       .filter((affiliate) => affiliate.policyNumber === policy)
-      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .sort((a, b) => a.plan.localeCompare(b.plan, "es-AR", { numeric: true }));
-  }, [affiliates, currentCollectorName, isOfficeUser, receiptForm.policyNumber]);
+  }, [affiliates, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, officeDependencyScope, receiptForm.policyNumber]);
 
   const receiptPlanOptions = useMemo(() => {
     const policyPlans = uniqueSorted(receiptPolicyCandidates.map((affiliate) => affiliate.plan));
@@ -1389,9 +1435,9 @@ const InsuranceCollections = () => {
 
   const totalsByPlan = useMemo(() => {
     return availablePlans.map((plan) => {
-      const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan);
-      const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.plan || item.plan) === plan);
-      const receiptsForPlan = collectionReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan);
+      const monthlyForPlan = monthlyRows.filter(({ affiliate }) => affiliate.plan === plan && canSeeAffiliateInCobranza(affiliate));
+      const collectionsForPlan = ticketCollections.filter((item) => item.month === activeMonth && (affiliatesById.get(item.affiliateId)?.plan || item.plan) === plan && canSeeTicketCollectionInCobranza(item));
+      const receiptsForPlan = collectionReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan && canSeeReceiptInCobranza(item));
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
@@ -1419,7 +1465,7 @@ const InsuranceCollections = () => {
         receiptTransferAmount: receiptTransfer.reduce((sum, item) => sum + receiptValue(item), 0),
       };
     });
-  }, [activeMonth, affiliatesById, availablePlans, collectionReceipts, monthlyRows, ticketCollections]);
+  }, [activeMonth, affiliates, affiliatesById, availablePlans, collectionReceipts, currentCollectorName, hasOfficeDependencyScope, isOfficeUser, monthlyRows, officeDependencyScope, ticketCollections]);
 
   const totalCashCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketCashAmount + item.receiptCashAmount, 0);
   const totalTransferCollected = totalsByPlan.reduce((sum, item) => sum + item.ticketTransferAmount + item.receiptTransferAmount, 0);
@@ -1431,12 +1477,9 @@ const InsuranceCollections = () => {
   const totalRendered = totalCashRendered + totalTransferRendered;
   const bonusCollectorRows = collectorRows.filter((item) => item.bonusAchieved);
   const visibleAffiliateIds = new Set(
-    (isOfficeUser
-      ? affiliates
-      : affiliates.filter((item) => normalizeCollectorName(item.collector || "OFICINA") === currentCollectorName)
-    ).map((item) => item.id),
+    affiliates.filter((item) => canSeeAffiliateInCobranza(item)).map((item) => item.id),
   );
-  const visibleAffiliatesCount = isOfficeUser ? affiliates.length : visibleAffiliateIds.size;
+  const visibleAffiliatesCount = visibleAffiliateIds.size;
   const visibleSelectedCount = affiliates.filter((item) => visibleAffiliateIds.has(item.id) && item.selectedForMonthly).length;
   const visibleMonthlyTickets = monthlyItems
     .filter((item) => item.month === activeMonth && visibleAffiliateIds.has(item.affiliateId))
@@ -1445,15 +1488,21 @@ const InsuranceCollections = () => {
   const visibleNotesCount = visibleNotes.length;
   const visibleTicketCollections = ticketCollections.filter((item) => {
     if (item.month !== activeMonth) return false;
-    if (isOfficeUser) return true;
-    if (visibleAffiliateIds.has(item.affiliateId)) return true;
-    return normalizeCollectorName(item.collector || "") === currentCollectorName;
+    return canSeeTicketCollectionInCobranza(item);
   });
   const visibleReceipts = receipts.filter((item) => {
     if (item.collectionMonth !== activeMonth) return false;
-    if (isOfficeUser) return true;
-    return normalizeCollectorName(item.collector || "") === currentCollectorName;
+    return canSeeReceiptInCobranza(item);
   });
+  const visibleCollectionAmount = visibleTicketCollections.reduce((sum, item) => {
+    const affiliate = affiliatesById.get(item.affiliateId);
+    return sum + (affiliate?.value ?? item.ticketValue ?? 0) * item.ticketsCharged;
+  }, 0) + visibleReceipts
+    .filter((item) => item.status !== "anulado" && !item.isProduction)
+    .reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
+  const visibleCommissionAmount = hasOfficeDependencyScope
+    ? visibleCollectorRows.reduce((sum, item) => sum + item.commissionAmount, 0)
+    : commission;
   const newsAffiliateOptions = useMemo(() => {
     const normalized = newsAffiliateQuery.trim().toLocaleUpperCase("es-AR");
     return affiliates
@@ -1462,12 +1511,16 @@ const InsuranceCollections = () => {
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "es-AR"))
       .slice(0, 80);
   }, [affiliates, newsAffiliateQuery, visibleAffiliateIds]);
-  const visibleTotalToRender = isOfficeUser ? totalToRender : selectedCollectorStats.reportRenditionAmount;
+  const visibleTotalToRender = canSeeAllCobranza
+    ? totalToRender
+    : hasOfficeDependencyScope
+      ? visibleCollectionAmount - visibleCommissionAmount
+      : selectedCollectorStats.reportRenditionAmount;
   const visibleTotalLabel = isOfficeUser ? "Cobrado menos comision" : "Tu cobranza menos comision";
   const requestRows = useMemo(() => {
     return affiliates
       .filter((affiliate) => affiliate.request.trim())
-      .filter((affiliate) => isOfficeUser || normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName)
+      .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .map((affiliate) => ({
         affiliate,
         pendingTickets: getPendingTickets(affiliate.id),
@@ -2165,6 +2218,7 @@ const InsuranceCollections = () => {
         .map((item) => [item.affiliateId, item.tickets]),
     );
     const rows = affiliates
+      .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .map((affiliate) => {
         const tickets = Math.max(0, monthlyByAffiliate.get(affiliate.id) || 0);
         return { affiliate, tickets, monthlyAmount: tickets * affiliate.value };
@@ -2882,7 +2936,7 @@ const InsuranceCollections = () => {
                     onChange={(event) => setDependencyFilter(event.target.value)}
                   >
                     <option value="todos">Todas</option>
-                    {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                    {visibleDependenciesForCobranza.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
                   </select>
                 </div>
                 <div className="w-full space-y-1 lg:w-48">
@@ -2894,7 +2948,7 @@ const InsuranceCollections = () => {
                     onChange={(event) => setCollectorFilter(event.target.value)}
                   >
                     <option value="todos">Todos</option>
-                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                    {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                 </div>
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
@@ -2931,7 +2985,7 @@ const InsuranceCollections = () => {
                       <td className="w-20 px-3 py-3">{item.plan}</td>
                       <td className="w-24 px-2 py-3">
                         <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs" value={item.dependency || "SIN DEFINIR"} onChange={(event) => updateAffiliateDependency(item.id, event.target.value)}>
-                          {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                          {visibleDependenciesForCobranza.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
                         </select>
                       </td>
                       <td className="w-28 px-2 py-3">
@@ -2996,7 +3050,7 @@ const InsuranceCollections = () => {
                     onChange={(event) => setMobileCollector(event.target.value)}
                   >
                     <option value="todos">Todos</option>
-                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                    {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                 </div>}
                 <div className="space-y-1">
@@ -3166,7 +3220,7 @@ const InsuranceCollections = () => {
                     <Label htmlFor="collector-to-rename">Cobrador actual</Label>
                     <select id="collector-to-rename" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorToRename} onChange={(event) => selectCollectorToEdit(event.target.value)}>
                       <option value="">Seleccionar</option>
-                      {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                      {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -3195,14 +3249,14 @@ const InsuranceCollections = () => {
                       <Label htmlFor="collector-merge-from">Cobrador origen</Label>
                       <select id="collector-merge-from" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorMergeFrom} onChange={(event) => setCollectorMergeFrom(event.target.value)}>
                         <option value="">Seleccionar</option>
-                        {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="collector-merge-to">Cobrador correcto</Label>
                       <select id="collector-merge-to" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectorMergeTo} onChange={(event) => setCollectorMergeTo(event.target.value)}>
                         <option value="">Seleccionar</option>
-                        {collectors.filter((collector) => collector !== collectorMergeFrom).map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        {visibleCollectorsForCobranza.filter((collector) => collector !== collectorMergeFrom).map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                       </select>
                     </div>
                     <Button type="button" variant="command" className="self-end" disabled={!collectorMergeFrom || !collectorMergeTo || collectorMergeFrom === collectorMergeTo} onClick={mergeCollectors}>Combinar</Button>
@@ -3224,7 +3278,7 @@ const InsuranceCollections = () => {
                     <Label htmlFor="dependency-to-rename">Dependencia actual</Label>
                     <select id="dependency-to-rename" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={dependencyToRename} onChange={(event) => setDependencyToRename(event.target.value)}>
                       <option value="">Seleccionar</option>
-                      {dependencies.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
+                      {visibleDependenciesForCobranza.map((dependency) => <option key={dependency} value={dependency}>{dependency}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -3242,7 +3296,7 @@ const InsuranceCollections = () => {
               <div className="border-b bg-emerald-50 p-3 text-emerald-950 sm:p-4">
                 <h3 className="font-semibold">Felicitaciones, objetivo alcanzado</h3>
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
-                  {bonusCollectorRows.map((row) => (
+                  {bonusCollectorRows.filter((row) => visibleCollectorsForCobranza.includes(row.collector)).map((row) => (
                     <div key={`bonus-${row.collector}`} className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm">
                       <strong>{row.collector}</strong> logró {row.effectiveness.toFixed(1)}% de cobranza. Su comisión pasa al {row.appliedCommissionRate}%.
                     </div>
@@ -3265,7 +3319,7 @@ const InsuranceCollections = () => {
                     value={selectedCollectorName}
                     onChange={(event) => setCollectorDetailName(event.target.value)}
                   >
-                    {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                    {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                   </div>
                 </div>
@@ -3414,7 +3468,7 @@ const InsuranceCollections = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {collectorRows.map((row) => (
+                  {visibleCollectorRows.map((row) => (
                     <tr key={row.collector}>
                       <td className="px-4 py-3 font-medium">{row.collector}</td>
                       <td className="px-4 py-3">{row.phone || "-"}</td>
@@ -3455,7 +3509,7 @@ const InsuranceCollections = () => {
                       </td>
                     </tr>
                   ))}
-                  {collectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={15}>Todavía no hay cobradores cargados.</td></tr>}
+                  {visibleCollectorRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={15}>Todavía no hay cobradores cargados.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -3816,7 +3870,7 @@ const InsuranceCollections = () => {
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value.toLocaleUpperCase("es-AR") })} /></div>
                 <div className="space-y-2"><Label>N° de póliza</Label><Input inputMode="numeric" value={receiptForm.policyNumber} onChange={(event) => updateReceiptPolicy(event.target.value)} placeholder="EJ: 31774" /></div>
                 <div className="space-y-2"><Label>Apellido y nombre</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value.toLocaleUpperCase("es-AR") })} required /></div>
-                <div className="space-y-2"><Label>Cobrador</Label><select value={isOfficeUser ? receiptForm.collector : currentCollectorName} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} disabled={!isOfficeUser} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{(isOfficeUser ? collectors : [currentCollectorName]).filter(Boolean).map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
+                <div className="space-y-2"><Label>Cobrador</Label><select value={isOfficeUser ? receiptForm.collector : currentCollectorName} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} disabled={!isOfficeUser} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{(isOfficeUser ? visibleCollectorsForCobranza : [currentCollectorName]).filter(Boolean).map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
                 <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => updateReceiptPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{receiptPlanOptions.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
                 <div className="space-y-2">
                   <Label>Meses que paga</Label>
@@ -4275,7 +4329,7 @@ const InsuranceCollections = () => {
             </div>
           )}
           <div className="grid max-h-[55vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
-            {collectors.map((collector) => (
+            {visibleCollectorsForCobranza.map((collector) => (
               <Button
                 key={collector}
                 type="button"
