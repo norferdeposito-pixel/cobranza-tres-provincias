@@ -4298,10 +4298,19 @@ const InsuranceCollections = () => {
                     Información correspondiente a {selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
                   </p>
                 </div>
-                <Button type="button" variant="command" onClick={exportCollectorReportExcel}>
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Descargar reporte Excel
-                </Button>
+                {isOfficeUser && visibleCollectorsForCobranza.length > 1 && (
+                  <div className="w-full space-y-1 lg:w-72">
+                    <Label htmlFor="rendition-collector-name">Cobrador</Label>
+                    <select
+                      id="rendition-collector-name"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedCollectorName}
+                      onChange={(event) => setCollectorDetailName(event.target.value)}
+                    >
+                      {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
               {selectedCollectorSummary && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -4313,6 +4322,7 @@ const InsuranceCollections = () => {
                   <SummaryBox label="Monto cobranza" value={currency.format(selectedCollectorStats.totalCollectionAmount)} />
                   <SummaryBox label="Comisión" value={currency.format(selectedCollectorStats.reportCommissionAmount)} />
                   <SummaryBox label="A rendir" value={currency.format(selectedCollectorStats.reportRenditionAmount)} />
+                  <SummaryBox label="Pendientes a controlar" value={String(selectedCollectorReturnRows.length)} />
                 </div>
               )}
               {selectedCollectorSummary && (
@@ -4370,6 +4380,12 @@ const InsuranceCollections = () => {
                   </div>
                 </div>
               )}
+              <div className="mt-4 flex justify-end">
+                <Button type="button" variant="command" onClick={exportCollectorReportExcel}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Descargar reporte Excel
+                </Button>
+              </div>
             </div>
             {isOfficeUser && <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Rendición final</h2>
