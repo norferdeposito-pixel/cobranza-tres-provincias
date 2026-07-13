@@ -1319,6 +1319,7 @@ const InsuranceCollections = () => {
       : mobileCollector !== "todos" && visibleCollectorsForCobranza.includes(mobileCollector)
       ? mobileCollector
       : visibleCollectorsForCobranza[0] || "";
+  const canControlTicketReturns = isCollectorUser && !isAdminUser && normalizeCollectorName(selectedCollectorName || "") === currentCollectorName;
   const selectedCollectorSummary = collectorRows.find((row) => row.collector === selectedCollectorName) || null;
   const visibleCollectorRows = collectorRows.filter((row) => visibleCollectorsForCobranza.includes(row.collector));
   const selectedCollectorPortfolio = useMemo(() => {
@@ -4298,7 +4299,7 @@ const InsuranceCollections = () => {
                     Información correspondiente a {selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
                   </p>
                 </div>
-                {isOfficeUser && visibleCollectorsForCobranza.length > 1 && (
+                {isOfficeUser && !isCollectorUser && visibleCollectorsForCobranza.length > 1 && (
                   <div className="w-full space-y-1 lg:w-72">
                     <Label htmlFor="rendition-collector-name">Cobrador</Label>
                     <select
@@ -4322,10 +4323,10 @@ const InsuranceCollections = () => {
                   <SummaryBox label="Monto cobranza" value={currency.format(selectedCollectorStats.totalCollectionAmount)} />
                   <SummaryBox label="Comisión" value={currency.format(selectedCollectorStats.reportCommissionAmount)} />
                   <SummaryBox label="A rendir" value={currency.format(selectedCollectorStats.reportRenditionAmount)} />
-                  <SummaryBox label="Pendientes a controlar" value={String(selectedCollectorReturnRows.length)} />
+                  {canControlTicketReturns && <SummaryBox label="Pendientes a controlar" value={String(selectedCollectorReturnRows.length)} />}
                 </div>
               )}
-              {selectedCollectorSummary && (
+              {selectedCollectorSummary && canControlTicketReturns && (
                 <div className="mt-4 rounded-md border bg-background">
                   <div className="border-b bg-surface-subtle p-3">
                     <h3 className="font-semibold">Control de tickets para devolucion</h3>
