@@ -100,6 +100,16 @@ type AffiliateNote = {
   text: string;
 };
 
+type TicketReturnControl = {
+  id: string;
+  month: string;
+  affiliateId: string;
+  collector: string;
+  hasPhysicalTickets: boolean;
+  observation: string;
+  updatedAt: string;
+};
+
 type Rendition = {
   cashRenders: Array<{ id: string; date: string; amount: number; detail: string }>;
   transferRenders: Array<{ id: string; date: string; amount: number; proof: string }>;
@@ -156,6 +166,7 @@ type CloudSnapshot = {
   affiliates: Affiliate[];
   monthlyItems: MonthlyItem[];
   ticketCollections: TicketCollection[];
+  ticketReturnControls?: TicketReturnControl[];
   receipts: ReceiptCollection[];
   notes: AffiliateNote[];
   rendition: Rendition;
@@ -180,6 +191,7 @@ const defaultSheetUrl = "https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5
 const affiliatesStorageKey = "insurance-affiliates-v2";
 const monthlyStorageKey = "insurance-monthly-v2";
 const ticketCollectionsStorageKey = "insurance-ticket-collections-v2";
+const ticketReturnControlsStorageKey = "insurance-ticket-return-controls-v1";
 const receiptsStorageKey = "insurance-receipts-v2";
 const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
@@ -604,6 +616,7 @@ const InsuranceCollections = () => {
   const [affiliates, setAffiliates] = useState<Affiliate[]>(() => loadStorage(affiliatesStorageKey, demoAffiliates));
   const [monthlyItems, setMonthlyItems] = useState<MonthlyItem[]>(() => loadStorage(monthlyStorageKey, []));
   const [ticketCollections, setTicketCollections] = useState<TicketCollection[]>(() => loadStorage(ticketCollectionsStorageKey, []));
+  const [ticketReturnControls, setTicketReturnControls] = useState<TicketReturnControl[]>(() => loadStorage(ticketReturnControlsStorageKey, []));
   const [receipts, setReceipts] = useState<ReceiptCollection[]>(() => loadStorage(receiptsStorageKey, []));
   const [notes, setNotes] = useState<AffiliateNote[]>(() => loadStorage(notesStorageKey, []));
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => loadStorage(cashMovementsStorageKey, []));
@@ -715,6 +728,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
   useEffect(() => saveStorage(ticketCollectionsStorageKey, ticketCollections), [ticketCollections]);
+  useEffect(() => saveStorage(ticketReturnControlsStorageKey, ticketReturnControls), [ticketReturnControls]);
   useEffect(() => saveStorage(receiptsStorageKey, receipts), [receipts]);
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
   useEffect(() => saveStorage(cashMovementsStorageKey, cashMovements), [cashMovements]);
@@ -739,6 +753,7 @@ const InsuranceCollections = () => {
     affiliates: overrides.affiliates ?? affiliates,
     monthlyItems: overrides.monthlyItems ?? monthlyItems,
     ticketCollections: overrides.ticketCollections ?? ticketCollections,
+    ticketReturnControls: overrides.ticketReturnControls ?? ticketReturnControls,
     receipts: overrides.receipts ?? receipts,
     notes: overrides.notes ?? notes,
     rendition: overrides.rendition ?? rendition,
@@ -754,6 +769,7 @@ const InsuranceCollections = () => {
     setAffiliates(Array.isArray(snapshot.affiliates) ? snapshot.affiliates : demoAffiliates);
     setMonthlyItems(Array.isArray(snapshot.monthlyItems) ? snapshot.monthlyItems : []);
     setTicketCollections(Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections : []);
+    setTicketReturnControls(Array.isArray(snapshot.ticketReturnControls) ? snapshot.ticketReturnControls : []);
     setReceipts(Array.isArray(snapshot.receipts) ? snapshot.receipts : []);
     setNotes(Array.isArray(snapshot.notes) ? snapshot.notes : []);
     setCashMovements(Array.isArray(snapshot.cashMovements) ? snapshot.cashMovements : []);
@@ -931,6 +947,39 @@ const InsuranceCollections = () => {
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const saveTicketReturnControlsOnline = async (nextControls: TicketReturnControl[]) => {
+    setCloudStatus("Guardando control de devolucion online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo guardar el control online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineControls = Array.isArray(onlineSnapshot.ticketReturnControls) ? onlineSnapshot.ticketReturnControls : [];
+    const mergedControls = mergeRowsById(onlineControls, nextControls);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      ticketReturnControls: mergedControls,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo guardar el control online: ${saveError.message}`);
+      return;
+    }
+    setTicketReturnControls(mergedControls);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`Control de devolucion guardado online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
   const ensureLatestOnlineDataBeforeReport = async () => {
     setCloudStatus("Verificando base online antes del reporte...");
     const { data, error } = await supabase
@@ -1032,7 +1081,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, ticketCollections, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1349,6 +1398,51 @@ const InsuranceCollections = () => {
       latestNotes: notesForCollector.slice(0, 6),
     };
   }, [activeMonth, affiliates, affiliatesById, collectionReceipts, notes, selectedCollectorName, selectedCollectorPortfolio, selectedCollectorSummary?.appliedCommissionRate, ticketCollections]);
+
+  const selectedCollectorReturnControls = useMemo(() => {
+    const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
+    return new Map(
+      ticketReturnControls
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(item.collector || "OFICINA") === normalizedCollector)
+        .map((item) => [item.affiliateId, item]),
+    );
+  }, [activeMonth, selectedCollectorName, ticketReturnControls]);
+
+  const selectedCollectorReturnRows = useMemo(() => {
+    return selectedCollectorStats.returnedRows.map((row) => {
+      const control = selectedCollectorReturnControls.get(row.affiliate.id);
+      return {
+        ...row,
+        control,
+        hasPhysicalTickets: !!control?.hasPhysicalTickets,
+        observation: control?.observation || "",
+      };
+    });
+  }, [selectedCollectorReturnControls, selectedCollectorStats.returnedRows]);
+
+  const updateTicketReturnControl = async (affiliateId: string, patch: Partial<Pick<TicketReturnControl, "hasPhysicalTickets" | "observation">>) => {
+    if (!selectedCollectorName) return;
+    const normalizedCollector = normalizeCollectorName(selectedCollectorName);
+    const existing = ticketReturnControls.find((item) =>
+      item.month === activeMonth
+      && item.affiliateId === affiliateId
+      && normalizeCollectorName(item.collector || "OFICINA") === normalizedCollector,
+    );
+    const nextControl: TicketReturnControl = {
+      id: existing?.id || `return-${activeMonth}-${affiliateId}-${normalizedCollector.replace(/[^A-Z0-9]+/g, "-")}`,
+      month: activeMonth,
+      affiliateId,
+      collector: normalizedCollector,
+      hasPhysicalTickets: patch.hasPhysicalTickets ?? existing?.hasPhysicalTickets ?? false,
+      observation: patch.observation !== undefined ? patch.observation.toLocaleUpperCase("es-AR") : existing?.observation || "",
+      updatedAt: new Date().toISOString(),
+    };
+    const nextControls = existing
+      ? ticketReturnControls.map((item) => item.id === existing.id ? nextControl : item)
+      : [...ticketReturnControls, nextControl];
+    setTicketReturnControls(nextControls);
+    await saveTicketReturnControlsOnline(nextControls);
+  };
 
   const openMobileCollection = (affiliate: Affiliate) => {
     setMobileSelectedAffiliateId(affiliate.id);
@@ -2403,19 +2497,23 @@ const InsuranceCollections = () => {
         headerCell("Dependencia"),
         headerCell("Tickets devueltos"),
         headerCell("Monto pendiente"),
+        headerCell("Control fisico"),
+        headerCell("Observacion"),
       ],
-      ...selectedCollectorStats.returnedRows.map(({ affiliate, pendingTickets, pendingAmount }) => [
+      ...selectedCollectorReturnRows.map(({ affiliate, pendingTickets, pendingAmount, hasPhysicalTickets, observation }) => [
         affiliate.fullName,
         affiliate.policyNumber || "-",
         affiliate.plan,
         affiliate.dependency || "-",
         pendingTickets,
         moneyCell(pendingAmount),
+        hasPhysicalTickets ? "PRESENTA TICKETS" : "NO PRESENTA TICKETS",
+        observation || (hasPhysicalTickets ? "CONTROLADO PARA DEVOLUCION" : "NO INFORMADO / NO PRESENTADO POR EL COBRADOR"),
       ]),
     ];
 
-    if (selectedCollectorStats.returnedRows.length === 0) {
-      returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 6, align: "center", fontWeight: "bold" }]);
+    if (selectedCollectorReturnRows.length === 0) {
+      returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 8, align: "center", fontWeight: "bold" }]);
     }
 
     const chargedRows = ticketCollections
@@ -2473,7 +2571,7 @@ const InsuranceCollections = () => {
       {
         data: returnedData,
         sheet: "Devoluciones",
-        columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 20 }, { width: 20 }],
+        columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 20 }, { width: 20 }, { width: 22 }, { width: 42 }],
         orientation: "landscape",
         stickyRowsCount: 1,
       },
@@ -4217,6 +4315,61 @@ const InsuranceCollections = () => {
                   <SummaryBox label="A rendir" value={currency.format(selectedCollectorStats.reportRenditionAmount)} />
                 </div>
               )}
+              {selectedCollectorSummary && (
+                <div className="mt-4 rounded-md border bg-background">
+                  <div className="border-b bg-surface-subtle p-3">
+                    <h3 className="font-semibold">Control de tickets para devolucion</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Antes de descargar el reporte, tilda los tickets fisicos que el cobrador presenta. Los no tildados saldran observados en el Excel.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-xs sm:text-sm">
+                      <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-3 text-center">Presenta</th>
+                          <th className="px-3 py-3 text-left">Afiliado</th>
+                          <th className="px-3 py-3 text-left">Poliza</th>
+                          <th className="px-3 py-3 text-left">Plan</th>
+                          <th className="px-3 py-3 text-center">Tickets</th>
+                          <th className="px-3 py-3 text-right">Monto</th>
+                          <th className="px-3 py-3 text-left">Observacion</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedCollectorReturnRows.map(({ affiliate, pendingTickets, pendingAmount, hasPhysicalTickets, observation }) => (
+                          <tr key={`return-control-${affiliate.id}`}>
+                            <td className="px-3 py-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={hasPhysicalTickets}
+                                onChange={(event) => void updateTicketReturnControl(affiliate.id, { hasPhysicalTickets: event.target.checked })}
+                                className="h-4 w-4"
+                              />
+                            </td>
+                            <td className="px-3 py-3 font-medium">{affiliate.fullName}</td>
+                            <td className="px-3 py-3">{affiliate.policyNumber || "-"}</td>
+                            <td className="px-3 py-3">{affiliate.plan}</td>
+                            <td className="px-3 py-3 text-center">{pendingTickets}</td>
+                            <td className="px-3 py-3 text-right">{currency.format(pendingAmount)}</td>
+                            <td className="px-3 py-3">
+                              <Textarea
+                                defaultValue={observation}
+                                onBlur={(event) => void updateTicketReturnControl(affiliate.id, { observation: event.target.value })}
+                                className="min-h-16 min-w-[260px]"
+                                placeholder="OBSERVACION SI NO PRESENTA LOS TICKETS"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                        {selectedCollectorReturnRows.length === 0 && (
+                          <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>Sin tickets pendientes para devolver.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
             {isOfficeUser && <div className="rounded-md border bg-card p-3 sm:p-4">
               <h2 className="font-semibold">Rendición final</h2>
@@ -4425,10 +4578,12 @@ const InsuranceCollections = () => {
                       <th className="px-3 py-3 text-left">Dependencia</th>
                       <th className="px-3 py-3 text-center">Tickets devueltos</th>
                       <th className="px-3 py-3 text-right">Monto pendiente</th>
+                      <th className="px-3 py-3 text-left">Control</th>
+                      <th className="px-3 py-3 text-left">Observacion</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {selectedCollectorStats.returnedRows.map(({ affiliate, pendingTickets, pendingAmount }) => (
+                    {selectedCollectorReturnRows.map(({ affiliate, pendingTickets, pendingAmount, hasPhysicalTickets, observation }) => (
                       <tr key={`returned-${affiliate.id}`}>
                         <td className="px-3 py-3 font-medium">{affiliate.fullName}</td>
                         <td className="px-3 py-3">{affiliate.policyNumber || "-"}</td>
@@ -4436,10 +4591,12 @@ const InsuranceCollections = () => {
                         <td className="px-3 py-3">{affiliate.dependency || "-"}</td>
                         <td className="px-3 py-3 text-center">{pendingTickets}</td>
                         <td className="px-3 py-3 text-right">{currency.format(pendingAmount)}</td>
+                        <td className="px-3 py-3">{hasPhysicalTickets ? "Presenta tickets" : "No presenta tickets"}</td>
+                        <td className="px-3 py-3">{observation || (hasPhysicalTickets ? "Controlado para devolucion" : "No informado / no presentado")}</td>
                       </tr>
                     ))}
-                    {selectedCollectorStats.returnedRows.length === 0 && (
-                      <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={6}>Sin devoluciones para este cobrador.</td></tr>
+                    {selectedCollectorReturnRows.length === 0 && (
+                      <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={8}>Sin devoluciones para este cobrador.</td></tr>
                     )}
                   </tbody>
                 </table>
