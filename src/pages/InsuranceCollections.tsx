@@ -1292,7 +1292,7 @@ const InsuranceCollections = () => {
   const hasUnansweredRequest = !!selectedMonthlyAffiliate?.request?.trim() && !selectedMonthlyAffiliate?.latestNews?.trim();
   const selectedAffiliateAssignedCollector = normalizeCollectorName(selectedMonthlyAffiliate?.collector || "OFICINA");
   const selectedAffiliateIsFromOtherCollector = !!selectedMonthlyAffiliate
-    && isCollectorUser
+    && !isAdminUser
     && currentCollectorName
     && selectedAffiliateAssignedCollector !== currentCollectorName;
   const otherCollectorWarningText = selectedAffiliateIsFromOtherCollector
@@ -2115,8 +2115,8 @@ const InsuranceCollections = () => {
       return;
     }
     const assignedCollector = normalizeCollectorName(selectedMonthlyAffiliate.collector || "OFICINA");
-    const actualCollector = normalizeCollectorName(isCollectorUser && currentCollectorName ? currentCollectorName : selectedMonthlyAffiliate.collector || "OFICINA");
-    const isOtherCollectorTicket = isCollectorUser && actualCollector !== assignedCollector;
+    const actualCollector = normalizeCollectorName(!isAdminUser && currentCollectorName ? currentCollectorName : selectedMonthlyAffiliate.collector || "OFICINA");
+    const isOtherCollectorTicket = !isAdminUser && !!currentCollectorName && actualCollector !== assignedCollector;
     if (isOtherCollectorTicket) {
       const shouldCharge = window.confirm(`Este ticket corresponde a la cobranza de ${assignedCollector}. Queres cobrarlo igual?`);
       if (!shouldCharge) return;
