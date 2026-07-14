@@ -655,6 +655,7 @@ const InsuranceCollections = () => {
   const [collectorDetailName, setCollectorDetailName] = useState("");
   const [collectorSettingsOpen, setCollectorSettingsOpen] = useState(false);
   const [collectorReportOpen, setCollectorReportOpen] = useState(false);
+  const [adminReportScope, setAdminReportScope] = useState<"collector" | "all">("collector");
   const [collectorMergeFrom, setCollectorMergeFrom] = useState("");
   const [collectorMergeTo, setCollectorMergeTo] = useState("");
   const [newDependencyName, setNewDependencyName] = useState("");
@@ -2641,6 +2642,310 @@ const InsuranceCollections = () => {
     ]).toFile(`reporte-cobranza-${safeCollectorName}-${activeMonth}.xlsx`);
   };
 
+  const exportGeneralCollectionReportExcel = async () => {
+    const canExport = await ensureLatestOnlineDataBeforeReport();
+    if (!canExport) return;
+    const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
+    const metricLabel = (value: string) => ({ value, fontWeight: "bold" as const, backgroundColor: "#E8F0F8" });
+    const headerCell = (value: string) => ({
+      value,
+      fontWeight: "bold" as const,
+      backgroundColor: "#0B5CAD",
+      textColor: "#FFFFFF",
+      align: "center" as const,
+      wrap: true,
+    });
+
+    const activeVisibleReceipts = visibleReceipts.filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction);
+    const ticketAmount = (collection: TicketCollection) => {
+      const affiliate = affiliatesById.get(collection.affiliateId);
+      return (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
+    };
+    const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
+    const ticketCash = visibleTicketCollections.filter((item) => item.paymentMethod === "E");
+    const ticketTransfer = visibleTicketCollections.filter((item) => item.paymentMethod === "T");
+    const receiptCash = activeVisibleReceipts.filter((item) => item.paymentMethod === "E");
+    const receiptTransfer = activeVisibleReceipts.filter((item) => item.paymentMethod === "T");
+    const ticketsCharged = visibleTicketCollections.reduce((sum, item) => sum + item.ticketsCharged, 0);
+    const receiptCount = new Set(activeVisibleReceipts.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size;
+    const visiblePendingTickets = visibleCollectorRows.reduce((sum, row) => sum + row.pendingTickets, 0);
+    const ticketCashAmount = ticketCash.reduce((sum, item) => sum + ticketAmount(item), 0);
+    const ticketTransferAmount = ticketTransfer.reduce((sum, item) => sum + ticketAmount(item), 0);
+    const receiptCashAmount = receiptCash.reduce((sum, item) => sum + receiptAmount(item), 0);
+    const receiptTransferAmount = receiptTransfer.reduce((sum, item) => sum + receiptAmount(item), 0);
+    const totalCashAmount = ticketCashAmount + receiptCashAmount;
+    const totalTransferAmount = ticketTransferAmount + receiptTransferAmount;
+    const totalCollectionAmount = totalCashAmount + totalTransferAmount;
+    const reportCommissionAmount = visibleCommissionAmount;
+    const reportRenditionAmount = totalCollectionAmount - reportCommissionAmount;
+
+    const chargedRows = visibleTicketCollections
+      .map((collection) => {
+        const affiliate = affiliatesById.get(collection.affiliateId);
+        return {
+          collection,
+          affiliate,
+          amount: ticketAmount(collection),
+        };
+      })
+      .sort((a, b) =>
+        (a.collection.collector || a.affiliate?.collector || "").localeCompare(b.collection.collector || b.affiliate?.collector || "", "es-AR")
+        || (a.affiliate?.plan || a.collection.plan || "").localeCompare(b.affiliate?.plan || b.collection.plan || "", "es-AR", { numeric: true })
+        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
+        || (a.affiliate?.policyNumber || a.collection.policyNumber || "").localeCompare(b.affiliate?.policyNumber || b.collection.policyNumber || "", "es-AR", { numeric: true })
+      );
+
+    const returnedRows = affiliates
+      .filter((affiliate) => visibleAffiliateIds.has(affiliate.id))
+      .map((affiliate) => {
+        const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
+        const tickets = monthly?.tickets || 0;
+        const charged = ticketCollections
+          .filter((item) => item.month === activeMonth && item.affiliateId === affiliate.id)
+          .reduce((sum, item) => sum + item.ticketsCharged, 0);
+        const pendingTickets = Math.max(tickets - charged, 0);
+        return {
+          affiliate,
+          pendingTickets,
+          pendingAmount: pendingTickets * affiliate.value,
+        };
+      })
+      .filter((row) => row.pendingTickets > 0)
+      .sort((a, b) =>
+        normalizeCollectorName(a.affiliate.collector || "OFICINA").localeCompare(normalizeCollectorName(b.affiliate.collector || "OFICINA"), "es-AR")
+        || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR")
+      );
+
+    const summaryData: any[][] = [
+      [{ value: "REPORTE GENERAL DE COBRANZA", columnSpan: 2, fontWeight: "bold", fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" }],
+      [metricLabel("Alcance"), "TODOS LOS COBRADORES"],
+      [metricLabel("Periodo"), activeMonth],
+      [null, null],
+      [headerCell("Indicador"), headerCell("Resultado")],
+      [metricLabel("Afiliados visibles"), visibleAffiliatesCount],
+      [metricLabel("Afiliados seleccionados"), visibleSelectedCount],
+      [metricLabel("Tickets recibidos"), visibleMonthlyTickets],
+      [metricLabel("Tickets cobrados"), ticketsCharged],
+      [metricLabel("Tickets devueltos / pendientes"), visiblePendingTickets],
+      [metricLabel("Tickets cobrados en efectivo"), ticketCash.reduce((sum, item) => sum + item.ticketsCharged, 0)],
+      [metricLabel("Monto tickets en efectivo"), moneyCell(ticketCashAmount)],
+      [metricLabel("Tickets cobrados por transferencia"), ticketTransfer.reduce((sum, item) => sum + item.ticketsCharged, 0)],
+      [metricLabel("Monto tickets por transferencia"), moneyCell(ticketTransferAmount)],
+      [metricLabel("Recibos cobrados"), receiptCount],
+      [metricLabel("Monto recibos"), moneyCell(activeVisibleReceipts.reduce((sum, item) => sum + receiptAmount(item), 0))],
+      [metricLabel("Recibos en efectivo"), new Set(receiptCash.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size],
+      [metricLabel("Monto recibos en efectivo"), moneyCell(receiptCashAmount)],
+      [metricLabel("Recibos por transferencia"), new Set(receiptTransfer.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size],
+      [metricLabel("Monto recibos por transferencia"), moneyCell(receiptTransferAmount)],
+      [metricLabel("Cobranza total en efectivo"), moneyCell(totalCashAmount)],
+      [metricLabel("Cobranza total por transferencia"), moneyCell(totalTransferAmount)],
+      [metricLabel("Monto total cobrado"), moneyCell(totalCollectionAmount)],
+      [metricLabel("Monto comisiones"), moneyCell(reportCommissionAmount)],
+      [metricLabel("Monto a rendir"), moneyCell(reportRenditionAmount)],
+    ];
+
+    const collectorsData: any[][] = [
+      [
+        headerCell("Cobrador"),
+        headerCell("Dependencias"),
+        headerCell("Afiliados"),
+        headerCell("Tickets recibidos"),
+        headerCell("Tickets cobrados"),
+        headerCell("Tickets pendientes"),
+        headerCell("Monto cobrado"),
+        headerCell("% comision"),
+        headerCell("Comision"),
+        headerCell("A rendir"),
+      ],
+      ...visibleCollectorRows.map((row) => [
+        row.collector,
+        row.dependencies.join(", ") || "-",
+        row.affiliates,
+        row.tickets,
+        row.chargedTickets,
+        row.pendingTickets,
+        moneyCell(row.chargedAmount),
+        { value: row.appliedCommissionRate / 100, type: Number, format: "0%", align: "right" as const },
+        moneyCell(row.commissionAmount),
+        moneyCell(row.amountToRender),
+      ]),
+    ];
+
+    const plansData: any[][] = [
+      [
+        headerCell("Plan"),
+        headerCell("Tickets recibidos"),
+        headerCell("Tickets cobrados"),
+        headerCell("Tickets pendientes"),
+        headerCell("Tickets efectivo"),
+        headerCell("Monto efectivo"),
+        headerCell("Tickets transferencia"),
+        headerCell("Monto transferencia"),
+        headerCell("Recibos"),
+        headerCell("Recibos efectivo"),
+        headerCell("Monto recibos efectivo"),
+        headerCell("Recibos transferencia"),
+        headerCell("Monto recibos transferencia"),
+      ],
+      ...totalsByPlan.map((row) => [
+        row.plan,
+        row.ticketsReceived,
+        row.ticketsCharged,
+        row.ticketsNotCharged,
+        row.ticketCashCount,
+        moneyCell(row.ticketCashAmount),
+        row.ticketTransferCount,
+        moneyCell(row.ticketTransferAmount),
+        row.receiptCount,
+        row.receiptCashCount,
+        moneyCell(row.receiptCashAmount),
+        row.receiptTransferCount,
+        moneyCell(row.receiptTransferAmount),
+      ]),
+    ];
+
+    const chargedData: any[][] = [
+      [
+        headerCell("Cobrador"),
+        headerCell("Nombre y apellido"),
+        headerCell("Poliza"),
+        headerCell("Plan"),
+        headerCell("Dependencia"),
+        headerCell("Tickets cobrados"),
+        headerCell("Forma de pago"),
+        headerCell("Importe cobrado"),
+        headerCell("Comprobante"),
+      ],
+      ...chargedRows.map(({ collection, affiliate, amount }) => [
+        collection.collector || affiliate?.collector || "-",
+        affiliate?.fullName || collection.fullName || "-",
+        affiliate?.policyNumber || collection.policyNumber || "-",
+        affiliate?.plan || collection.plan || "-",
+        affiliate?.dependency || collection.dependency || "-",
+        collection.ticketsCharged,
+        methodLabel(collection.paymentMethod),
+        moneyCell(amount),
+        collection.transfer?.receiptNumber || collection.transfer?.transactionNumber || "-",
+      ]),
+    ];
+    if (chargedRows.length === 0) {
+      chargedData.push([{ value: "SIN TICKETS COBRADOS", columnSpan: 9, align: "center", fontWeight: "bold" }]);
+    }
+
+    const returnedData: any[][] = [
+      [
+        headerCell("Cobrador"),
+        headerCell("Nombre y apellido"),
+        headerCell("Poliza"),
+        headerCell("Plan"),
+        headerCell("Dependencia"),
+        headerCell("Tickets pendientes"),
+        headerCell("Monto pendiente"),
+      ],
+      ...returnedRows.map(({ affiliate, pendingTickets, pendingAmount }) => [
+        affiliate.collector || "OFICINA",
+        affiliate.fullName,
+        affiliate.policyNumber || "-",
+        affiliate.plan,
+        affiliate.dependency || "-",
+        pendingTickets,
+        moneyCell(pendingAmount),
+      ]),
+    ];
+    if (returnedRows.length === 0) {
+      returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 7, align: "center", fontWeight: "bold" }]);
+    }
+
+    const receiptsData: any[][] = [
+      [
+        headerCell("Cobrador"),
+        headerCell("Recibo"),
+        headerCell("Nombre y apellido"),
+        headerCell("Poliza"),
+        headerCell("Plan"),
+        headerCell("Meses pagados"),
+        headerCell("Cantidad meses"),
+        headerCell("Monto mensual"),
+        headerCell("Monto total"),
+        headerCell("Forma de pago"),
+        headerCell("Comprobante"),
+      ],
+      ...activeVisibleReceipts
+        .slice()
+        .sort((a, b) => (a.collector || "").localeCompare(b.collector || "", "es-AR") || a.fullName.localeCompare(b.fullName, "es-AR"))
+        .map((receipt) => [
+          receipt.collector || "-",
+          receipt.receiptNumber,
+          receipt.fullName,
+          receipt.policyNumber || "-",
+          receipt.plan,
+          (receipt.paidMonths?.length ? receipt.paidMonths : [receipt.paidMonth]).filter(Boolean).join(", "),
+          receipt.monthCount,
+          moneyCell(receipt.monthlyAmount),
+          moneyCell(receiptAmount(receipt)),
+          methodLabel(receipt.paymentMethod),
+          receipt.transfer?.receiptNumber || receipt.transfer?.transactionNumber || "-",
+        ]),
+    ];
+    if (activeVisibleReceipts.length === 0) {
+      receiptsData.push([{ value: "SIN RECIBOS", columnSpan: 11, align: "center", fontWeight: "bold" }]);
+    }
+
+    await writeExcelFile([
+      {
+        data: summaryData,
+        sheet: "Resumen",
+        columns: [{ width: 38 }, { width: 24 }],
+        showGridLines: false,
+        stickyRowsCount: 1,
+      },
+      {
+        data: collectorsData,
+        sheet: "Por cobrador",
+        columns: [{ width: 28 }, { width: 24 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 18 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+      {
+        data: plansData,
+        sheet: "Por plan",
+        columns: [{ width: 14 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 20 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 22 }, { width: 24 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+      {
+        data: chargedData,
+        sheet: "Tickets cobrados",
+        columns: [{ width: 26 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+      {
+        data: returnedData,
+        sheet: "Devoluciones",
+        columns: [{ width: 26 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 18 }, { width: 20 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+      {
+        data: receiptsData,
+        sheet: "Recibos",
+        columns: [{ width: 26 }, { width: 16 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 28 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+    ]).toFile(`reporte-cobranza-general-${activeMonth}.xlsx`);
+  };
+
+  const exportRenditionReportExcel = async () => {
+    if (isOfficeUser && !isCollectorUser && adminReportScope === "all") {
+      await exportGeneralCollectionReportExcel();
+      return;
+    }
+    await exportCollectorReportExcel();
+  };
+
   const exportReceiptsExcel = async () => {
     const { default: writeExcelFile } = await import("write-excel-file/browser");
     const moneyCell = (value: number) => ({ value, type: Number, format: "$ #,##0", align: "right" as const });
@@ -4359,26 +4664,53 @@ const InsuranceCollections = () => {
             <div className="rounded-md border bg-card p-3 sm:p-4 lg:col-span-2">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="font-semibold">Rendición del cobrador</h2>
+                  <h2 className="font-semibold">{isOfficeUser && !isCollectorUser && adminReportScope === "all" ? "Rendicion general" : "Rendición del cobrador"}</h2>
                   <p className="text-sm text-muted-foreground">
-                    Información correspondiente a {selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
+                    Información correspondiente a {isOfficeUser && !isCollectorUser && adminReportScope === "all" ? "todos los cobradores" : selectedCollectorName || "el cobrador actual"} para el período {activeMonth}.
                   </p>
                 </div>
                 {isOfficeUser && !isCollectorUser && visibleCollectorsForCobranza.length > 1 && (
-                  <div className="w-full space-y-1 lg:w-72">
-                    <Label htmlFor="rendition-collector-name">Cobrador</Label>
-                    <select
-                      id="rendition-collector-name"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedCollectorName}
-                      onChange={(event) => setCollectorDetailName(event.target.value)}
-                    >
-                      {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
-                    </select>
+                  <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-[34rem]">
+                    <div className="space-y-1">
+                      <Label htmlFor="rendition-report-scope">Reporte</Label>
+                      <select
+                        id="rendition-report-scope"
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={adminReportScope}
+                        onChange={(event) => setAdminReportScope(event.target.value as "collector" | "all")}
+                      >
+                        <option value="collector">Un cobrador</option>
+                        <option value="all">Todos los cobradores</option>
+                      </select>
+                    </div>
+                    {adminReportScope === "collector" && (
+                      <div className="space-y-1">
+                        <Label htmlFor="rendition-collector-name">Cobrador</Label>
+                        <select
+                          id="rendition-collector-name"
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                          value={selectedCollectorName}
+                          onChange={(event) => setCollectorDetailName(event.target.value)}
+                        >
+                          {visibleCollectorsForCobranza.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              {selectedCollectorSummary && (
+              {isOfficeUser && !isCollectorUser && adminReportScope === "all" ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryBox label="Tickets cobrados" value={String(visibleTicketCollections.reduce((sum, item) => sum + item.ticketsCharged, 0))} />
+                  <SummaryBox label="Tickets devueltos" value={String(visibleCollectorRows.reduce((sum, item) => sum + item.pendingTickets, 0))} />
+                  <SummaryBox label="Cobranza efectivo" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "E").reduce((sum, item) => sum + ((affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "E").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
+                  <SummaryBox label="Cobranza transferencia" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "T").reduce((sum, item) => sum + ((affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "T").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
+                  <SummaryBox label="Recibos cobrados" value={String(new Set(visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction).map((item) => `${item.receiptNumber}-${item.plan}`)).size)} />
+                  <SummaryBox label="Monto cobranza" value={currency.format(visibleCollectionAmount)} />
+                  <SummaryBox label="ComisiÃ³n" value={currency.format(visibleCommissionAmount)} />
+                  <SummaryBox label="A rendir" value={currency.format(visibleCollectionAmount - visibleCommissionAmount)} />
+                </div>
+              ) : selectedCollectorSummary && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <SummaryBox label="Tickets cobrados" value={String(selectedCollectorSummary.chargedTickets)} />
                   <SummaryBox label="Tickets devueltos" value={String(selectedCollectorSummary.pendingTickets)} />
@@ -4447,7 +4779,7 @@ const InsuranceCollections = () => {
                 </div>
               )}
               <div className="mt-4 flex justify-end">
-                <Button type="button" variant="command" onClick={exportCollectorReportExcel}>
+                <Button type="button" variant="command" onClick={exportRenditionReportExcel}>
                   <FileSpreadsheet className="h-4 w-4" />
                   Descargar reporte Excel
                 </Button>
