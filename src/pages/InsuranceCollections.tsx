@@ -914,7 +914,7 @@ const InsuranceCollections = () => {
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
-  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[]) => {
+  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[], nextNotes: AffiliateNote[] = notes) => {
     setCloudStatus("Guardando tickets online...");
     const { data, error } = await supabase
       .from("app_snapshots")
@@ -928,11 +928,14 @@ const InsuranceCollections = () => {
 
     const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
     const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
+    const onlineNotes = Array.isArray(onlineSnapshot.notes) ? onlineSnapshot.notes : [];
     const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
+    const mergedNotes = mergeRowsById(onlineNotes, nextNotes);
     const snapshot = {
       ...buildCloudSnapshot(),
       ...onlineSnapshot,
       ticketCollections: mergedTicketCollections,
+      notes: mergedNotes,
     };
 
     const { error: saveError } = await supabase
@@ -943,6 +946,7 @@ const InsuranceCollections = () => {
       return;
     }
     setTicketCollections(mergedTicketCollections);
+    setNotes(mergedNotes);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
@@ -1115,6 +1119,9 @@ const InsuranceCollections = () => {
     return normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName;
   };
   const canSeeTicketCollectionInCobranza = (collection: TicketCollection) => {
+    const collectionCollector = normalizeCollectorName(collection.collector || "");
+    if (collectionCollector && collectionCollector === currentCollectorName) return true;
+    if (hasOfficeCollectorScope && collectionCollector === officeCollectorScope) return true;
     const affiliate = affiliatesById.get(collection.affiliateId);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
     if (hasOfficeCollectorScope) return normalizeCollectorName(collection.collector || "") === officeCollectorScope;
@@ -1206,12 +1213,16 @@ const InsuranceCollections = () => {
         return sum + (monthly?.tickets || 0) * affiliate.value;
       }, 0);
       const ticketCollectionsForCollector = ticketCollections
-        .filter((item) => item.month === activeMonth && normalizeCollectorName(affiliatesById.get(item.affiliateId)?.collector || item.collector || "OFICINA") === normalizedCollector);
+        .filter((item) => item.month === activeMonth && normalizeCollectorName(item.collector || affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizedCollector);
+      const assignedIds = new Set(assigned.map((affiliate) => affiliate.id));
+      const ticketCollectionsForAssigned = ticketCollections
+        .filter((item) => item.month === activeMonth && assignedIds.has(item.affiliateId));
       const receiptsForCollector = collectionReceipts.filter((receipt) => {
         const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : affiliateCollectorByName.get(normalizeHeader(receipt.fullName));
         return receipt.collectionMonth === activeMonth && receiptCollector === normalizedCollector;
       });
       const chargedTickets = ticketCollectionsForCollector.reduce((sum, item) => sum + item.ticketsCharged, 0);
+      const assignedChargedTickets = ticketCollectionsForAssigned.reduce((sum, item) => sum + item.ticketsCharged, 0);
       const ticketChargedAmount = ticketCollectionsForCollector.reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged, 0);
       const receiptAmount = receiptsForCollector.reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
       const chargedAmount = ticketChargedAmount + receiptAmount;
@@ -1228,7 +1239,7 @@ const InsuranceCollections = () => {
         tickets,
         assignedAmount,
         chargedTickets,
-        pendingTickets: Math.max(tickets - chargedTickets, 0),
+        pendingTickets: Math.max(tickets - assignedChargedTickets, 0),
         chargedAmount,
         ticketChargedAmount,
         receiptCount: new Set(receiptsForCollector.map((item) => `${item.receiptNumber}-${item.plan}`)).size,
@@ -1259,8 +1270,7 @@ const InsuranceCollections = () => {
     const policy = collectionPolicy.trim();
     if (!policy) return [];
     return affiliates
-      .filter((item) => item.policyNumber === policy)
-      .filter((item) => canSeeAffiliateInCobranza(item));
+      .filter((item) => item.policyNumber === policy);
   }, [affiliates, collectionPolicy]);
 
   const selectedMonthlyAffiliate = useMemo(() => {
@@ -1280,6 +1290,14 @@ const InsuranceCollections = () => {
     : 0;
   const ticketsToCharge = Math.max((selectedMonthlyItem?.tickets || 0) - alreadyChargedTickets, 0);
   const hasUnansweredRequest = !!selectedMonthlyAffiliate?.request?.trim() && !selectedMonthlyAffiliate?.latestNews?.trim();
+  const selectedAffiliateAssignedCollector = normalizeCollectorName(selectedMonthlyAffiliate?.collector || "OFICINA");
+  const selectedAffiliateIsFromOtherCollector = !!selectedMonthlyAffiliate
+    && isCollectorUser
+    && currentCollectorName
+    && selectedAffiliateAssignedCollector !== currentCollectorName;
+  const otherCollectorWarningText = selectedAffiliateIsFromOtherCollector
+    ? `Ticket correspondiente a la cobranza de ${selectedAffiliateAssignedCollector}.`
+    : "";
   const mobileCollectorRows = useMemo(() => {
     const normalized = mobileSearch.trim().toLocaleUpperCase("es-AR");
     return monthlyRows
@@ -1347,10 +1365,12 @@ const InsuranceCollections = () => {
 
   const selectedCollectorStats = useMemo(() => {
     const affiliateIds = new Set(selectedCollectorPortfolio.map((row) => row.affiliate.id));
-    const collections = ticketCollections.filter((item) =>
-      item.month === activeMonth
-      && (affiliateIds.has(item.affiliateId) || normalizeCollectorName(item.collector || "") === normalizeCollectorName(selectedCollectorName || "OFICINA"))
-    );
+    const collections = ticketCollections.filter((item) => {
+      if (item.month !== activeMonth) return false;
+      const collectionCollector = normalizeCollectorName(item.collector || "");
+      if (collectionCollector) return collectionCollector === normalizeCollectorName(selectedCollectorName || "OFICINA");
+      return affiliateIds.has(item.affiliateId);
+    });
     const cashCollections = collections.filter((item) => item.paymentMethod === "E");
     const transferCollections = collections.filter((item) => item.paymentMethod === "T");
     const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
@@ -2094,6 +2114,13 @@ const InsuranceCollections = () => {
       alert("Esta póliza tiene un pedido pendiente. Para guardar el cobro, primero completá la novedad/respuesta.");
       return;
     }
+    const assignedCollector = normalizeCollectorName(selectedMonthlyAffiliate.collector || "OFICINA");
+    const actualCollector = normalizeCollectorName(isCollectorUser && currentCollectorName ? currentCollectorName : selectedMonthlyAffiliate.collector || "OFICINA");
+    const isOtherCollectorTicket = isCollectorUser && actualCollector !== assignedCollector;
+    if (isOtherCollectorTicket) {
+      const shouldCharge = window.confirm(`Este ticket corresponde a la cobranza de ${assignedCollector}. Queres cobrarlo igual?`);
+      if (!shouldCharge) return;
+    }
     const tickets = Math.max(0, Math.min(parseNumber(collectionTickets), ticketsToCharge));
     if (tickets <= 0) return;
     setIsSavingTicketCollection(true);
@@ -2105,12 +2132,22 @@ const InsuranceCollections = () => {
       policyNumber: selectedMonthlyAffiliate.policyNumber,
       plan: selectedMonthlyAffiliate.plan,
       dependency: selectedMonthlyAffiliate.dependency,
-      collector: normalizeCollectorName(selectedMonthlyAffiliate.collector || "OFICINA"),
+      collector: actualCollector,
       ticketValue: selectedMonthlyAffiliate.value,
       ticketsCharged: tickets,
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
     };
+    const automaticNote: AffiliateNote | null = isOtherCollectorTicket
+      ? {
+        id: `note-${Date.now()}`,
+        affiliateId: selectedMonthlyAffiliate.id,
+        month: activeMonth,
+        date: new Date().toISOString(),
+        text: `TICKET CORRESPONDIENTE A LA COBRANZA DE ${assignedCollector}. COBRADO POR ${actualCollector}.`,
+      }
+      : null;
+    const nextNotes = automaticNote ? [automaticNote, ...notes] : notes;
     const nextTicketCollections = editingTicketCollectionId
       ? ticketCollections.map((item) => item.id === editingTicketCollectionId ? payload : item)
       : [...ticketCollections, payload];
@@ -2123,7 +2160,8 @@ const InsuranceCollections = () => {
     setCollectionTransfer(emptyTransfer());
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
-    await saveTicketCollectionsOnline(nextTicketCollections);
+    if (automaticNote) setNotes(nextNotes);
+    await saveTicketCollectionsOnline(nextTicketCollections, nextNotes);
     setIsSavingTicketCollection(false);
   };
 
@@ -2518,11 +2556,12 @@ const InsuranceCollections = () => {
     }
 
     const chargedRows = ticketCollections
-      .filter((item) =>
-        item.month === activeMonth
-        && (selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId)
-          || normalizeCollectorName(item.collector || "") === normalizeCollectorName(selectedCollectorName || "OFICINA"))
-      )
+      .filter((item) => {
+        if (item.month !== activeMonth) return false;
+        const collectionCollector = normalizeCollectorName(item.collector || "");
+        if (collectionCollector) return collectionCollector === normalizeCollectorName(selectedCollectorName || "OFICINA");
+        return selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId);
+      })
       .map((collection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
         return {
@@ -3214,6 +3253,11 @@ const InsuranceCollections = () => {
               {mobileSelectedAffiliate ? (
                 <div className="mt-3 rounded-md border bg-surface-subtle p-3 text-sm">
                   <strong>{mobileSelectedAffiliate.fullName}</strong>
+                  {selectedAffiliateIsFromOtherCollector && (
+                    <p className="mt-2 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 font-semibold text-amber-900">
+                      {otherCollectorWarningText} Si lo cobras, quedara registrada una novedad automatica.
+                    </p>
+                  )}
                   <p className="mt-1 text-muted-foreground">Póliza {mobileSelectedAffiliate.policyNumber} · {mobileSelectedAffiliate.plan}</p>
                   <p className="mt-1 text-muted-foreground">Pendientes: {ticketsToCharge} · Ticket: {currency.format(mobileSelectedAffiliate.value)}</p>
                 </div>
@@ -3915,6 +3959,11 @@ const InsuranceCollections = () => {
               {selectedMonthlyAffiliate && (
                 <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-sm">
                   <strong>{selectedMonthlyAffiliate.fullName}</strong>
+                  {selectedAffiliateIsFromOtherCollector && (
+                    <p className="mt-2 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900">
+                      {otherCollectorWarningText} Si lo cobras, quedara registrada una novedad automatica.
+                    </p>
+                  )}
                   <p className="text-muted-foreground">Póliza {selectedMonthlyAffiliate.policyNumber} · Plan detectado: {selectedMonthlyAffiliate.plan}</p>
                   <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
                   {selectedMonthlyCandidates.length > 1 && (
