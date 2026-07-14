@@ -2570,7 +2570,11 @@ const InsuranceCollections = () => {
           amount: (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged,
         };
       })
-      .sort((a, b) => (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR"));
+      .sort((a, b) =>
+        (a.affiliate?.plan || a.collection.plan || "").localeCompare(b.affiliate?.plan || b.collection.plan || "", "es-AR", { numeric: true })
+        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
+        || (a.affiliate?.policyNumber || a.collection.policyNumber || "").localeCompare(b.affiliate?.policyNumber || b.collection.policyNumber || "", "es-AR", { numeric: true })
+      );
 
     const chargedData: any[][] = [
       [
