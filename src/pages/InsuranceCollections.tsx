@@ -2498,6 +2498,33 @@ const InsuranceCollections = () => {
       wrap: true,
     });
 
+    const chargedRows = ticketCollections
+      .filter((item) => {
+        if (item.month !== activeMonth) return false;
+        const collectionCollector = normalizeCollectorName(item.collector || "");
+        if (collectionCollector) return collectionCollector === normalizeCollectorName(selectedCollectorName || "OFICINA");
+        return selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId);
+      })
+      .map((collection) => {
+        const affiliate = affiliatesById.get(collection.affiliateId);
+        return {
+          collection,
+          affiliate,
+          amount: (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged,
+        };
+      })
+      .sort((a, b) =>
+        (a.affiliate?.plan || a.collection.plan || "").localeCompare(b.affiliate?.plan || b.collection.plan || "", "es-AR", { numeric: true })
+        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
+        || (a.affiliate?.policyNumber || a.collection.policyNumber || "").localeCompare(b.affiliate?.policyNumber || b.collection.policyNumber || "", "es-AR", { numeric: true })
+      );
+    const chargedTicketsByPlanRows = Array.from(chargedRows.reduce((rows, { collection, affiliate }) => {
+      const plan = affiliate?.plan || collection.plan || "SIN PLAN";
+      rows.set(plan, (rows.get(plan) || 0) + collection.ticketsCharged);
+      return rows;
+    }, new Map<string, number>()))
+      .sort(([planA], [planB]) => planA.localeCompare(planB, "es-AR", { numeric: true }));
+
     const summaryData: any[][] = [
       [{ value: "REPORTE DE COBRANZA", columnSpan: 2, fontWeight: "bold", fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" }],
       [metricLabel("Cobrador"), selectedCollectorName || "COBRADOR"],
@@ -2508,6 +2535,12 @@ const InsuranceCollections = () => {
       [metricLabel("Afiliados asignados"), selectedCollectorSummary.affiliates],
       [metricLabel("Tickets recibidos"), selectedCollectorSummary.tickets],
       [metricLabel("Tickets cobrados"), selectedCollectorSummary.chargedTickets],
+      [null, null],
+      [headerCell("Tickets cobrados por plan"), headerCell("Cantidad")],
+      ...(chargedTicketsByPlanRows.length
+        ? chargedTicketsByPlanRows.map(([plan, tickets]) => [metricLabel(plan), tickets])
+        : [[metricLabel("Sin tickets cobrados"), 0]]),
+      [null, null],
       [metricLabel("Tickets devueltos"), selectedCollectorSummary.pendingTickets],
       [metricLabel("Tickets cobrados en efectivo"), selectedCollectorStats.cashTickets],
       [metricLabel("Monto tickets en efectivo"), moneyCell(selectedCollectorStats.cashAmount)],
@@ -2554,27 +2587,6 @@ const InsuranceCollections = () => {
     if (selectedCollectorReturnRows.length === 0) {
       returnedData.push([{ value: "SIN DEVOLUCIONES", columnSpan: 8, align: "center", fontWeight: "bold" }]);
     }
-
-    const chargedRows = ticketCollections
-      .filter((item) => {
-        if (item.month !== activeMonth) return false;
-        const collectionCollector = normalizeCollectorName(item.collector || "");
-        if (collectionCollector) return collectionCollector === normalizeCollectorName(selectedCollectorName || "OFICINA");
-        return selectedCollectorPortfolio.some((row) => row.affiliate.id === item.affiliateId);
-      })
-      .map((collection) => {
-        const affiliate = affiliatesById.get(collection.affiliateId);
-        return {
-          collection,
-          affiliate,
-          amount: (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged,
-        };
-      })
-      .sort((a, b) =>
-        (a.affiliate?.plan || a.collection.plan || "").localeCompare(b.affiliate?.plan || b.collection.plan || "", "es-AR", { numeric: true })
-        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
-        || (a.affiliate?.policyNumber || a.collection.policyNumber || "").localeCompare(b.affiliate?.policyNumber || b.collection.policyNumber || "", "es-AR", { numeric: true })
-      );
 
     const chargedData: any[][] = [
       [
