@@ -202,6 +202,8 @@ const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
 const cloudSnapshotKey = "cobranza-tres-provincias";
+const activeSessionsTable = "sesiones_activas";
+const activeSessionTimeoutMinutes = 30;
 
 const currency = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -740,6 +742,14 @@ const InsuranceCollections = () => {
   const [userAdminStatus, setUserAdminStatus] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [activeOffice, setActiveOffice] = useState("");
+  const [sessionToken] = useState(() => {
+    const existing = window.sessionStorage.getItem("gestion-san-miguel-session-token");
+    if (existing) return existing;
+    const next = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `session-${Date.now()}-${Math.random()}`;
+    window.sessionStorage.setItem("gestion-san-miguel-session-token", next);
+    return next;
+  });
+  const [sessionBlockMessage, setSessionBlockMessage] = useState("");
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -763,6 +773,70 @@ const InsuranceCollections = () => {
   const officeCollectorScope = !isAdminUser && isOfficeUser && activeOfficeCollectorName ? activeOfficeCollectorName : "";
   const hasOfficeCollectorScope = !!officeCollectorScope;
   const canSeeAllCobranza = isAdminUser && isOfficeUser && !hasOfficeCollectorScope;
+
+  const sessionCutoffIso = () => new Date(Date.now() - activeSessionTimeoutMinutes * 60 * 1000).toISOString();
+
+  const pruneExpiredSessions = async () => {
+    await supabase.from(activeSessionsTable as any).delete().lt("last_seen", sessionCutoffIso());
+  };
+
+  const activeSessionPayload = (office = activeOffice) => ({
+    session_token: sessionToken,
+    email: (userEmail || "").trim().toLowerCase(),
+    nombre: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+    rol: userRole || "sin_rol",
+    office: office || null,
+    last_seen: new Date().toISOString(),
+  });
+
+  const saveActiveSession = async (office = activeOffice) => {
+    if (!userEmail || isAdminUser) return true;
+    const { error } = await supabase
+      .from(activeSessionsTable as any)
+      .upsert(activeSessionPayload(office), { onConflict: "session_token" });
+    if (error) {
+      setCloudStatus(`No se pudo registrar la sesion activa: ${error.message}`);
+      return false;
+    }
+    return true;
+  };
+
+  const releaseActiveSession = async () => {
+    await supabase.from(activeSessionsTable as any).delete().eq("session_token", sessionToken);
+  };
+
+  const handleSignOut = async () => {
+    await releaseActiveSession().catch(() => null);
+    await signOut();
+  };
+
+  const activateOffice = async (office: string) => {
+    if (!office) return;
+    if (isAdminUser) {
+      setActiveOffice(office);
+      return;
+    }
+    await pruneExpiredSessions().catch(() => null);
+    const { data, error } = await supabase
+      .from(activeSessionsTable as any)
+      .select("email,nombre,office,last_seen,session_token")
+      .eq("office", office)
+      .neq("session_token", sessionToken)
+      .gte("last_seen", sessionCutoffIso())
+      .limit(1);
+    if (error) {
+      setCloudStatus(`No se pudo verificar sesiones de oficina: ${error.message}`);
+      setActiveOffice(office);
+      return;
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      const active = data[0] as any;
+      setSessionBlockMessage(`LA OFICINA ${office} YA TIENE UNA SESION ACTIVA CON ${active.nombre || active.email}. PARA INGRESAR, PRIMERO DEBEN CERRAR ESA SESION O INGRESAR COMO ADMIN.`);
+      return;
+    }
+    setActiveOffice(office);
+    await saveActiveSession(office);
+  };
 
   const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
 
@@ -791,9 +865,49 @@ const InsuranceCollections = () => {
   }, [activeMonth]);
 
   useEffect(() => {
+    if (!userEmail || !currentUserProfile || isAdminUser) return;
+    let cancelled = false;
+    const registerSession = async () => {
+      await pruneExpiredSessions().catch(() => null);
+      const { data, error } = await supabase
+        .from(activeSessionsTable as any)
+        .select("email,nombre,office,last_seen,session_token")
+        .eq("email", userEmail.trim().toLowerCase())
+        .neq("session_token", sessionToken)
+        .gte("last_seen", sessionCutoffIso())
+        .limit(1);
+      if (cancelled) return;
+      if (error) {
+        setCloudStatus(`No se pudo verificar sesiones activas: ${error.message}`);
+        return;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        const active = data[0] as any;
+        setSessionBlockMessage(`ESTE USUARIO YA TIENE UNA SESION ACTIVA${active.office ? ` EN ${active.office}` : ""}. PARA INGRESAR, PRIMERO DEBE CERRAR LA OTRA SESION.`);
+        return;
+      }
+      await saveActiveSession("");
+    };
+    void registerSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail, currentUserProfile?.nombre, userRole, isAdminUser, sessionToken]);
+
+  useEffect(() => {
+    if (!userEmail || !currentUserProfile || isAdminUser || sessionBlockMessage) return;
+    const heartbeat = () => {
+      void saveActiveSession(activeOffice);
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 20000);
+    return () => window.clearInterval(timer);
+  }, [activeOffice, currentUserProfile?.nombre, isAdminUser, sessionBlockMessage, sessionToken, userEmail, userRole]);
+
+  useEffect(() => {
     if (!isOfficeUser || isAdminUser) return;
     if (assignedOfficeOptions.length === 1) {
-      setActiveOffice(assignedOfficeOptions[0]);
+      if (activeOffice !== assignedOfficeOptions[0]) void activateOffice(assignedOfficeOptions[0]);
       return;
     }
     if (activeOffice && !assignedOfficeOptions.includes(activeOffice)) setActiveOffice("");
@@ -3436,6 +3550,21 @@ const InsuranceCollections = () => {
 
   const needsOfficeSelection = isOfficeUser && !isAdminUser && assignedOfficeOptions.length > 1 && !activeOffice;
 
+  if (sessionBlockMessage) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-4 text-foreground">
+        <div className="w-full max-w-lg rounded-md border bg-card p-8 text-center shadow-sm">
+          <ShieldCheck className="mx-auto h-10 w-10 text-primary" />
+          <h1 className="mt-4 text-xl font-semibold">Sesion activa detectada</h1>
+          <p className="mt-3 text-sm text-muted-foreground">{sessionBlockMessage}</p>
+          <Button type="button" className="mt-6" variant="outline" onClick={handleSignOut}>
+            Cerrar sesion
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground" onInputCapture={forceUppercaseInput}>
       <div className="border-b bg-card">
@@ -3483,7 +3612,7 @@ const InsuranceCollections = () => {
             {canUseManualSync && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>
               Guardar online
             </Button>}
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => signOut()}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={handleSignOut}>
               Cerrar sesión
             </Button>
           </div>
@@ -3501,7 +3630,7 @@ const InsuranceCollections = () => {
               </p>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {assignedOfficeOptions.map((office) => (
-                  <Button key={office} type="button" variant="command" className="h-14 text-base" onClick={() => setActiveOffice(office)}>
+                  <Button key={office} type="button" variant="command" className="h-14 text-base" onClick={() => activateOffice(office)}>
                     {office}
                   </Button>
                 ))}
@@ -3539,7 +3668,7 @@ const InsuranceCollections = () => {
           <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">{currentUserProfile?.nombre || userEmail || "Usuario"}</p>
             <p className="mt-1">{userRole || "sin rol"}</p>
-            <Button type="button" variant="outline" size="sm" className="mt-3 w-full" onClick={() => signOut()}>
+            <Button type="button" variant="outline" size="sm" className="mt-3 w-full" onClick={handleSignOut}>
               Cerrar sesión
             </Button>
           </div>
