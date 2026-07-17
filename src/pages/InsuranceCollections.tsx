@@ -1952,7 +1952,7 @@ const InsuranceCollections = () => {
             <div class="box"><div class="label">Ingresos turno</div><div class="value">${currency.format(totals.income)}</div></div>
             <div class="box"><div class="label">Egresos turno</div><div class="value">${currency.format(totals.expense)}</div></div>
             <div class="box"><div class="label">Saldo turno</div><div class="value">${currency.format(totals.balance)}</div></div>
-            <div class="box"><div class="label">Saldo estimado</div><div class="value">${currency.format(openingTotal + totals.balance)}</div></div>
+            <div class="box"><div class="label">Saldo final</div><div class="value">${currency.format(openingTotal + totals.balance)}</div></div>
           </div>
           <div class="grid">
             <div class="box"><div class="label">Efectivo</div><div class="value">${currency.format(totals.cash)}</div></div>
