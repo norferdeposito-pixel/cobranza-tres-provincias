@@ -183,6 +183,7 @@ type UserAdminProfile = {
   nombre: string;
   rol: string;
   collector_name?: string;
+  permisos?: string[] | null;
   activo?: boolean;
 };
 
@@ -220,6 +221,27 @@ const monthLabel = (month: string) => {
 function normalizeCollectorName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
 }
+
+const officeNames = ["SAN MARTIN", "TUNUYAN", "EUGENIO BUSTOS"];
+const officeCollectorByOffice: Record<string, string> = {
+  "SAN MARTIN": "SAN MARTIN OFICINA",
+  TUNUYAN: "TUNUYAN OFICINA",
+  "EUGENIO BUSTOS": "EUGENIO BUSTOS",
+};
+const officePermissionPrefix = "oficina:";
+const officePermission = (office: string) => `${officePermissionPrefix}${normalizeCollectorName(office)}`;
+const officesFromPermissions = (permisos?: string[] | null) => {
+  return uniqueSorted((permisos || [])
+    .map((permission) => String(permission || ""))
+    .filter((permission) => permission.toLocaleLowerCase("es-AR").startsWith(officePermissionPrefix))
+    .map((permission) => normalizeCollectorName(permission.slice(officePermissionPrefix.length)))
+    .filter((office) => officeNames.includes(office)));
+};
+const officeFromCollector = (collectorName: string) => {
+  const normalized = normalizeCollectorName(collectorName);
+  return officeNames.find((office) => normalizeCollectorName(officeCollectorByOffice[office]) === normalized || normalized.includes(office)) || "";
+};
+const collectorForOffice = (office: string) => officeCollectorByOffice[normalizeCollectorName(office)] || "";
 
 const demoAffiliates: Affiliate[] = [
   { id: "31774-A238", fullName: "TAGUA DORALISA", policyNumber: "31774", plan: "A 238", value: 13000, phone: "", address: "", dependency: "001", collector: "OFICINA", request: "", latestNews: "", selectedForMonthly: true, sourceTickets: 1 },
@@ -705,10 +727,11 @@ const InsuranceCollections = () => {
   const [cashRenderForm, setCashRenderForm] = useState({ date: today(), amount: "", detail: "" });
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
-  const [userForm, setUserForm] = useState({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "" });
+  const [userForm, setUserForm] = useState({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "", offices: [] as string[] });
   const [userProfiles, setUserProfiles] = useState<UserAdminProfile[]>([]);
   const [userAdminStatus, setUserAdminStatus] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
+  const [activeOffice, setActiveOffice] = useState("");
   const [cloudStatus, setCloudStatus] = useState("Modo local activo");
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -720,9 +743,18 @@ const InsuranceCollections = () => {
   const isCollectorUser = ["cobrador", "oficina_cobrador"].includes(userRole);
   const canUseManualSync = isOfficeUser && !isCollectorUser;
   const currentCollectorName = normalizeCollectorName(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
-  const officeCollectorScope = !isAdminUser && isOfficeUser && currentCollectorName ? currentCollectorName : "";
+  const assignedOfficeOptions = useMemo(() => {
+    if (isAdminUser) return officeNames;
+    if (!isOfficeUser) return [];
+    const fromPermissions = officesFromPermissions(currentUserProfile?.permisos);
+    if (fromPermissions.length) return fromPermissions;
+    const fallbackOffice = officeFromCollector(currentUserProfile?.collectorName || currentUserProfile?.nombre || "");
+    return fallbackOffice ? [fallbackOffice] : [];
+  }, [currentUserProfile?.collectorName, currentUserProfile?.nombre, currentUserProfile?.permisos, isAdminUser, isOfficeUser]);
+  const activeOfficeCollectorName = collectorForOffice(activeOffice);
+  const officeCollectorScope = !isAdminUser && isOfficeUser && activeOfficeCollectorName ? activeOfficeCollectorName : "";
   const hasOfficeCollectorScope = !!officeCollectorScope;
-  const canSeeAllCobranza = isOfficeUser && !hasOfficeCollectorScope;
+  const canSeeAllCobranza = isAdminUser && isOfficeUser && !hasOfficeCollectorScope;
 
   const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
 
@@ -749,6 +781,22 @@ const InsuranceCollections = () => {
       return { ...current, date: defaultCashDateForActiveMonth() };
     });
   }, [activeMonth]);
+
+  useEffect(() => {
+    if (!isOfficeUser || isAdminUser) return;
+    if (assignedOfficeOptions.length === 1) {
+      setActiveOffice(assignedOfficeOptions[0]);
+      return;
+    }
+    if (activeOffice && !assignedOfficeOptions.includes(activeOffice)) setActiveOffice("");
+  }, [activeOffice, assignedOfficeOptions, isAdminUser, isOfficeUser]);
+
+  useEffect(() => {
+    if (!activeOffice || isAdminUser) return;
+    setCashMovementForm((current) => ({ ...current, office: activeOffice }));
+    setCashOpeningForm((current) => ({ ...current, office: activeOffice }));
+    setCashOfficeFilter(activeOffice);
+  }, [activeOffice, isAdminUser]);
 
   const buildCloudSnapshot = (overrides: Partial<CloudSnapshot> = {}): CloudSnapshot => ({
     affiliates: overrides.affiliates ?? affiliates,
@@ -1116,17 +1164,17 @@ const InsuranceCollections = () => {
   const collectorPickerAffiliate = collectorPickerAffiliateId ? affiliatesById.get(collectorPickerAffiliateId) || null : null;
   const canSeeAffiliateInCobranza = (affiliate: Affiliate) => {
     if (hasOfficeCollectorScope) return normalizeCollectorName(affiliate.collector || "OFICINA") === officeCollectorScope;
-    if (isOfficeUser) return true;
+    if (isOfficeUser) return isAdminUser;
     return normalizeCollectorName(affiliate.collector || "OFICINA") === currentCollectorName;
   };
   const canSeeTicketCollectionInCobranza = (collection: TicketCollection) => {
     const collectionCollector = normalizeCollectorName(collection.collector || "");
-    if (collectionCollector && collectionCollector === currentCollectorName) return true;
+    if (!isOfficeUser && collectionCollector && collectionCollector === currentCollectorName) return true;
     if (hasOfficeCollectorScope && collectionCollector === officeCollectorScope) return true;
     const affiliate = affiliatesById.get(collection.affiliateId);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
     if (hasOfficeCollectorScope) return normalizeCollectorName(collection.collector || "") === officeCollectorScope;
-    if (isOfficeUser) return true;
+    if (isOfficeUser) return isAdminUser;
     return normalizeCollectorName(collection.collector || "") === currentCollectorName;
   };
   const canSeeReceiptInCobranza = (receipt: ReceiptCollection) => {
@@ -1134,7 +1182,7 @@ const InsuranceCollections = () => {
     const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
       || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
-    if (isOfficeUser) return true;
+    if (isOfficeUser) return isAdminUser;
     return normalizeCollectorName(receipt.collector || "") === currentCollectorName;
   };
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
@@ -1644,25 +1692,27 @@ const InsuranceCollections = () => {
   }, [activeMonth, affiliates, currentCollectorName, isOfficeUser, monthlyItems, ticketCollections]);
 
   const cashOfficeOptions = useMemo(() => {
+    if (!isAdminUser) return assignedOfficeOptions;
     return uniqueSorted([
+      ...officeNames,
       ...cashMovements.map((item) => item.office).filter(Boolean),
       ...cashOpeningBalances.map((item) => item.office).filter(Boolean),
     ]);
-  }, [cashMovements, cashOpeningBalances]);
+  }, [assignedOfficeOptions, cashMovements, cashOpeningBalances, isAdminUser]);
 
   const visibleCashMovements = useMemo(() => {
     return cashMovements
       .filter((item) => item.month === activeMonth)
-      .filter((item) => cashOfficeFilter === "todos" || item.office === cashOfficeFilter)
+      .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
       .filter((item) => cashTypeFilter === "todos" || item.type === cashTypeFilter)
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [activeMonth, cashMovements, cashOfficeFilter, cashTypeFilter]);
+  }, [activeMonth, activeOffice, cashMovements, cashOfficeFilter, cashTypeFilter, isAdminUser]);
 
   const visibleCashOpeningBalances = useMemo(() => {
     return cashOpeningBalances
       .filter((item) => item.month === activeMonth)
-      .filter((item) => cashOfficeFilter === "todos" || item.office === cashOfficeFilter);
-  }, [activeMonth, cashOpeningBalances, cashOfficeFilter]);
+      .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice);
+  }, [activeMonth, activeOffice, cashOpeningBalances, cashOfficeFilter, isAdminUser]);
 
   const cashTotals = useMemo(() => {
     const totals = {
@@ -1696,7 +1746,8 @@ const InsuranceCollections = () => {
   const saveCashOpeningBalance = (event: FormEvent) => {
     event.preventDefault();
     const amount = parseMoney(cashOpeningForm.amount);
-    const office = cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA";
+    const office = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
+    if (!isAdminUser && !office) return;
     if (!cashOpeningForm.date || amount < 0) return;
     const month = cashOpeningForm.date.slice(0, 7);
     const alreadyExists = cashOpeningBalances.some((item) => item.month === month && item.office === office);
@@ -1720,12 +1771,14 @@ const InsuranceCollections = () => {
   const saveCashMovement = (event: FormEvent) => {
     event.preventDefault();
     const amount = parseMoney(cashMovementForm.amount);
+    const office = isAdminUser ? cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
+    if (!isAdminUser && !office) return;
     if (!cashMovementForm.date || amount <= 0) return;
     const movement: CashMovement = {
       id: `cash-${Date.now()}`,
       date: cashMovementForm.date,
       month: cashMovementForm.date.slice(0, 7),
-      office: cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA",
+      office,
       shift: cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
       user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
       type: cashMovementForm.type,
@@ -1738,7 +1791,7 @@ const InsuranceCollections = () => {
       notes: cashMovementForm.notes.trim().toLocaleUpperCase("es-AR"),
     };
     setCashMovements((current) => [movement, ...current]);
-    setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office: current.office, shift: current.shift }));
+    setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
   };
 
   const deleteCashMovement = (id: string) => {
@@ -1746,7 +1799,7 @@ const InsuranceCollections = () => {
     setCashMovements((current) => current.filter((item) => item.id !== id));
   };
 
-  const cashOpeningFormOffice = cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA";
+  const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
   const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
@@ -3117,6 +3170,7 @@ const InsuranceCollections = () => {
         password: userForm.password,
         rol: userForm.rol,
         collectorName: userForm.collectorName,
+        permisos: userForm.offices.map(officePermission),
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -3125,7 +3179,7 @@ const InsuranceCollections = () => {
       setUserAdminStatus(result.error || "No se pudo guardar el usuario.");
       return;
     }
-    setUserForm({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "" });
+    setUserForm({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "", offices: [] });
     setUserAdminStatus(result.userAlreadyExists ? "Perfil actualizado." : "Usuario creado.");
     await loadUserProfiles();
   };
@@ -3136,6 +3190,7 @@ const InsuranceCollections = () => {
       nombre: patch.nombre ?? profile.nombre,
       rol: patch.rol ?? profile.rol,
       collector_name: patch.collector_name ?? profile.collector_name ?? "",
+      permisos: patch.permisos ?? profile.permisos ?? [],
       activo: patch.activo ?? profile.activo ?? true,
     };
     const { error } = await supabase.from("perfiles_usuarios" as any).update(payload).eq("email", profile.email);
@@ -3145,6 +3200,15 @@ const InsuranceCollections = () => {
     }
     setUserAdminStatus("Usuario actualizado.");
     await loadUserProfiles();
+  };
+
+  const toggleOfficePermission = (currentPermisos: string[] | null | undefined, office: string, checked: boolean) => {
+    const permission = officePermission(office);
+    const otherPermissions = (currentPermisos || []).filter((item) => !item.toLocaleLowerCase("es-AR").startsWith(officePermissionPrefix));
+    const currentOffices = new Set(officesFromPermissions(currentPermisos));
+    if (checked) currentOffices.add(office);
+    else currentOffices.delete(office);
+    return [...otherPermissions, ...Array.from(currentOffices).map(officePermission)];
   };
 
   const navItems: Array<{ id: Section; label: string; icon: typeof ClipboardList }> = [
@@ -3186,6 +3250,8 @@ const InsuranceCollections = () => {
     }
   }, [activeSection, isOfficeUser, visibleNavItems]);
 
+  const needsOfficeSelection = isOfficeUser && !isAdminUser && assignedOfficeOptions.length > 1 && !activeOffice;
+
   return (
     <main className="min-h-screen bg-background text-foreground" onInputCapture={forceUppercaseInput}>
       <div className="border-b bg-card">
@@ -3202,6 +3268,13 @@ const InsuranceCollections = () => {
               </p>
             </div>
           </div>
+          {isOfficeUser && !isAdminUser && (
+            <div className="rounded-md border bg-surface-subtle px-4 py-3 text-sm lg:min-w-[260px]">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Oficina activa</p>
+              <p className="mt-1 text-base font-semibold">{activeOffice || "Seleccionar oficina"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Para cambiarla, cerrar sesion y volver a ingresar.</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <div className="col-span-2 flex h-10 items-center gap-2 rounded-md border bg-background px-3 sm:col-span-1">
               <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Mes</Label>
@@ -3235,7 +3308,27 @@ const InsuranceCollections = () => {
       </div>
 
       <div className="grid w-full gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="rounded-md border bg-card p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start">
+        {needsOfficeSelection && (
+          <section className="rounded-md border bg-card p-5 lg:col-span-2">
+            <div className="mx-auto max-w-2xl text-center">
+              <h2 className="text-xl font-semibold">Seleccionar oficina</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Elegi la oficina donde vas a trabajar en este turno. La seleccion queda fija hasta cerrar sesion.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {assignedOfficeOptions.map((office) => (
+                  <Button key={office} type="button" variant="command" className="h-14 text-base" onClick={() => setActiveOffice(office)}>
+                    {office}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-4 rounded-md border bg-surface-subtle px-3 py-2 text-sm font-medium text-muted-foreground">
+                Si elegis una oficina incorrecta, cerra sesion y volve a ingresar.
+              </p>
+            </div>
+          </section>
+        )}
+        <aside className={`${needsOfficeSelection ? "hidden" : ""} rounded-md border bg-card p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start`}>
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Módulo</p>
             <div className="mt-2 grid gap-2">
@@ -3268,7 +3361,7 @@ const InsuranceCollections = () => {
           </div>
         </aside>
 
-        <div className="grid min-w-0 gap-4 sm:gap-5">
+        <div className={`${needsOfficeSelection ? "hidden" : ""} grid min-w-0 gap-4 sm:gap-5`}>
         {affiliateImportPreview && (
           <section className="rounded-md border bg-card p-3 sm:p-4">
             <div className="rounded-md border bg-surface-subtle p-4">
@@ -3991,7 +4084,12 @@ const InsuranceCollections = () => {
                   </div>
                   <div>
                     <Label>Oficina</Label>
-                    <Input value={cashOpeningForm.office} onChange={(event) => setCashOpeningForm((current) => ({ ...current, office: event.target.value }))} placeholder="EJ: TUNUYAN" />
+                    <Input
+                      value={isAdminUser ? cashOpeningForm.office : activeOffice}
+                      onChange={(event) => setCashOpeningForm((current) => ({ ...current, office: event.target.value }))}
+                      placeholder="EJ: TUNUYAN"
+                      readOnly={!isAdminUser}
+                    />
                   </div>
                 </div>
                 <div>
@@ -4023,7 +4121,12 @@ const InsuranceCollections = () => {
                   </div>
                   <div>
                     <Label>Oficina</Label>
-                    <Input value={cashMovementForm.office} onChange={(event) => setCashMovementForm((current) => ({ ...current, office: event.target.value }))} placeholder="EJ: TUNUYAN" />
+                    <Input
+                      value={isAdminUser ? cashMovementForm.office : activeOffice}
+                      onChange={(event) => setCashMovementForm((current) => ({ ...current, office: event.target.value }))}
+                      placeholder="EJ: TUNUYAN"
+                      readOnly={!isAdminUser}
+                    />
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -4126,8 +4229,13 @@ const InsuranceCollections = () => {
                     <h3 className="font-semibold">Movimientos de caja</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
                   </div>
-                  <select className="h-10 rounded-md border bg-background px-3 text-sm" value={cashOfficeFilter} onChange={(event) => setCashOfficeFilter(event.target.value)}>
-                    <option value="todos">Todas las oficinas</option>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={isAdminUser ? cashOfficeFilter : activeOffice}
+                    onChange={(event) => setCashOfficeFilter(event.target.value)}
+                    disabled={!isAdminUser}
+                  >
+                    {isAdminUser && <option value="todos">Todas las oficinas</option>}
                     {cashOfficeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
                   </select>
                   <select className="h-10 rounded-md border bg-background px-3 text-sm" value={cashTypeFilter} onChange={(event) => setCashTypeFilter(event.target.value)}>
@@ -4585,7 +4693,7 @@ const InsuranceCollections = () => {
               <p className="mt-1 text-sm text-muted-foreground">
                 Alta inicial de usuarios de cobranza. Los roles base son cobrador, oficina, oficina + cobrador y administrador.
               </p>
-              <form className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_220px_auto]" onSubmit={saveUserProfile}>
+              <form className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_220px_260px_auto]" onSubmit={saveUserProfile}>
                 <div className="space-y-1">
                   <Label htmlFor="new-user-name">Nombre</Label>
                   <Input id="new-user-name" value={userForm.nombre} onChange={(event) => setUserForm({ ...userForm, nombre: event.target.value })} required />
@@ -4611,6 +4719,26 @@ const InsuranceCollections = () => {
                     {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                   </select>
                 </div>
+                <div className="space-y-1 md:col-span-2 xl:col-span-1">
+                  <Label>Oficinas habilitadas</Label>
+                  <div className="grid gap-1 rounded-md border bg-background p-2 text-xs">
+                    {officeNames.map((office) => (
+                      <label key={`new-user-office-${office}`} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={userForm.offices.includes(office)}
+                          onChange={(event) => setUserForm((current) => ({
+                            ...current,
+                            offices: event.target.checked
+                              ? uniqueSorted([...current.offices, office])
+                              : current.offices.filter((item) => item !== office),
+                          }))}
+                        />
+                        <span>{office}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <Button type="submit" variant="command" className="self-end" disabled={isSavingUser}>
                   {isSavingUser ? "Guardando..." : "Crear usuario"}
                 </Button>
@@ -4619,13 +4747,14 @@ const InsuranceCollections = () => {
             </div>
 
             <div className="overflow-x-auto rounded-md border bg-card">
-              <table className="w-full min-w-[920px] text-xs sm:text-sm">
+              <table className="w-full min-w-[1100px] text-xs sm:text-sm">
                 <thead className="bg-muted/45 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-3 py-3 text-left">Usuario</th>
                     <th className="px-3 py-3 text-left">Email</th>
                     <th className="px-3 py-3 text-left">Rol</th>
                     <th className="px-3 py-3 text-left">Cobrador asociado</th>
+                    <th className="px-3 py-3 text-left">Oficinas habilitadas</th>
                     <th className="px-3 py-3 text-center">Estado</th>
                   </tr>
                 </thead>
@@ -4645,6 +4774,20 @@ const InsuranceCollections = () => {
                           {collectors.map((collector) => <option key={collector} value={collector}>{collector}</option>)}
                         </select>
                       </td>
+                      <td className="px-3 py-3">
+                        <div className="grid gap-1">
+                          {officeNames.map((office) => (
+                            <label key={`${profile.email}-${office}`} className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={officesFromPermissions(profile.permisos).includes(office)}
+                                onChange={(event) => updateUserProfile(profile, { permisos: toggleOfficePermission(profile.permisos, office, event.target.checked) })}
+                              />
+                              <span>{office}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </td>
                       <td className="px-3 py-3 text-center">
                         <Button type="button" size="sm" variant="outline" onClick={() => updateUserProfile(profile, { activo: !(profile.activo ?? true) })}>
                           {(profile.activo ?? true) ? "Activo" : "Inactivo"}
@@ -4652,7 +4795,7 @@ const InsuranceCollections = () => {
                       </td>
                     </tr>
                   ))}
-                  {userProfiles.length === 0 && <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={5}>Todavía no hay usuarios cargados o no se pudo leer la tabla de perfiles.</td></tr>}
+                  {userProfiles.length === 0 && <tr><td className="px-3 py-8 text-center text-muted-foreground" colSpan={6}>Todavía no hay usuarios cargados o no se pudo leer la tabla de perfiles.</td></tr>}
                 </tbody>
               </table>
             </div>
