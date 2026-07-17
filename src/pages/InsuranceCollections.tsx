@@ -291,6 +291,12 @@ const parseNumber = (value: string | number | undefined) => {
   const parsed = Number(String(value ?? "").replace(",", ".").trim());
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const escapeHtml = (value: string | number | undefined | null) => String(value ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#39;");
 
 const parseCsvLine = (line: string) => {
   const cells: string[] = [];
@@ -647,6 +653,8 @@ const InsuranceCollections = () => {
   const [cashOpeningForm, setCashOpeningForm] = useState(emptyCashOpeningForm);
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
+  const [cashReportDate, setCashReportDate] = useState(today());
+  const [cashReportShift, setCashReportShift] = useState("");
   const [rendition, setRendition] = useState<Rendition>(() => {
     const stored = loadStorage<any>(renditionStorageKey, { cashRenders: [], transferRenders: [] });
     return {
@@ -1808,6 +1816,175 @@ const InsuranceCollections = () => {
 
   const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
   const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
+
+  const printCashTurnReport = () => {
+    const reportOffice = isAdminUser ? cashOfficeFilter : activeOffice;
+    const normalizedShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
+    const officeLabel = reportOffice === "todos" ? "TODAS LAS OFICINAS" : reportOffice || "SIN OFICINA";
+    const movementRows = cashMovements
+      .filter((item) => item.date === cashReportDate)
+      .filter((item) => reportOffice === "todos" || item.office === reportOffice)
+      .filter((item) => !normalizedShift || item.shift === normalizedShift)
+      .sort((a, b) => `${a.office}-${a.shift}-${a.id}`.localeCompare(`${b.office}-${b.shift}-${b.id}`, "es-AR"));
+    const openingRows = cashOpeningBalances
+      .filter((item) => item.month === activeMonth)
+      .filter((item) => reportOffice === "todos" || item.office === reportOffice);
+    const totals = movementRows.reduce((acc, item) => {
+      const signed = item.type === "ingreso" ? item.amount : -item.amount;
+      if (item.type === "ingreso") acc.income += item.amount;
+      else acc.expense += item.amount;
+      acc.balance += signed;
+      if (item.paymentMethod === "EFECTIVO") acc.cash += signed;
+      if (item.paymentMethod === "TARJETA") acc.card += signed;
+      if (item.paymentMethod === "TRANSFERENCIA") acc.transfer += signed;
+      if (item.paymentMethod === "OTRO") acc.other += signed;
+      return acc;
+    }, { income: 0, expense: 0, balance: 0, cash: 0, card: 0, transfer: 0, other: 0 });
+    const openingTotal = openingRows.reduce((sum, item) => sum + item.amount, 0);
+    const officeCollectors = reportOffice === "todos"
+      ? officeNames.map(collectorForOffice).filter(Boolean)
+      : [collectorForOffice(reportOffice)].filter(Boolean);
+    const officeCollectorSet = new Set(officeCollectors.map(normalizeCollectorName));
+    const affiliateByIdForReport = new Map(affiliates.map((item) => [item.id, item]));
+    const planStats = new Map<string, { received: number; charged: number; pending: number; chargedAmount: number; pendingAmount: number }>();
+    monthlyItems
+      .filter((item) => item.month === activeMonth)
+      .forEach((monthly) => {
+        const affiliate = affiliateByIdForReport.get(monthly.affiliateId);
+        if (!affiliate) return;
+        const affiliateCollector = normalizeCollectorName(affiliate.collector || "OFICINA");
+        if (officeCollectorSet.size && !officeCollectorSet.has(affiliateCollector)) return;
+        const charged = ticketCollections
+          .filter((collection) => collection.month === activeMonth && collection.affiliateId === affiliate.id)
+          .reduce((sum, collection) => sum + collection.ticketsCharged, 0);
+        const received = Math.max(0, monthly.tickets || 0);
+        const pending = Math.max(received - charged, 0);
+        const current = planStats.get(affiliate.plan) || { received: 0, charged: 0, pending: 0, chargedAmount: 0, pendingAmount: 0 };
+        current.received += received;
+        current.charged += charged;
+        current.pending += pending;
+        current.chargedAmount += charged * affiliate.value;
+        current.pendingAmount += pending * affiliate.value;
+        planStats.set(affiliate.plan, current);
+      });
+    const planRows = Array.from(planStats.entries()).sort((a, b) => a[0].localeCompare(b[0], "es-AR", { numeric: true }));
+    const generatedAt = new Date().toLocaleString("es-AR");
+    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!reportWindow) {
+      alert("No se pudo abrir el reporte. Revisá si el navegador bloqueó la ventana emergente.");
+      return;
+    }
+    const movementHtml = movementRows.length
+      ? movementRows.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.date)}</td>
+          <td>${escapeHtml(item.office)}</td>
+          <td>${escapeHtml(item.shift || "-")}</td>
+          <td>${item.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
+          <td>${escapeHtml(item.source)}</td>
+          <td>${escapeHtml(item.paymentMethod)}</td>
+          <td>${escapeHtml([item.receiptType, item.receiptNumber].filter(Boolean).join(" ") || "-")}</td>
+          <td>${escapeHtml(item.concept || "-")}${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ""}</td>
+          <td class="right">${currency.format(item.amount)}</td>
+          <td>${escapeHtml(item.user)}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="10" class="empty">SIN MOVIMIENTOS PARA EL TURNO SELECCIONADO</td></tr>`;
+    const planHtml = planRows.length
+      ? planRows.map(([plan, stats]) => `
+        <tr>
+          <td>${escapeHtml(plan)}</td>
+          <td class="right">${stats.received}</td>
+          <td class="right">${stats.charged}</td>
+          <td class="right">${stats.pending}</td>
+          <td class="right">${currency.format(stats.chargedAmount)}</td>
+          <td class="right">${currency.format(stats.pendingAmount)}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="6" class="empty">SIN TICKETS ASOCIADOS A ESTA OFICINA</td></tr>`;
+    reportWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Reporte de turno - ${escapeHtml(officeLabel)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
+            h1 { font-size: 20px; margin: 0 0 4px; }
+            h2 { font-size: 15px; margin: 22px 0 8px; }
+            p { margin: 2px 0; }
+            .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #0b5cad; padding-bottom: 12px; }
+            .meta { text-align: right; font-size: 12px; }
+            .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
+            .box { border: 1px solid #cbd5e1; padding: 8px; min-height: 54px; }
+            .label { color: #475569; font-size: 11px; text-transform: uppercase; }
+            .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th { background: #0b5cad; color: #fff; text-align: left; padding: 7px; }
+            td { border: 1px solid #d8e1ec; padding: 6px; vertical-align: top; }
+            .right { text-align: right; }
+            .empty { text-align: center; color: #64748b; padding: 14px; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 52px; }
+            .signature { border-top: 1px solid #0f172a; text-align: center; padding-top: 8px; font-size: 12px; }
+            @media print {
+              body { margin: 12mm; }
+              button { display: none; }
+              .page-break { break-before: page; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1>REPORTE DE TURNO - CAJA</h1>
+              <p><strong>Oficina:</strong> ${escapeHtml(officeLabel)}</p>
+              <p><strong>Fecha:</strong> ${escapeHtml(cashReportDate)} · <strong>Turno:</strong> ${escapeHtml(normalizedShift || "TODOS")}</p>
+            </div>
+            <div class="meta">
+              <p><strong>Generado:</strong> ${escapeHtml(generatedAt)}</p>
+              <p><strong>Usuario:</strong> ${escapeHtml(currentUserProfile?.nombre || userEmail || "USUARIO")}</p>
+              <button onclick="window.print()">IMPRIMIR</button>
+            </div>
+          </div>
+          <div class="grid">
+            <div class="box"><div class="label">Saldo inicial</div><div class="value">${currency.format(openingTotal)}</div></div>
+            <div class="box"><div class="label">Ingresos turno</div><div class="value">${currency.format(totals.income)}</div></div>
+            <div class="box"><div class="label">Egresos turno</div><div class="value">${currency.format(totals.expense)}</div></div>
+            <div class="box"><div class="label">Saldo turno</div><div class="value">${currency.format(totals.balance)}</div></div>
+            <div class="box"><div class="label">Saldo estimado</div><div class="value">${currency.format(openingTotal + totals.balance)}</div></div>
+          </div>
+          <div class="grid">
+            <div class="box"><div class="label">Efectivo</div><div class="value">${currency.format(totals.cash)}</div></div>
+            <div class="box"><div class="label">Tarjeta</div><div class="value">${currency.format(totals.card)}</div></div>
+            <div class="box"><div class="label">Transferencia</div><div class="value">${currency.format(totals.transfer)}</div></div>
+            <div class="box"><div class="label">Otro</div><div class="value">${currency.format(totals.other)}</div></div>
+            <div class="box"><div class="label">Movimientos</div><div class="value">${movementRows.length}</div></div>
+          </div>
+          <h2>MOVIMIENTOS DEL TURNO</h2>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Tipo</th><th>Origen</th><th>Medio</th><th>Comprobante</th><th>Concepto</th><th>Monto</th><th>Usuario</th></tr>
+            </thead>
+            <tbody>${movementHtml}</tbody>
+          </table>
+          <h2>COBRANZA TRES PROVINCIAS - RESUMEN POR PLAN</h2>
+          <table>
+            <thead>
+              <tr><th>Plan</th><th>Tickets recibidos</th><th>Tickets cobrados</th><th>Tickets pendientes</th><th>Monto cobrado</th><th>Monto pendiente</th></tr>
+            </thead>
+            <tbody>${planHtml}</tbody>
+          </table>
+          <div class="signatures">
+            <div class="signature">FIRMA TURNO SALIENTE</div>
+            <div class="signature">FIRMA TURNO ENTRANTE</div>
+          </div>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+    reportWindow.focus();
+  };
 
   const openAffiliateForm = (affiliate?: Affiliate) => {
     setEditingAffiliateId(affiliate?.id || null);
@@ -4231,11 +4408,23 @@ const InsuranceCollections = () => {
               </div>
 
               <div className="rounded-md border bg-card">
-                <div className="grid gap-3 border-b p-4 md:grid-cols-[1fr_180px_180px]">
+                <div className="grid gap-3 border-b p-4 md:grid-cols-[1fr_150px_160px_180px_180px_170px]">
                   <div>
                     <h3 className="font-semibold">Movimientos de caja</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
                   </div>
+                  <Input
+                    type="date"
+                    value={cashReportDate}
+                    onChange={(event) => setCashReportDate(event.target.value)}
+                    title="Fecha del reporte"
+                  />
+                  <Input
+                    value={cashReportShift}
+                    onChange={(event) => setCashReportShift(event.target.value.toLocaleUpperCase("es-AR"))}
+                    placeholder="TURNO"
+                    title="Turno del reporte"
+                  />
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={isAdminUser ? cashOfficeFilter : activeOffice}
@@ -4250,6 +4439,9 @@ const InsuranceCollections = () => {
                     <option value="ingreso">Ingresos</option>
                     <option value="egreso">Egresos</option>
                   </select>
+                  <Button type="button" variant="command" onClick={printCashTurnReport}>
+                    Imprimir reporte
+                  </Button>
                 </div>
                 <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-4">
                   <div>
