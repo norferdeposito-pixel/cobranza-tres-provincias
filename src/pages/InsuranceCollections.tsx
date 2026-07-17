@@ -1869,7 +1869,7 @@ const InsuranceCollections = () => {
       });
     const planRows = Array.from(planStats.entries()).sort((a, b) => a[0].localeCompare(b[0], "es-AR", { numeric: true }));
     const generatedAt = new Date().toLocaleString("es-AR");
-    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+    const reportWindow = window.open("", "_blank");
     if (!reportWindow) {
       alert("No se pudo abrir el reporte. Revisá si el navegador bloqueó la ventana emergente.");
       return;
