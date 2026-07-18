@@ -166,6 +166,7 @@ type CollectorRecord = {
 type CloudSnapshot = {
   affiliates: Affiliate[];
   monthlyItems: MonthlyItem[];
+  monthlyNewPolicyIds?: Record<string, string[]>;
   ticketCollections: TicketCollection[];
   ticketReturnControls?: TicketReturnControl[];
   receipts: ReceiptCollection[];
@@ -192,6 +193,7 @@ const plans: PlanType[] = ["A 238", "A 269", "G 238", "09", "G 269", "C", "Vida"
 const defaultSheetUrl = "https://docs.google.com/spreadsheets/d/17_pvb9vNQPJULu5XWJ3Yuy7HHbbT1GKfhgwe_4_--q0/edit?usp=sharing";
 const affiliatesStorageKey = "insurance-affiliates-v2";
 const monthlyStorageKey = "insurance-monthly-v2";
+const monthlyNewPoliciesStorageKey = "insurance-monthly-new-policies-v1";
 const ticketCollectionsStorageKey = "insurance-ticket-collections-v2";
 const ticketReturnControlsStorageKey = "insurance-ticket-return-controls-v1";
 const receiptsStorageKey = "insurance-receipts-v2";
@@ -653,6 +655,7 @@ const InsuranceCollections = () => {
   const [activeMonth, setActiveMonth] = useState(currentMonth);
   const [affiliates, setAffiliates] = useState<Affiliate[]>(() => loadStorage(affiliatesStorageKey, demoAffiliates));
   const [monthlyItems, setMonthlyItems] = useState<MonthlyItem[]>(() => loadStorage(monthlyStorageKey, []));
+  const [monthlyNewPolicyIds, setMonthlyNewPolicyIds] = useState<Record<string, string[]>>(() => loadStorage(monthlyNewPoliciesStorageKey, {}));
   const [ticketCollections, setTicketCollections] = useState<TicketCollection[]>(() => loadStorage(ticketCollectionsStorageKey, []));
   const [ticketReturnControls, setTicketReturnControls] = useState<TicketReturnControl[]>(() => loadStorage(ticketReturnControlsStorageKey, []));
   const [receipts, setReceipts] = useState<ReceiptCollection[]>(() => loadStorage(receiptsStorageKey, []));
@@ -850,6 +853,7 @@ const InsuranceCollections = () => {
 
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
+  useEffect(() => saveStorage(monthlyNewPoliciesStorageKey, monthlyNewPolicyIds), [monthlyNewPolicyIds]);
   useEffect(() => saveStorage(ticketCollectionsStorageKey, ticketCollections), [ticketCollections]);
   useEffect(() => saveStorage(ticketReturnControlsStorageKey, ticketReturnControls), [ticketReturnControls]);
   useEffect(() => saveStorage(receiptsStorageKey, receipts), [receipts]);
@@ -931,6 +935,7 @@ const InsuranceCollections = () => {
   const buildCloudSnapshot = (overrides: Partial<CloudSnapshot> = {}): CloudSnapshot => ({
     affiliates: overrides.affiliates ?? affiliates,
     monthlyItems: overrides.monthlyItems ?? monthlyItems,
+    monthlyNewPolicyIds: overrides.monthlyNewPolicyIds ?? monthlyNewPolicyIds,
     ticketCollections: overrides.ticketCollections ?? ticketCollections,
     ticketReturnControls: overrides.ticketReturnControls ?? ticketReturnControls,
     receipts: overrides.receipts ?? receipts,
@@ -947,6 +952,7 @@ const InsuranceCollections = () => {
   const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>) => {
     setAffiliates(Array.isArray(snapshot.affiliates) ? snapshot.affiliates : demoAffiliates);
     setMonthlyItems(Array.isArray(snapshot.monthlyItems) ? snapshot.monthlyItems : []);
+    setMonthlyNewPolicyIds(snapshot.monthlyNewPolicyIds && typeof snapshot.monthlyNewPolicyIds === "object" ? snapshot.monthlyNewPolicyIds : {});
     setTicketCollections(Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections : []);
     setTicketReturnControls(Array.isArray(snapshot.ticketReturnControls) ? snapshot.ticketReturnControls : []);
     setReceipts(Array.isArray(snapshot.receipts) ? snapshot.receipts : []);
@@ -1264,7 +1270,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1775,6 +1781,13 @@ const InsuranceCollections = () => {
   const visibleAffiliateIds = new Set(
     affiliates.filter((item) => canSeeAffiliateInCobranza(item)).map((item) => item.id),
   );
+  const monthlyNewPolicyRows = useMemo(() => {
+    const ids = monthlyNewPolicyIds[activeMonth] || [];
+    return ids
+      .map((id) => affiliatesById.get(id))
+      .filter((item): item is Affiliate => Boolean(item) && visibleAffiliateIds.has(item.id))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "es-AR", { numeric: true }));
+  }, [activeMonth, affiliatesById, monthlyNewPolicyIds, visibleAffiliateIds]);
   const visibleAffiliatesCount = visibleAffiliateIds.size;
   const visibleSelectedCount = affiliates.filter((item) => visibleAffiliateIds.has(item.id) && item.selectedForMonthly).length;
   const visibleMonthlyTickets = monthlyItems
@@ -2241,6 +2254,15 @@ const InsuranceCollections = () => {
 
   const importAffiliates = (imported: Affiliate[]) => {
     const prepared = prepareMonthlyImport(imported);
+    const previousPolicyNumbers = new Set(affiliates.map((item) => item.policyNumber).filter(Boolean));
+    const seenNewPolicyNumbers = new Set<string>();
+    const newPolicyIds = prepared
+      .filter((item) => {
+        if (!item.policyNumber || previousPolicyNumbers.has(item.policyNumber) || seenNewPolicyNumbers.has(item.policyNumber)) return false;
+        seenNewPolicyNumbers.add(item.policyNumber);
+        return true;
+      })
+      .map((item) => item.id);
     const currentById = new Map(affiliates.map((item) => [item.id, item]));
     const merged = prepared.map((item) => {
       const previous = currentById.get(item.id);
@@ -2253,6 +2275,10 @@ const InsuranceCollections = () => {
     const nextAffiliates = [...merged, ...retained];
     const importedCollectors = uniqueSorted(nextAffiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
     setAffiliates(nextAffiliates);
+    setMonthlyNewPolicyIds((current) => ({
+      ...current,
+      [activeMonth]: Array.from(new Set([...(current[activeMonth] || []), ...newPolicyIds])),
+    }));
     setCollectorRecords((current) => normalizeCollectorRecords([
       ...current,
       ...importedCollectors.map((collector) => defaultCollectorConfig(collector)),
@@ -3777,6 +3803,28 @@ const InsuranceCollections = () => {
                 </div>
               ))}
             </section>
+
+            {monthlyNewPolicyRows.length > 0 && (
+              <section className="rounded-md border border-amber-200 bg-amber-50 p-3 sm:p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="font-semibold text-amber-950">Polizas nuevas del mes</h2>
+                    <p className="mt-1 text-sm text-amber-900">Quedan visibles durante {activeMonth} para control y asignacion.</p>
+                  </div>
+                  <span className="rounded-md bg-card px-3 py-2 text-sm font-semibold text-amber-950">{monthlyNewPolicyRows.length} polizas</span>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {monthlyNewPolicyRows.slice(0, 18).map((item) => (
+                    <div key={`monthly-new-${item.id}`} className="rounded-md border bg-card px-3 py-2 text-sm">
+                      <strong>{item.fullName || "Sin nombre"}</strong>
+                      <p className="mt-1 text-xs text-muted-foreground">Poliza {item.policyNumber || "-"} · {item.plan} · Dep. {item.dependency || "-"} · {monthlyTicketsByAffiliate.get(item.id) || item.sourceTickets || 0} tickets · {currency.format(item.value)}</p>
+                      <p className="mt-1 text-xs font-medium text-foreground">Cobrador: {item.collector || "OFICINA"}</p>
+                    </div>
+                  ))}
+                </div>
+                {monthlyNewPolicyRows.length > 18 && <p className="mt-2 text-xs text-amber-900">Mostrando 18 de {monthlyNewPolicyRows.length}. El listado completo queda disponible en la base filtrando/buscando por poliza o cobrador.</p>}
+              </section>
+            )}
 
             <nav className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 sm:flex sm:flex-wrap">
               {visibleNavItems.map(({ id, label, icon: Icon }) => (
