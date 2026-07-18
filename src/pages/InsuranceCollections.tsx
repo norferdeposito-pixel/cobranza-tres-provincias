@@ -148,6 +148,7 @@ type AffiliateImportPreview = {
   source: string;
   rows: Affiliate[];
   newRows: Affiliate[];
+  newPolicyRows: Affiliate[];
   existingCount: number;
   changedRows: Array<{ incoming: Affiliate; previous: Affiliate; fields: string[] }>;
   duplicatedCount: number;
@@ -557,11 +558,18 @@ const isDemoAffiliateBase = (rows: Affiliate[]) => {
 
 const buildAffiliateImportPreview = (rows: Affiliate[], current: Affiliate[], source: string, duplicatedCount: number): AffiliateImportPreview => {
   const currentById = new Map(current.map((item) => [item.id, item]));
+  const currentPolicyNumbers = new Set(current.map((item) => item.policyNumber).filter(Boolean));
+  const seenNewPolicies = new Set<string>();
   const newRows: Affiliate[] = [];
+  const newPolicyRows: Affiliate[] = [];
   const changedRows: AffiliateImportPreview["changedRows"] = [];
   let existingCount = 0;
 
   rows.forEach((incoming) => {
+    if (incoming.policyNumber && !currentPolicyNumbers.has(incoming.policyNumber) && !seenNewPolicies.has(incoming.policyNumber)) {
+      newPolicyRows.push(incoming);
+      seenNewPolicies.add(incoming.policyNumber);
+    }
     const previous = currentById.get(incoming.id);
     if (!previous) {
       newRows.push(incoming);
@@ -578,7 +586,7 @@ const buildAffiliateImportPreview = (rows: Affiliate[], current: Affiliate[], so
     if (fields.length > 0) changedRows.push({ incoming, previous, fields });
   });
 
-  return { source, rows, newRows, existingCount, changedRows, duplicatedCount };
+  return { source, rows, newRows, newPolicyRows, existingCount, changedRows, duplicatedCount };
 };
 
 const emptyAffiliateForm = (): AffiliateForm => ({
@@ -3688,11 +3696,32 @@ const InsuranceCollections = () => {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-md border bg-card px-3 py-2 text-sm"><strong>{affiliateImportPreview.newRows.length}</strong> nuevos</span>
+                  <span className="rounded-md border bg-amber-50 px-3 py-2 text-sm text-amber-900"><strong>{affiliateImportPreview.newPolicyRows.length}</strong> polizas nuevas</span>
                   <span className="rounded-md border bg-card px-3 py-2 text-sm"><strong>{affiliateImportPreview.existingCount}</strong> existentes</span>
                   <span className="rounded-md border bg-card px-3 py-2 text-sm"><strong>{affiliateImportPreview.changedRows.length}</strong> con cambios</span>
                   <span className="rounded-md border bg-card px-3 py-2 text-sm"><strong>{affiliateImportPreview.duplicatedCount}</strong> duplicados</span>
                 </div>
               </div>
+              {affiliateImportPreview.newPolicyRows.length > 0 && (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-sm font-semibold text-amber-950">Polizas nuevas respecto del mes anterior</h3>
+                    <p className="text-xs font-medium text-amber-900">{affiliateImportPreview.newPolicyRows.length} para revisar antes de aplicar</p>
+                  </div>
+                  <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+                    {affiliateImportPreview.newPolicyRows.slice(0, 40).map((item) => (
+                      <div key={`new-policy-${item.id}`} className="grid gap-2 rounded-md bg-card px-3 py-2 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+                        <div>
+                          <strong>{item.fullName || "Sin nombre"}</strong>
+                          <p className="mt-1 text-xs text-muted-foreground">Poliza {item.policyNumber || "-"} · {item.plan} · Dep. {item.dependency || "-"} · {item.sourceTickets || 0} tickets · {currency.format(item.value)}</p>
+                        </div>
+                        <span className="rounded bg-surface-subtle px-2 py-1 text-xs font-semibold text-foreground">Destino inicial: {item.collector || "OFICINA"}</span>
+                      </div>
+                    ))}
+                    {affiliateImportPreview.newPolicyRows.length > 40 && <p className="text-xs text-amber-900">Mostrando 40 de {affiliateImportPreview.newPolicyRows.length} polizas nuevas.</p>}
+                  </div>
+                </div>
+              )}
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-md border bg-card p-3">
                   <h3 className="text-sm font-semibold">Nuevos afiliados</h3>
