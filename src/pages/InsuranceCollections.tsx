@@ -814,6 +814,10 @@ const InsuranceCollections = () => {
 
   const releaseActiveSession = async () => {
     await supabase.from(activeSessionsTable as any).delete().eq("session_token", sessionToken);
+    const email = (userEmail || "").trim().toLowerCase();
+    if (email) {
+      await supabase.from(activeSessionsTable as any).delete().eq("email", email);
+    }
   };
 
   const handleSignOut = async () => {
