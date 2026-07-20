@@ -231,7 +231,7 @@ const officeNames = ["SAN MARTIN", "TUNUYAN", "EUGENIO BUSTOS"];
 const officeCollectorByOffice: Record<string, string> = {
   "SAN MARTIN": "SAN MARTIN OFICINA",
   TUNUYAN: "TUNUYAN OFICINA",
-  "EUGENIO BUSTOS": "EUGENIO BUSTOS",
+  "EUGENIO BUSTOS": "EUGENIO BUSTOS OFICINA",
 };
 const officePermissionPrefix = "oficina:";
 const officePermission = (office: string) => `${officePermissionPrefix}${normalizeCollectorName(office)}`;
@@ -508,7 +508,7 @@ const knownCollectorCommissions: Record<string, Pick<CollectorRecord, "commissio
   "ALCIDES OMAR": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
   "BENJAMIN NAVARRO": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
   "DANIEL HLOSKA": { commissionBase: 13, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
-  "EUGENIO BUSTOS": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
+  "EUGENIO BUSTOS OFICINA": { commissionBase: 5, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
   "FABIAN GONZALEZ": { commissionBase: 12, bonusEnabled: false, bonusThreshold: 90, bonusRate: 13 },
   "FEDERICO CASTILLO": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
   "GUADALUPE GONZALEZ": { commissionBase: 12, bonusEnabled: true, bonusThreshold: 90, bonusRate: 13 },
