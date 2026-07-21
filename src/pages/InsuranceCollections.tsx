@@ -142,6 +142,17 @@ type CashOpeningBalance = {
   notes: string;
 };
 
+type CashTurnNote = {
+  id: string;
+  date: string;
+  month: string;
+  office: string;
+  shift: string;
+  user: string;
+  text: string;
+  createdAt: string;
+};
+
 type AffiliateForm = Omit<Affiliate, "id" | "selectedForMonthly">;
 
 type AffiliateImportPreview = {
@@ -174,6 +185,7 @@ type CloudSnapshot = {
   rendition: Rendition;
   cashMovements: CashMovement[];
   cashOpeningBalances: CashOpeningBalance[];
+  cashTurnNotes?: CashTurnNote[];
   collectorRecords: CollectorRecord[];
   customDependencies: string[];
   collectorWhatsapp: string;
@@ -201,6 +213,7 @@ const notesStorageKey = "insurance-affiliate-notes-v2";
 const renditionStorageKey = "insurance-rendition-v2";
 const cashMovementsStorageKey = "insurance-cash-movements-v1";
 const cashOpeningBalancesStorageKey = "insurance-cash-opening-balances-v1";
+const cashTurnNotesStorageKey = "insurance-cash-turn-notes-v1";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
@@ -625,6 +638,12 @@ const emptyCashOpeningForm = () => ({
   amount: "",
   notes: "",
 });
+const emptyCashTurnNoteForm = () => ({
+  date: today(),
+  office: "",
+  shift: "",
+  text: "",
+});
 const cashExpenseConcepts = [
   "SERVICIO DE BUFETE",
   "PANADERIA",
@@ -662,8 +681,10 @@ const InsuranceCollections = () => {
   const [notes, setNotes] = useState<AffiliateNote[]>(() => loadStorage(notesStorageKey, []));
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => loadStorage(cashMovementsStorageKey, []));
   const [cashOpeningBalances, setCashOpeningBalances] = useState<CashOpeningBalance[]>(() => loadStorage(cashOpeningBalancesStorageKey, []));
+  const [cashTurnNotes, setCashTurnNotes] = useState<CashTurnNote[]>(() => loadStorage(cashTurnNotesStorageKey, []));
   const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
   const [cashOpeningForm, setCashOpeningForm] = useState(emptyCashOpeningForm);
+  const [cashTurnNoteForm, setCashTurnNoteForm] = useState(emptyCashTurnNoteForm);
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [cashReportDate, setCashReportDate] = useState(today());
@@ -864,6 +885,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(notesStorageKey, notes), [notes]);
   useEffect(() => saveStorage(cashMovementsStorageKey, cashMovements), [cashMovements]);
   useEffect(() => saveStorage(cashOpeningBalancesStorageKey, cashOpeningBalances), [cashOpeningBalances]);
+  useEffect(() => saveStorage(cashTurnNotesStorageKey, cashTurnNotes), [cashTurnNotes]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
@@ -876,6 +898,10 @@ const InsuranceCollections = () => {
     });
     setCashOpeningForm((current) => {
       if (current.amount || current.notes) return current;
+      return { ...current, date: defaultCashDateForActiveMonth() };
+    });
+    setCashTurnNoteForm((current) => {
+      if (current.text) return current;
       return { ...current, date: defaultCashDateForActiveMonth() };
     });
   }, [activeMonth]);
@@ -933,6 +959,7 @@ const InsuranceCollections = () => {
     if (!activeOffice || isAdminUser) return;
     setCashMovementForm((current) => ({ ...current, office: activeOffice }));
     setCashOpeningForm((current) => ({ ...current, office: activeOffice }));
+    setCashTurnNoteForm((current) => ({ ...current, office: activeOffice }));
     setCashOfficeFilter(activeOffice);
   }, [activeOffice, isAdminUser]);
 
@@ -947,6 +974,7 @@ const InsuranceCollections = () => {
     rendition: overrides.rendition ?? rendition,
     cashMovements: overrides.cashMovements ?? cashMovements,
     cashOpeningBalances: overrides.cashOpeningBalances ?? cashOpeningBalances,
+    cashTurnNotes: overrides.cashTurnNotes ?? cashTurnNotes,
     collectorRecords: overrides.collectorRecords ?? collectorRecords,
     customDependencies: overrides.customDependencies ?? customDependencies,
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
@@ -963,6 +991,7 @@ const InsuranceCollections = () => {
     setNotes(Array.isArray(snapshot.notes) ? snapshot.notes : []);
     setCashMovements(Array.isArray(snapshot.cashMovements) ? snapshot.cashMovements : []);
     setCashOpeningBalances(Array.isArray(snapshot.cashOpeningBalances) ? snapshot.cashOpeningBalances : []);
+    setCashTurnNotes(Array.isArray(snapshot.cashTurnNotes) ? snapshot.cashTurnNotes : []);
     setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
@@ -1274,7 +1303,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, cashTurnNotes, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1851,8 +1880,9 @@ const InsuranceCollections = () => {
       ...officeNames,
       ...cashMovements.map((item) => item.office).filter(Boolean),
       ...cashOpeningBalances.map((item) => item.office).filter(Boolean),
+      ...cashTurnNotes.map((item) => item.office).filter(Boolean),
     ]);
-  }, [assignedOfficeOptions, cashMovements, cashOpeningBalances, isAdminUser]);
+  }, [assignedOfficeOptions, cashMovements, cashOpeningBalances, cashTurnNotes, isAdminUser]);
 
   const visibleCashMovements = useMemo(() => {
     return cashMovements
@@ -1867,6 +1897,13 @@ const InsuranceCollections = () => {
       .filter((item) => item.month === activeMonth)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice);
   }, [activeMonth, activeOffice, cashOpeningBalances, cashOfficeFilter, isAdminUser]);
+
+  const visibleCashTurnNotes = useMemo(() => {
+    return cashTurnNotes
+      .filter((item) => item.month === activeMonth)
+      .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
+      .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`, "es-AR"));
+  }, [activeMonth, activeOffice, cashOfficeFilter, cashTurnNotes, isAdminUser]);
 
   const cashTotals = useMemo(() => {
     const totals = {
@@ -1953,6 +1990,31 @@ const InsuranceCollections = () => {
     setCashMovements((current) => current.filter((item) => item.id !== id));
   };
 
+  const saveCashTurnNote = (event: FormEvent) => {
+    event.preventDefault();
+    const office = isAdminUser ? cashTurnNoteForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
+    const text = cashTurnNoteForm.text.trim().toLocaleUpperCase("es-AR");
+    if (!isAdminUser && !office) return;
+    if (!cashTurnNoteForm.date || !text) return;
+    const note: CashTurnNote = {
+      id: `cash-turn-note-${Date.now()}`,
+      date: cashTurnNoteForm.date,
+      month: cashTurnNoteForm.date.slice(0, 7),
+      office,
+      shift: cashTurnNoteForm.shift.trim().toLocaleUpperCase("es-AR"),
+      user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    setCashTurnNotes((current) => [note, ...current]);
+    setCashTurnNoteForm((current) => ({ ...emptyCashTurnNoteForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+  };
+
+  const deleteCashTurnNote = (id: string) => {
+    if (!window.confirm("Eliminar esta novedad del turno?")) return;
+    setCashTurnNotes((current) => current.filter((item) => item.id !== id));
+  };
+
   const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
   const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
 
@@ -1968,6 +2030,11 @@ const InsuranceCollections = () => {
     const openingRows = cashOpeningBalances
       .filter((item) => item.month === activeMonth)
       .filter((item) => reportOffice === "todos" || item.office === reportOffice);
+    const turnNoteRows = cashTurnNotes
+      .filter((item) => item.date === cashReportDate)
+      .filter((item) => reportOffice === "todos" || item.office === reportOffice)
+      .filter((item) => !normalizedShift || item.shift === normalizedShift)
+      .sort((a, b) => `${a.office}-${a.shift}-${a.createdAt}`.localeCompare(`${b.office}-${b.shift}-${b.createdAt}`, "es-AR"));
     const totals = movementRows.reduce((acc, item) => {
       const signed = item.type === "ingreso" ? item.amount : -item.amount;
       if (item.type === "ingreso") acc.income += item.amount;
@@ -2041,6 +2108,17 @@ const InsuranceCollections = () => {
         </tr>
       `).join("")
       : `<tr><td colspan="6" class="empty">SIN TICKETS ASOCIADOS A ESTA OFICINA</td></tr>`;
+    const turnNotesHtml = turnNoteRows.length
+      ? turnNoteRows.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.date)}</td>
+          <td>${escapeHtml(item.office)}</td>
+          <td>${escapeHtml(item.shift || "-")}</td>
+          <td>${escapeHtml(item.user)}</td>
+          <td>${escapeHtml(item.text)}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="5" class="empty">SIN NOVEDADES DEL TURNO</td></tr>`;
     reportWindow.document.write(`
       <!doctype html>
       <html>
@@ -2100,6 +2178,13 @@ const InsuranceCollections = () => {
             <div class="box"><div class="label">Otro</div><div class="value">${currency.format(totals.other)}</div></div>
             <div class="box"><div class="label">Movimientos</div><div class="value">${movementRows.length}</div></div>
           </div>
+          <h2>NOVEDADES DEL TURNO</h2>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Usuario</th><th>Novedad</th></tr>
+            </thead>
+            <tbody>${turnNotesHtml}</tbody>
+          </table>
           <h2>MOVIMIENTOS DEL TURNO</h2>
           <table>
             <thead>
@@ -4606,6 +4691,43 @@ const InsuranceCollections = () => {
                 <Button type="submit" variant="command">Agregar movimiento</Button>
               </div>
             </form>
+            <form onSubmit={saveCashTurnNote} className="rounded-md border bg-card">
+              <div className="border-b p-4">
+                <h2 className="font-semibold">Novedades del turno</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Texto libre para dejar asentadas situaciones del turno.</p>
+              </div>
+              <div className="grid gap-3 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Fecha</Label>
+                    <Input type="date" value={cashTurnNoteForm.date} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, date: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Oficina</Label>
+                    <Input
+                      value={isAdminUser ? cashTurnNoteForm.office : activeOffice}
+                      onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, office: event.target.value }))}
+                      placeholder="EJ: TUNUYAN"
+                      readOnly={!isAdminUser}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Turno</Label>
+                  <Input value={cashTurnNoteForm.shift} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MANANA" />
+                </div>
+                <div>
+                  <Label>Novedad</Label>
+                  <Textarea
+                    value={cashTurnNoteForm.text}
+                    onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, text: event.target.value }))}
+                    placeholder="DETALLE DE LA NOVEDAD DEL TURNO"
+                    required
+                  />
+                </div>
+                <Button type="submit" variant="command">Agregar novedad</Button>
+              </div>
+            </form>
             </div>
 
             <div className="grid gap-4">
@@ -4690,6 +4812,34 @@ const InsuranceCollections = () => {
                     </div>
                   </div>
                 )}
+                <div className="border-b p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">Novedades del turno</p>
+                      <p className="text-xs text-muted-foreground">Se incluyen en el reporte impreso segun fecha, oficina y turno.</p>
+                    </div>
+                    <span className="rounded-md bg-surface-subtle px-3 py-1 text-xs font-semibold text-muted-foreground">
+                      {visibleCashTurnNotes.length} novedad(es)
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {visibleCashTurnNotes.slice(0, 8).map((item) => (
+                      <div key={item.id} className="rounded-md border bg-background p-3 text-sm">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="font-semibold">{item.office} {item.shift ? `- ${item.shift}` : ""}</p>
+                            <p className="text-xs text-muted-foreground">{item.date} - {item.user}</p>
+                            <p className="mt-2">{item.text}</p>
+                          </div>
+                          <Button type="button" size="sm" variant="outline" onClick={() => deleteCashTurnNote(item.id)}>Eliminar</Button>
+                        </div>
+                      </div>
+                    ))}
+                    {visibleCashTurnNotes.length === 0 && (
+                      <p className="rounded-md border bg-surface-subtle px-3 py-3 text-sm text-muted-foreground">No hay novedades de turno cargadas para este periodo.</p>
+                    )}
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[980px] text-sm">
                     <thead className="bg-surface-subtle text-left text-xs uppercase text-muted-foreground">
