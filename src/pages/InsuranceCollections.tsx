@@ -149,7 +149,10 @@ type CashTurnNote = {
   office: string;
   shift: string;
   user: string;
+  entryType?: "NOVEDAD" | "TAREA";
   text: string;
+  completed?: boolean;
+  completedAt?: string;
   createdAt: string;
 };
 
@@ -642,6 +645,7 @@ const emptyCashTurnNoteForm = () => ({
   date: today(),
   office: "",
   shift: "",
+  entryType: "NOVEDAD" as CashTurnNote["entryType"],
   text: "",
 });
 const cashExpenseConcepts = [
@@ -2003,7 +2007,9 @@ const InsuranceCollections = () => {
       office,
       shift: cashTurnNoteForm.shift.trim().toLocaleUpperCase("es-AR"),
       user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      entryType: cashTurnNoteForm.entryType || "NOVEDAD",
       text,
+      completed: false,
       createdAt: new Date().toISOString(),
     };
     setCashTurnNotes((current) => [note, ...current]);
@@ -2013,6 +2019,14 @@ const InsuranceCollections = () => {
   const deleteCashTurnNote = (id: string) => {
     if (!window.confirm("Eliminar esta novedad del turno?")) return;
     setCashTurnNotes((current) => current.filter((item) => item.id !== id));
+  };
+
+  const toggleCashTurnTask = (id: string) => {
+    setCashTurnNotes((current) => current.map((item) => {
+      if (item.id !== id) return item;
+      const completed = !item.completed;
+      return { ...item, completed, completedAt: completed ? new Date().toISOString() : undefined };
+    }));
   };
 
   const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
@@ -2114,11 +2128,13 @@ const InsuranceCollections = () => {
           <td>${escapeHtml(item.date)}</td>
           <td>${escapeHtml(item.office)}</td>
           <td>${escapeHtml(item.shift || "-")}</td>
+          <td>${escapeHtml(item.entryType || "NOVEDAD")}</td>
+          <td>${item.entryType === "TAREA" ? (item.completed ? "REALIZADA" : "PENDIENTE") : "-"}</td>
           <td>${escapeHtml(item.user)}</td>
-          <td>${escapeHtml(item.text)}</td>
+          <td class="${item.entryType === "TAREA" && item.completed ? "done" : ""}">${escapeHtml(item.text)}</td>
         </tr>
       `).join("")
-      : `<tr><td colspan="5" class="empty">SIN NOVEDADES DEL TURNO</td></tr>`;
+      : `<tr><td colspan="7" class="empty">SIN NOVEDADES DEL TURNO</td></tr>`;
     reportWindow.document.write(`
       <!doctype html>
       <html>
@@ -2142,6 +2158,7 @@ const InsuranceCollections = () => {
             td { border: 1px solid #d8e1ec; padding: 6px; vertical-align: top; }
             .right { text-align: right; }
             .empty { text-align: center; color: #64748b; padding: 14px; }
+            .done { text-decoration: line-through; color: #64748b; }
             .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 52px; }
             .signature { border-top: 1px solid #0f172a; text-align: center; padding-top: 8px; font-size: 12px; }
             @media print {
@@ -2181,7 +2198,7 @@ const InsuranceCollections = () => {
           <h2>NOVEDADES DEL TURNO</h2>
           <table>
             <thead>
-              <tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Usuario</th><th>Novedad</th></tr>
+              <tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Usuario</th><th>Detalle</th></tr>
             </thead>
             <tbody>${turnNotesHtml}</tbody>
           </table>
@@ -4699,7 +4716,7 @@ const InsuranceCollections = () => {
                   <h2 className="font-semibold">Novedades del turno</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Texto libre para dejar asentadas situaciones del turno. Se imprime en el reporte de caja.</p>
                 </div>
-                <div className="grid gap-3 p-4 xl:grid-cols-[160px_190px_190px_minmax(320px,1fr)_170px] xl:items-end">
+                <div className="grid gap-3 p-4 xl:grid-cols-[145px_175px_160px_170px_minmax(320px,1fr)_170px] xl:items-end">
                   <div>
                     <Label>Fecha</Label>
                     <Input type="date" value={cashTurnNoteForm.date} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, date: event.target.value }))} />
@@ -4718,16 +4735,27 @@ const InsuranceCollections = () => {
                     <Input value={cashTurnNoteForm.shift} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MANANA" />
                   </div>
                   <div>
-                    <Label>Novedad</Label>
+                    <Label>Tipo</Label>
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={cashTurnNoteForm.entryType}
+                      onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, entryType: event.target.value as CashTurnNote["entryType"] }))}
+                    >
+                      <option value="NOVEDAD">Novedad</option>
+                      <option value="TAREA">Tarea</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>{cashTurnNoteForm.entryType === "TAREA" ? "Tarea" : "Novedad"}</Label>
                     <Textarea
                       className="min-h-20"
                       value={cashTurnNoteForm.text}
                       onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, text: event.target.value }))}
-                      placeholder="DETALLE DE LA NOVEDAD DEL TURNO"
+                      placeholder={cashTurnNoteForm.entryType === "TAREA" ? "DETALLE DE LA TAREA DEL TURNO" : "DETALLE DE LA NOVEDAD DEL TURNO"}
                       required
                     />
                   </div>
-                  <Button type="submit" variant="command" className="h-10">Agregar novedad</Button>
+                  <Button type="submit" variant="command" className="h-10">{cashTurnNoteForm.entryType === "TAREA" ? "Agregar tarea" : "Agregar novedad"}</Button>
                 </div>
               </form>
 
@@ -4819,17 +4847,36 @@ const InsuranceCollections = () => {
                       <p className="text-xs text-muted-foreground">Se incluyen en el reporte impreso segun fecha, oficina y turno.</p>
                     </div>
                     <span className="rounded-md bg-surface-subtle px-3 py-1 text-xs font-semibold text-muted-foreground">
-                      {visibleCashTurnNotes.length} novedad(es)
+                      {visibleCashTurnNotes.length} registro(s)
                     </span>
                   </div>
                   <div className="mt-3 grid gap-2">
                     {visibleCashTurnNotes.slice(0, 8).map((item) => (
                       <div key={item.id} className="rounded-md border bg-background p-3 text-sm">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <p className="font-semibold">{item.office} {item.shift ? `- ${item.shift}` : ""}</p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {item.entryType === "TAREA" && (
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={!!item.completed}
+                                  onChange={() => toggleCashTurnTask(item.id)}
+                                  title="Marcar tarea realizada"
+                                />
+                              )}
+                              <p className="font-semibold">{item.office} {item.shift ? `- ${item.shift}` : ""}</p>
+                              <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${item.entryType === "TAREA" ? "bg-amber-100 text-amber-800" : "bg-surface-subtle text-muted-foreground"}`}>
+                                {item.entryType || "NOVEDAD"}
+                              </span>
+                              {item.entryType === "TAREA" && (
+                                <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${item.completed ? "bg-emerald-100 text-emerald-800" : "bg-destructive/10 text-destructive"}`}>
+                                  {item.completed ? "REALIZADA" : "PENDIENTE"}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground">{item.date} - {item.user}</p>
-                            <p className="mt-2">{item.text}</p>
+                            <p className={`mt-2 ${item.entryType === "TAREA" && item.completed ? "text-muted-foreground line-through" : ""}`}>{item.text}</p>
                           </div>
                           <Button type="button" size="sm" variant="outline" onClick={() => deleteCashTurnNote(item.id)}>Eliminar</Button>
                         </div>
