@@ -4691,13 +4691,15 @@ const InsuranceCollections = () => {
                 <Button type="submit" variant="command">Agregar movimiento</Button>
               </div>
             </form>
-            <form onSubmit={saveCashTurnNote} className="rounded-md border bg-card">
-              <div className="border-b p-4">
-                <h2 className="font-semibold">Novedades del turno</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Texto libre para dejar asentadas situaciones del turno.</p>
-              </div>
-              <div className="grid gap-3 p-4">
-                <div className="grid gap-3 sm:grid-cols-2">
+            </div>
+
+            <div className="grid gap-4">
+              <form onSubmit={saveCashTurnNote} className="rounded-md border bg-card">
+                <div className="border-b p-4">
+                  <h2 className="font-semibold">Novedades del turno</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Texto libre para dejar asentadas situaciones del turno. Se imprime en el reporte de caja.</p>
+                </div>
+                <div className="grid gap-3 p-4 xl:grid-cols-[160px_190px_190px_minmax(320px,1fr)_170px] xl:items-end">
                   <div>
                     <Label>Fecha</Label>
                     <Input type="date" value={cashTurnNoteForm.date} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, date: event.target.value }))} />
@@ -4711,26 +4713,24 @@ const InsuranceCollections = () => {
                       readOnly={!isAdminUser}
                     />
                   </div>
+                  <div>
+                    <Label>Turno</Label>
+                    <Input value={cashTurnNoteForm.shift} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MANANA" />
+                  </div>
+                  <div>
+                    <Label>Novedad</Label>
+                    <Textarea
+                      className="min-h-20"
+                      value={cashTurnNoteForm.text}
+                      onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, text: event.target.value }))}
+                      placeholder="DETALLE DE LA NOVEDAD DEL TURNO"
+                      required
+                    />
+                  </div>
+                  <Button type="submit" variant="command" className="h-10">Agregar novedad</Button>
                 </div>
-                <div>
-                  <Label>Turno</Label>
-                  <Input value={cashTurnNoteForm.shift} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MANANA" />
-                </div>
-                <div>
-                  <Label>Novedad</Label>
-                  <Textarea
-                    value={cashTurnNoteForm.text}
-                    onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, text: event.target.value }))}
-                    placeholder="DETALLE DE LA NOVEDAD DEL TURNO"
-                    required
-                  />
-                </div>
-                <Button type="submit" variant="command">Agregar novedad</Button>
-              </div>
-            </form>
-            </div>
+              </form>
 
-            <div className="grid gap-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <SummaryBox label="Saldo inicial" value={currency.format(cashTotals.opening)} />
                 <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
