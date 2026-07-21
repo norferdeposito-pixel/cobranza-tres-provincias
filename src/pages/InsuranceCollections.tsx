@@ -2017,6 +2017,7 @@ const InsuranceCollections = () => {
   };
 
   const deleteCashTurnNote = (id: string) => {
+    if (!isAdminUser) return;
     if (!window.confirm("Eliminar esta novedad del turno?")) return;
     setCashTurnNotes((current) => current.filter((item) => item.id !== id));
   };
@@ -2024,6 +2025,7 @@ const InsuranceCollections = () => {
   const toggleCashTurnTask = (id: string) => {
     setCashTurnNotes((current) => current.map((item) => {
       if (item.id !== id) return item;
+      if (item.completed && !isAdminUser) return item;
       const completed = !item.completed;
       return { ...item, completed, completedAt: completed ? new Date().toISOString() : undefined };
     }));
@@ -4862,7 +4864,8 @@ const InsuranceCollections = () => {
                                   className="h-4 w-4"
                                   checked={!!item.completed}
                                   onChange={() => toggleCashTurnTask(item.id)}
-                                  title="Marcar tarea realizada"
+                                  disabled={!!item.completed && !isAdminUser}
+                                  title={item.completed && !isAdminUser ? "Solo administrador puede destildar una tarea realizada" : "Marcar tarea realizada"}
                                 />
                               )}
                               <p className="font-semibold">{item.office} {item.shift ? `- ${item.shift}` : ""}</p>
@@ -4878,7 +4881,9 @@ const InsuranceCollections = () => {
                             <p className="text-xs text-muted-foreground">{item.date} - {item.user}</p>
                             <p className={`mt-2 ${item.entryType === "TAREA" && item.completed ? "text-muted-foreground line-through" : ""}`}>{item.text}</p>
                           </div>
-                          <Button type="button" size="sm" variant="outline" onClick={() => deleteCashTurnNote(item.id)}>Eliminar</Button>
+                          {isAdminUser && (
+                            <Button type="button" size="sm" variant="outline" onClick={() => deleteCashTurnNote(item.id)}>Eliminar</Button>
+                          )}
                         </div>
                       </div>
                     ))}
