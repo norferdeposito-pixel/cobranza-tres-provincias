@@ -75,6 +75,7 @@ type TicketCollection = {
 type ReceiptCollection = {
   id: string;
   collectionMonth: string;
+  loadedDate?: string;
   receiptNumber: string;
   policyNumber?: string;
   fullName: string;
@@ -239,6 +240,15 @@ const monthLabel = (month: string) => {
     .format(new Date(Date.UTC(year, monthIndex - 1, 1)))
     .toLocaleUpperCase("es-AR");
 };
+const receiptSortValue = (value: string) => {
+  const numeric = Number(String(value || "").replace(/\D/g, ""));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : Number.MAX_SAFE_INTEGER;
+};
+const sortReceiptsByNumber = (a: ReceiptCollection, b: ReceiptCollection) => (
+  receiptSortValue(a.receiptNumber) - receiptSortValue(b.receiptNumber)
+    || String(a.receiptNumber || "").localeCompare(String(b.receiptNumber || ""), "es-AR", { numeric: true })
+    || a.fullName.localeCompare(b.fullName, "es-AR")
+);
 function normalizeCollectorName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
 }
@@ -755,6 +765,7 @@ const InsuranceCollections = () => {
   const [mobileSelectedAffiliateId, setMobileSelectedAffiliateId] = useState("");
   const [mobileNoteText, setMobileNoteText] = useState("");
   const [receiptForm, setReceiptForm] = useState({
+    loadedDate: today(),
     receiptNumber: "",
     policyNumber: "",
     fullName: "",
@@ -1355,6 +1366,7 @@ const InsuranceCollections = () => {
     const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
       || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
+    if (hasOfficeCollectorScope) return normalizeCollectorName(receipt.collector || "") === officeCollectorScope;
     if (isOfficeUser) return isAdminUser;
     return normalizeCollectorName(receipt.collector || "") === currentCollectorName;
   };
@@ -2741,6 +2753,7 @@ const InsuranceCollections = () => {
   const resetReceiptForm = () => {
     setEditingReceiptId(null);
     setReceiptForm({
+      loadedDate: today(),
       receiptNumber: "",
       policyNumber: "",
       fullName: "",
@@ -2759,6 +2772,7 @@ const InsuranceCollections = () => {
   const editReceipt = (receipt: ReceiptCollection) => {
     setEditingReceiptId(receipt.id);
     setReceiptForm({
+      loadedDate: receipt.loadedDate || today(),
       receiptNumber: receipt.receiptNumber || "",
       policyNumber: receipt.policyNumber || "",
       fullName: receipt.fullName || "",
@@ -2804,6 +2818,7 @@ const InsuranceCollections = () => {
     const receiptPayload: ReceiptCollection = {
       id: editingReceiptId || `receipt-${Date.now()}`,
       collectionMonth: activeMonth,
+      loadedDate: receiptForm.loadedDate || today(),
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       policyNumber: receiptForm.policyNumber.trim(),
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
@@ -3464,16 +3479,17 @@ const InsuranceCollections = () => {
     const safeCollector = currentCollectorName.toLocaleLowerCase("es-AR").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "cobrador";
     const rows = visibleReceipts
       .slice()
-      .sort((a, b) => (a.collector || "").localeCompare(b.collector || "", "es-AR") || a.fullName.localeCompare(b.fullName, "es-AR"));
+      .sort(sortReceiptsByNumber);
 
     const receiptsData: any[][] = [
-      [titleCell("REPORTE DE RECIBOS", 14)],
-      [{ value: `Periodo: ${activeMonth}`, columnSpan: 14, fontWeight: "bold", align: "center" }],
-      [{ value: isOfficeUser ? "Vista administracion" : `Cobrador: ${currentCollectorName || "-"}`, columnSpan: 14, align: "center" }],
+      [titleCell("REPORTE DE RECIBOS", 15)],
+      [{ value: `Periodo: ${activeMonth}`, columnSpan: 15, fontWeight: "bold", align: "center" }],
+      [{ value: isOfficeUser ? "Vista administracion" : `Cobrador: ${currentCollectorName || "-"}`, columnSpan: 15, align: "center" }],
       [null],
       [
         headerCell("Estado"),
         headerCell("Tipo"),
+        headerCell("Fecha de carga"),
         headerCell("N recibo"),
         headerCell("Apellido y nombre"),
         headerCell("Poliza"),
@@ -3490,6 +3506,7 @@ const InsuranceCollections = () => {
       ...rows.map((receipt) => [
         receipt.status === "anulado" ? "ANULADO" : "ACTIVO",
         receipt.isProduction ? "PRODUCCION" : "COBRANZA",
+        receipt.loadedDate || "-",
         receipt.receiptNumber || "-",
         receipt.fullName || "-",
         receipt.policyNumber || "-",
@@ -3506,7 +3523,7 @@ const InsuranceCollections = () => {
     ];
 
     if (rows.length === 0) {
-      receiptsData.push([{ value: "SIN RECIBOS CARGADOS", columnSpan: 14, align: "center", fontWeight: "bold" }]);
+      receiptsData.push([{ value: "SIN RECIBOS CARGADOS", columnSpan: 15, align: "center", fontWeight: "bold" }]);
     }
 
     const activeCollectionReceipts = rows.filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction);
@@ -3525,7 +3542,7 @@ const InsuranceCollections = () => {
       {
         data: receiptsData,
         sheet: "Recibos",
-        columns: [{ width: 14 }, { width: 16 }, { width: 16 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 34 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 18 }, { width: 22 }, { width: 28 }],
+        columns: [{ width: 14 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 34 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 18 }, { width: 22 }, { width: 28 }],
         orientation: "landscape",
         stickyRowsCount: 5,
       },
@@ -5050,6 +5067,7 @@ const InsuranceCollections = () => {
             <form className="rounded-md border bg-card p-3 sm:p-4" onSubmit={saveReceipt}>
               <h2 className="font-semibold">{editingReceiptId ? "Editar recibo" : "Registrar recibo sin ticket"}</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="space-y-2"><Label>Fecha de carga</Label><Input type="date" value={receiptForm.loadedDate} onChange={(event) => setReceiptForm({ ...receiptForm, loadedDate: event.target.value })} /></div>
                 <div className="space-y-2"><Label>N° recibo</Label><Input value={receiptForm.receiptNumber} onChange={(event) => setReceiptForm({ ...receiptForm, receiptNumber: event.target.value.toLocaleUpperCase("es-AR") })} /></div>
                 <div className="space-y-2"><Label>N° de póliza</Label><Input inputMode="numeric" value={receiptForm.policyNumber} onChange={(event) => updateReceiptPolicy(event.target.value)} placeholder="EJ: 31774" /></div>
                 <div className="space-y-2"><Label>Apellido y nombre</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value.toLocaleUpperCase("es-AR") })} required /></div>
@@ -5095,6 +5113,11 @@ const InsuranceCollections = () => {
               {selectedReceiptAffiliate && (
                 <p className="mt-3 rounded-md border bg-surface-subtle px-3 py-2 text-sm text-muted-foreground">
                   Datos encontrados: {selectedReceiptAffiliate.fullName} - Póliza {selectedReceiptAffiliate.policyNumber} - {selectedReceiptAffiliate.plan} - Cobrador {selectedReceiptAffiliate.collector || "OFICINA"}
+                </p>
+              )}
+              {receiptForm.policyNumber.trim() && !selectedReceiptAffiliate && (
+                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                  Poliza no encontrada en la base. Se puede guardar igual como recibo manual externo.
                 </p>
               )}
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
@@ -5887,7 +5910,7 @@ const ReceiptsList = ({
       </div>
     </div>
     <div className="mt-3 max-h-[680px] space-y-3 overflow-auto pr-1">
-      {receipts.slice().reverse().map((item) => {
+      {receipts.slice().sort(sortReceiptsByNumber).map((item) => {
         const paidMonths = item.paidMonths?.length ? item.paidMonths.map(monthLabel).join(" / ") : monthLabel(item.paidMonth);
         const isVoided = item.status === "anulado";
         return (
@@ -5897,6 +5920,7 @@ const ReceiptsList = ({
                 <strong>{item.fullName}</strong>
                 <p className="text-muted-foreground">Recibo {item.receiptNumber} · Póliza {item.policyNumber || "-"} · {item.plan}</p>
                 <p className="text-muted-foreground">{paidMonths} · {methodLabel(item.paymentMethod)} · {currency.format(item.monthlyAmount * item.monthCount)}</p>
+                <p className="text-xs text-muted-foreground">Fecha de carga: {item.loadedDate || "-"}</p>
                 {item.collector && <p className="text-xs text-muted-foreground">Cobrador: {item.collector}</p>}
                 {item.isProduction && <p className="mt-2 text-xs font-semibold uppercase text-amber-700">Produccion</p>}
                 {isVoided && <p className="mt-2 text-xs font-semibold uppercase text-red-700">Anulado</p>}
