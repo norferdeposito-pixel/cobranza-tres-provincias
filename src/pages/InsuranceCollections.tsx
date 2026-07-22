@@ -126,7 +126,7 @@ type CashMovement = {
   user: string;
   type: "ingreso" | "egreso";
   source: "SERVICIOS" | "PRE NECESIDAD" | "TRES PROVINCIAS" | "OTROS";
-  paymentMethod: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "OTRO";
+  paymentMethod: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "CHEQUE" | "OTRO";
   receiptType: string;
   receiptNumber: string;
   concept: string;
@@ -644,6 +644,13 @@ const emptyCashMovementForm = () => ({
   receiptNumber: "",
   concept: "",
   amount: "",
+  cashAmount: "",
+  cardAmount: "",
+  cardDetail: "",
+  transferAmount: "",
+  transferDetail: "",
+  checkAmount: "",
+  checkDetail: "",
   notes: "",
 });
 const emptyCashOpeningForm = () => ({
@@ -1942,6 +1949,7 @@ const InsuranceCollections = () => {
       cash: 0,
       card: 0,
       transfer: 0,
+      check: 0,
       other: 0,
     };
     visibleCashOpeningBalances.forEach((item) => {
@@ -1957,6 +1965,7 @@ const InsuranceCollections = () => {
       if (item.paymentMethod === "EFECTIVO") totals.cash += signed;
       if (item.paymentMethod === "TARJETA") totals.card += signed;
       if (item.paymentMethod === "TRANSFERENCIA") totals.transfer += signed;
+      if (item.paymentMethod === "CHEQUE") totals.check += signed;
       if (item.paymentMethod === "OTRO") totals.other += signed;
     });
     return totals;
@@ -1993,6 +2002,56 @@ const InsuranceCollections = () => {
     const office = isAdminUser ? cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
     if (!isAdminUser && !office) return;
     if (!cashMovementForm.date || amount <= 0) return;
+    const isCoachIncomeReceipt = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
+    if (isCoachIncomeReceipt) {
+      const paymentRows = [
+        { method: "EFECTIVO" as const, amount: parseMoney(cashMovementForm.cashAmount), detail: "" },
+        { method: "TARJETA" as const, amount: parseMoney(cashMovementForm.cardAmount), detail: cashMovementForm.cardDetail },
+        { method: "TRANSFERENCIA" as const, amount: parseMoney(cashMovementForm.transferAmount), detail: cashMovementForm.transferDetail },
+        { method: "CHEQUE" as const, amount: parseMoney(cashMovementForm.checkAmount), detail: cashMovementForm.checkDetail },
+      ].filter((row) => row.amount > 0);
+      const paymentTotal = paymentRows.reduce((sum, row) => sum + row.amount, 0);
+      if (paymentRows.length === 0) {
+        setCloudStatus("Cargá al menos un medio de pago para el recibo.");
+        return;
+      }
+      if (Math.abs(paymentTotal - amount) > 0.01) {
+        setCloudStatus(`La suma de los medios de pago (${currency.format(paymentTotal)}) no coincide con el total del recibo (${currency.format(amount)}).`);
+        return;
+      }
+      const receiptType = cashMovementForm.receiptType.trim().toLocaleUpperCase("es-AR") || "RECIBO";
+      const receiptNumber = cashMovementForm.receiptNumber.trim().toLocaleUpperCase("es-AR");
+      if (!receiptNumber) {
+        setCloudStatus("Cargá el número de recibo antes de guardar.");
+        return;
+      }
+      const baseConcept = cashMovementForm.source === "SERVICIOS" ? "COBRANZA DE SERVICIOS" : "PRE NECESIDAD";
+      const conceptDetail = cashMovementForm.concept.trim().toLocaleUpperCase("es-AR");
+      const receiptGroupId = `cash-receipt-${Date.now()}`;
+      const movements: CashMovement[] = paymentRows.map((row, index) => ({
+        id: `${receiptGroupId}-${index}`,
+        date: cashMovementForm.date,
+        month: cashMovementForm.date.slice(0, 7),
+        office,
+        shift: cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
+        user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+        type: "ingreso",
+        source: cashMovementForm.source,
+        paymentMethod: row.method,
+        receiptType,
+        receiptNumber,
+        concept: `${baseConcept}${conceptDetail ? ` - ${conceptDetail}` : ""} - RECIBO ${receiptNumber}`.toLocaleUpperCase("es-AR"),
+        amount: row.amount,
+        notes: [
+          row.detail ? `${row.method}: ${row.detail}` : "",
+          cashMovementForm.notes,
+        ].filter(Boolean).join(" | ").trim().toLocaleUpperCase("es-AR"),
+      }));
+      setCashMovements((current) => [...movements, ...current]);
+      setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+      setCloudStatus(`Recibo cargado: ${currency.format(amount)} distribuido en ${paymentRows.length} medio(s) de pago.`);
+      return;
+    }
     const movement: CashMovement = {
       id: `cash-${Date.now()}`,
       date: cashMovementForm.date,
@@ -2057,6 +2116,13 @@ const InsuranceCollections = () => {
 
   const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
   const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
+  const isCashCoachIncome = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
+  const cashPaymentBreakdownTotal = parseMoney(cashMovementForm.cashAmount)
+    + parseMoney(cashMovementForm.cardAmount)
+    + parseMoney(cashMovementForm.transferAmount)
+    + parseMoney(cashMovementForm.checkAmount);
+  const cashReceiptTotal = parseMoney(cashMovementForm.amount);
+  const cashBreakdownMatchesTotal = !isCashCoachIncome || (cashReceiptTotal > 0 && Math.abs(cashPaymentBreakdownTotal - cashReceiptTotal) <= 0.01);
 
   const printCashTurnReport = () => {
     const reportOffice = isAdminUser ? cashOfficeFilter : activeOffice;
@@ -2083,9 +2149,10 @@ const InsuranceCollections = () => {
       if (item.paymentMethod === "EFECTIVO") acc.cash += signed;
       if (item.paymentMethod === "TARJETA") acc.card += signed;
       if (item.paymentMethod === "TRANSFERENCIA") acc.transfer += signed;
+      if (item.paymentMethod === "CHEQUE") acc.check += signed;
       if (item.paymentMethod === "OTRO") acc.other += signed;
       return acc;
-    }, { income: 0, expense: 0, balance: 0, cash: 0, card: 0, transfer: 0, other: 0 });
+    }, { income: 0, expense: 0, balance: 0, cash: 0, card: 0, transfer: 0, check: 0, other: 0 });
     const openingTotal = openingRows.reduce((sum, item) => sum + item.amount, 0);
     const officeCollectors = reportOffice === "todos"
       ? officeNames.map(collectorForOffice).filter(Boolean)
@@ -2232,6 +2299,7 @@ const InsuranceCollections = () => {
             .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #0b5cad; padding-bottom: 12px; }
             .meta { text-align: right; font-size: 12px; }
             .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
+            .grid-payments { grid-template-columns: repeat(6, 1fr); }
             .box { border: 1px solid #cbd5e1; padding: 8px; min-height: 54px; }
             .label { color: #475569; font-size: 11px; text-transform: uppercase; }
             .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
@@ -2270,10 +2338,11 @@ const InsuranceCollections = () => {
             <div class="box"><div class="label">Saldo turno</div><div class="value">${currency.format(totals.balance)}</div></div>
             <div class="box"><div class="label">Saldo final</div><div class="value">${currency.format(openingTotal + totals.balance)}</div></div>
           </div>
-          <div class="grid">
+          <div class="grid grid-payments">
             <div class="box"><div class="label">Efectivo</div><div class="value">${currency.format(totals.cash)}</div></div>
             <div class="box"><div class="label">Tarjeta</div><div class="value">${currency.format(totals.card)}</div></div>
             <div class="box"><div class="label">Transferencia</div><div class="value">${currency.format(totals.transfer)}</div></div>
+            <div class="box"><div class="label">Cheque</div><div class="value">${currency.format(totals.check)}</div></div>
             <div class="box"><div class="label">Otro</div><div class="value">${currency.format(totals.other)}</div></div>
             <div class="box"><div class="label">Movimientos</div><div class="value">${movementRows.length}</div></div>
           </div>
@@ -4778,7 +4847,15 @@ const InsuranceCollections = () => {
                     <select
                       className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                       value={cashMovementForm.type}
-                      onChange={(event) => setCashMovementForm((current) => ({ ...current, type: event.target.value as CashMovement["type"], concept: "" }))}
+                      onChange={(event) => setCashMovementForm((current) => {
+                        const type = event.target.value as CashMovement["type"];
+                        return {
+                          ...current,
+                          type,
+                          source: type === "ingreso" ? "SERVICIOS" : current.source === "TRES PROVINCIAS" ? "OTROS" : current.source,
+                          concept: "",
+                        };
+                      })}
                     >
                       <option value="ingreso">Ingreso</option>
                       <option value="egreso">Egreso</option>
@@ -4789,21 +4866,32 @@ const InsuranceCollections = () => {
                   <div>
                     <Label>Origen</Label>
                     <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.source} onChange={(event) => setCashMovementForm((current) => ({ ...current, source: event.target.value as CashMovement["source"] }))}>
-                      <option value="SERVICIOS">Servicios</option>
-                      <option value="PRE NECESIDAD">Pre Necesidad</option>
-                      <option value="TRES PROVINCIAS">Tres Provincias</option>
-                      <option value="OTROS">Otros</option>
+                      {cashMovementForm.type === "ingreso" ? (
+                        <>
+                          <option value="SERVICIOS">Cobranza de servicios</option>
+                          <option value="PRE NECESIDAD">Pre Necesidad</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="SERVICIOS">Servicios</option>
+                          <option value="PRE NECESIDAD">Pre Necesidad</option>
+                          <option value="OTROS">Otros</option>
+                        </>
+                      )}
                     </select>
                   </div>
-                  <div>
-                    <Label>Medio de pago</Label>
-                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.paymentMethod} onChange={(event) => setCashMovementForm((current) => ({ ...current, paymentMethod: event.target.value as CashMovement["paymentMethod"] }))}>
-                      <option value="EFECTIVO">Efectivo</option>
-                      <option value="TARJETA">Tarjeta</option>
-                      <option value="TRANSFERENCIA">Transferencia</option>
-                      <option value="OTRO">Otro</option>
-                    </select>
-                  </div>
+                  {!isCashCoachIncome && (
+                    <div>
+                      <Label>Medio de pago</Label>
+                      <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.paymentMethod} onChange={(event) => setCashMovementForm((current) => ({ ...current, paymentMethod: event.target.value as CashMovement["paymentMethod"] }))}>
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="TARJETA">Tarjeta</option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                        <option value="CHEQUE">Cheque</option>
+                        <option value="OTRO">Otro</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -4833,9 +4921,57 @@ const InsuranceCollections = () => {
                   )}
                 </div>
                 <div>
-                  <Label>Monto</Label>
+                  <Label>{isCashCoachIncome ? "Total del recibo" : "Monto"}</Label>
                   <Input inputMode="decimal" value={cashMovementForm.amount} onChange={(event) => setCashMovementForm((current) => ({ ...current, amount: event.target.value }))} placeholder="$ 0" />
                 </div>
+                {isCashCoachIncome && (
+                  <div className="rounded-md border bg-surface-subtle p-3">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">Detalle de pago del recibo</p>
+                        <p className="text-xs text-muted-foreground">La suma debe coincidir con el total para poder guardar.</p>
+                      </div>
+                      <p className={`text-sm font-semibold ${cashBreakdownMatchesTotal ? "text-emerald-700" : "text-destructive"}`}>
+                        Suma medios: {currency.format(cashPaymentBreakdownTotal)}
+                      </p>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label>Efectivo</Label>
+                        <Input inputMode="decimal" value={cashMovementForm.cashAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, cashAmount: event.target.value }))} placeholder="$ 0" />
+                      </div>
+                      <div>
+                        <Label>Tarjeta</Label>
+                        <Input inputMode="decimal" value={cashMovementForm.cardAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, cardAmount: event.target.value }))} placeholder="$ 0" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label>Datos tarjeta</Label>
+                        <Input value={cashMovementForm.cardDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, cardDetail: event.target.value }))} placeholder="TARJETA / CUPON / LOTE / AUTORIZACION" />
+                      </div>
+                      <div>
+                        <Label>Transferencia / Mercado Pago</Label>
+                        <Input inputMode="decimal" value={cashMovementForm.transferAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, transferAmount: event.target.value }))} placeholder="$ 0" />
+                      </div>
+                      <div>
+                        <Label>Datos transferencia</Label>
+                        <Input value={cashMovementForm.transferDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, transferDetail: event.target.value }))} placeholder="COMPROBANTE / TITULAR / BANCO" />
+                      </div>
+                      <div>
+                        <Label>Cheque</Label>
+                        <Input inputMode="decimal" value={cashMovementForm.checkAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, checkAmount: event.target.value }))} placeholder="$ 0" />
+                      </div>
+                      <div>
+                        <Label>Datos cheque</Label>
+                        <Input value={cashMovementForm.checkDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, checkDetail: event.target.value }))} placeholder="BANCO / NRO CHEQUE / FECHA COBRO" />
+                      </div>
+                    </div>
+                    {!cashBreakdownMatchesTotal && cashReceiptTotal > 0 && (
+                      <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">
+                        LA SUMA DE LOS MEDIOS DE PAGO NO COINCIDE CON EL TOTAL DEL RECIBO.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <Label>Observación</Label>
                   {cashMovementForm.type === "egreso" && cashMovementForm.concept === "OTROS GASTOS" && (
@@ -4848,7 +4984,7 @@ const InsuranceCollections = () => {
                     required={cashMovementForm.type === "egreso" && cashMovementForm.concept === "OTROS GASTOS"}
                   />
                 </div>
-                <Button type="submit" variant="command">Agregar movimiento</Button>
+                <Button type="submit" variant="command" disabled={isCashCoachIncome && !cashBreakdownMatchesTotal}>Agregar movimiento</Button>
               </div>
             </form>
             </div>
@@ -4946,7 +5082,7 @@ const InsuranceCollections = () => {
                     Imprimir reporte
                   </Button>
                 </div>
-                <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-4">
+                <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-2 xl:grid-cols-5">
                   <div>
                     <p className="text-xs font-semibold uppercase text-muted-foreground">Efectivo</p>
                     <p className="text-lg font-semibold">{currency.format(cashTotals.cash)}</p>
@@ -4958,6 +5094,10 @@ const InsuranceCollections = () => {
                   <div>
                     <p className="text-xs font-semibold uppercase text-muted-foreground">Transferencia</p>
                     <p className="text-lg font-semibold">{currency.format(cashTotals.transfer)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Cheque</p>
+                    <p className="text-lg font-semibold">{currency.format(cashTotals.check)}</p>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase text-muted-foreground">Otro</p>
