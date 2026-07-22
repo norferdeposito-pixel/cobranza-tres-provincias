@@ -2114,6 +2114,34 @@ const InsuranceCollections = () => {
         planStats.set(affiliate.plan, current);
       });
     const planRows = Array.from(planStats.entries()).sort((a, b) => a[0].localeCompare(b[0], "es-AR", { numeric: true }));
+    const ticketMovementsByCollectionId = new Map(
+      movementRows
+        .filter((item) => item.source === "TRES PROVINCIAS" && item.receiptType === "TICKET" && item.relatedTicketCollectionId)
+        .map((item) => [item.relatedTicketCollectionId as string, item]),
+    );
+    const ticketRowsForTurn = ticketCollections
+      .filter((collection) => collection.month === activeMonth && ticketMovementsByCollectionId.has(collection.id))
+      .map((collection) => {
+        const affiliate = affiliateByIdForReport.get(collection.affiliateId);
+        const movement = ticketMovementsByCollectionId.get(collection.id);
+        return {
+          collection,
+          affiliate,
+          movement,
+          plan: collection.plan || affiliate?.plan || "-",
+          fullName: collection.fullName || affiliate?.fullName || "AFILIADO",
+          policyNumber: collection.policyNumber || affiliate?.policyNumber || "-",
+          amount: movement?.amount ?? ((affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged),
+        };
+      })
+      .sort((a, b) => `${a.plan}-${a.fullName}-${a.policyNumber}`.localeCompare(`${b.plan}-${b.fullName}-${b.policyNumber}`, "es-AR", { numeric: true }));
+    const receiptRowsForTurn = collectionReceipts
+      .filter((receipt) => receipt.collectionMonth === activeMonth)
+      .filter((receipt) => (receipt.loadedDate || "") === cashReportDate)
+      .filter((receipt) => !officeCollectorSet.size || officeCollectorSet.has(normalizeCollectorName(receipt.collector || "")))
+      .sort(sortReceiptsByNumber);
+    const ticketRowsTotal = ticketRowsForTurn.reduce((sum, row) => sum + row.amount, 0);
+    const receiptRowsTotal = receiptRowsForTurn.reduce((sum, receipt) => sum + receipt.monthCount * receipt.monthlyAmount, 0);
     const generatedAt = new Date().toLocaleString("es-AR");
     const reportWindow = window.open("", "_blank");
     if (!reportWindow) {
@@ -2148,6 +2176,34 @@ const InsuranceCollections = () => {
         </tr>
       `).join("")
       : `<tr><td colspan="6" class="empty">SIN TICKETS ASOCIADOS A ESTA OFICINA</td></tr>`;
+    const ticketDetailHtml = ticketRowsForTurn.length
+      ? ticketRowsForTurn.map(({ collection, movement, plan, fullName, policyNumber, amount }) => `
+        <tr>
+          <td>${escapeHtml(movement?.date || cashReportDate)}</td>
+          <td>${escapeHtml(movement?.shift || "-")}</td>
+          <td>${escapeHtml(fullName)}</td>
+          <td>${escapeHtml(policyNumber)}</td>
+          <td>${escapeHtml(plan)}</td>
+          <td class="right">${collection.ticketsCharged}</td>
+          <td>${collection.paymentMethod === "T" ? "TRANSFERENCIA" : "EFECTIVO"}</td>
+          <td class="right">${currency.format(amount)}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="8" class="empty">SIN TICKETS COBRADOS DE TRES PROVINCIAS PARA EL TURNO SELECCIONADO</td></tr>`;
+    const receiptDetailHtml = receiptRowsForTurn.length
+      ? receiptRowsForTurn.map((receipt) => `
+        <tr>
+          <td>${escapeHtml(receipt.loadedDate || "-")}</td>
+          <td>${escapeHtml(receipt.receiptNumber || "-")}</td>
+          <td>${escapeHtml(receipt.fullName)}</td>
+          <td>${escapeHtml(receipt.policyNumber || "-")}</td>
+          <td>${escapeHtml(receipt.plan)}</td>
+          <td>${escapeHtml(receipt.paidMonths?.length ? receipt.paidMonths.map(monthLabel).join(" / ") : monthLabel(receipt.paidMonth))}</td>
+          <td>${receipt.paymentMethod === "T" ? "TRANSFERENCIA" : "EFECTIVO"}</td>
+          <td class="right">${currency.format(receipt.monthCount * receipt.monthlyAmount)}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="8" class="empty">SIN RECIBOS DE TRES PROVINCIAS PARA EL TURNO SELECCIONADO</td></tr>`;
     const turnNotesHtml = turnNoteRows.length
       ? turnNoteRows.map((item) => `
         <tr>
@@ -2241,6 +2297,22 @@ const InsuranceCollections = () => {
               <tr><th>Plan</th><th>Tickets recibidos</th><th>Tickets cobrados</th><th>Tickets pendientes</th><th>Monto cobrado</th><th>Monto pendiente</th></tr>
             </thead>
             <tbody>${planHtml}</tbody>
+          </table>
+          <h2>TICKETS COBRADOS DE TRES PROVINCIAS</h2>
+          <p><strong>Total tickets:</strong> ${ticketRowsForTurn.reduce((sum, row) => sum + row.collection.ticketsCharged, 0)} Â· <strong>Monto:</strong> ${currency.format(ticketRowsTotal)}</p>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Turno</th><th>Afiliado</th><th>Poliza</th><th>Plan</th><th>Tickets</th><th>Medio</th><th>Monto</th></tr>
+            </thead>
+            <tbody>${ticketDetailHtml}</tbody>
+          </table>
+          <h2>RECIBOS COBRADOS DE TRES PROVINCIAS</h2>
+          <p><strong>Total recibos:</strong> ${new Set(receiptRowsForTurn.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size} Â· <strong>Monto:</strong> ${currency.format(receiptRowsTotal)}</p>
+          <table>
+            <thead>
+              <tr><th>Fecha carga</th><th>Recibo</th><th>Afiliado</th><th>Poliza</th><th>Plan</th><th>Meses</th><th>Medio</th><th>Monto</th></tr>
+            </thead>
+            <tbody>${receiptDetailHtml}</tbody>
           </table>
           <div class="signatures">
             <div class="signature">FIRMA TURNO SALIENTE</div>
