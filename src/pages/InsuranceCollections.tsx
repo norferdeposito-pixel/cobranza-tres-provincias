@@ -118,6 +118,7 @@ type Rendition = {
 
 type CashMovement = {
   id: string;
+  relatedTicketCollectionId?: string;
   date: string;
   month: string;
   office: string;
@@ -1147,7 +1148,7 @@ const InsuranceCollections = () => {
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
-  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[], nextNotes: AffiliateNote[] = notes) => {
+  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[], nextNotes: AffiliateNote[] = notes, nextCashMovements: CashMovement[] = cashMovements) => {
     setCloudStatus("Guardando tickets online...");
     const { data, error } = await supabase
       .from("app_snapshots")
@@ -1162,13 +1163,16 @@ const InsuranceCollections = () => {
     const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
     const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
     const onlineNotes = Array.isArray(onlineSnapshot.notes) ? onlineSnapshot.notes : [];
+    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
     const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
     const mergedNotes = mergeRowsById(onlineNotes, nextNotes);
+    const mergedCashMovements = mergeRowsById(onlineCashMovements, nextCashMovements);
     const snapshot = {
       ...buildCloudSnapshot(),
       ...onlineSnapshot,
       ticketCollections: mergedTicketCollections,
       notes: mergedNotes,
+      cashMovements: mergedCashMovements,
     };
 
     const { error: saveError } = await supabase
@@ -1180,6 +1184,7 @@ const InsuranceCollections = () => {
     }
     setTicketCollections(mergedTicketCollections);
     setNotes(mergedNotes);
+    setCashMovements(mergedCashMovements);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
@@ -1245,7 +1250,7 @@ const InsuranceCollections = () => {
     return true;
   };
 
-  const deleteTicketCollectionOnline = async (collectionId: string, nextTicketCollections: TicketCollection[]) => {
+  const deleteTicketCollectionOnline = async (collectionId: string, nextTicketCollections: TicketCollection[], nextCashMovements: CashMovement[] = cashMovements) => {
     setCloudStatus("Eliminando ticket online...");
     const { data, error } = await supabase
       .from("app_snapshots")
@@ -1259,14 +1264,20 @@ const InsuranceCollections = () => {
 
     const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
     const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
+    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
     const mergedTicketCollections = mergeRowsById(
       onlineTicketCollections.filter((item) => item.id !== collectionId),
       nextTicketCollections.filter((item) => item.id !== collectionId),
+    );
+    const mergedCashMovements = mergeRowsById(
+      onlineCashMovements.filter((item) => item.relatedTicketCollectionId !== collectionId),
+      nextCashMovements.filter((item) => item.relatedTicketCollectionId !== collectionId),
     );
     const snapshot = {
       ...buildCloudSnapshot(),
       ...onlineSnapshot,
       ticketCollections: mergedTicketCollections,
+      cashMovements: mergedCashMovements,
     };
 
     const { error: saveError } = await supabase
@@ -1277,6 +1288,7 @@ const InsuranceCollections = () => {
       return;
     }
     setTicketCollections(mergedTicketCollections);
+    setCashMovements(mergedCashMovements);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Ticket eliminado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
@@ -2612,6 +2624,35 @@ const InsuranceCollections = () => {
       : [...current, { month: activeMonth, affiliateId, tickets }]);
   };
 
+  const buildTicketCashMovement = (collection: TicketCollection, existingMovement?: CashMovement): CashMovement | null => {
+    const office = existingMovement?.office || activeOffice;
+    if (!office) return null;
+    if (!existingMovement && !isOfficeUser) return null;
+    const amount = (collection.ticketValue || 0) * collection.ticketsCharged;
+    if (amount <= 0) return null;
+    const date = existingMovement?.date || cashMovementForm.date || defaultCashDateForActiveMonth();
+    const receiptNumber = collection.paymentMethod === "T"
+      ? collection.transfer?.receiptNumber || collection.transfer?.transactionNumber || collection.policyNumber || collection.id
+      : collection.policyNumber || collection.id;
+    return {
+      id: existingMovement?.id || `cash-ticket-${collection.id}`,
+      relatedTicketCollectionId: collection.id,
+      date,
+      month: date.slice(0, 7),
+      office,
+      shift: existingMovement?.shift || cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
+      user: existingMovement?.user || (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      type: "ingreso",
+      source: "TRES PROVINCIAS",
+      paymentMethod: collection.paymentMethod === "T" ? "TRANSFERENCIA" : "EFECTIVO",
+      receiptType: "TICKET",
+      receiptNumber: String(receiptNumber).toLocaleUpperCase("es-AR"),
+      concept: `COBRO TRES PROVINCIAS - ${collection.fullName || "AFILIADO"} - POLIZA ${collection.policyNumber || "-"} - ${collection.ticketsCharged} TICKET(S)`.toLocaleUpperCase("es-AR"),
+      amount,
+      notes: collection.paymentMethod === "T" ? `TRANSFERENCIA ${collection.transfer?.transactionNumber || collection.transfer?.receiptNumber || ""}`.trim().toLocaleUpperCase("es-AR") : "",
+    };
+  };
+
   const saveTicketCollection = async (event: FormEvent) => {
     event.preventDefault();
     if (isSavingTicketCollection) return;
@@ -2657,9 +2698,18 @@ const InsuranceCollections = () => {
     const nextTicketCollections = editingTicketCollectionId
       ? ticketCollections.map((item) => item.id === editingTicketCollectionId ? payload : item)
       : [...ticketCollections, payload];
+    const existingCashMovement = cashMovements.find((item) => item.relatedTicketCollectionId === payload.id);
+    const ticketCashMovement = buildTicketCashMovement(payload, existingCashMovement);
+    const nextCashMovements = ticketCashMovement
+      ? [
+        ticketCashMovement,
+        ...cashMovements.filter((item) => item.relatedTicketCollectionId !== payload.id),
+      ]
+      : cashMovements;
     setTicketCollections((current) => editingTicketCollectionId
       ? current.map((item) => item.id === editingTicketCollectionId ? payload : item)
       : current.some((item) => item.id === payload.id) ? current : [...current, payload]);
+    if (ticketCashMovement) setCashMovements(nextCashMovements);
     setEditingTicketCollectionId(null);
     setCollectionTickets("1");
     setCollectionMethod("E");
@@ -2667,7 +2717,7 @@ const InsuranceCollections = () => {
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
     if (automaticNote) setNotes(nextNotes);
-    await saveTicketCollectionsOnline(nextTicketCollections, nextNotes);
+    await saveTicketCollectionsOnline(nextTicketCollections, nextNotes, nextCashMovements);
     setIsSavingTicketCollection(false);
   };
 
@@ -2699,9 +2749,11 @@ const InsuranceCollections = () => {
     if (!window.confirm("¿Eliminar este cobro de tickets? Esta acción corrige los totales y no se puede deshacer.")) return;
     setIsSavingTicketCollection(true);
     const nextTicketCollections = ticketCollections.filter((item) => item.id !== collectionId);
+    const nextCashMovements = cashMovements.filter((item) => item.relatedTicketCollectionId !== collectionId);
     setTicketCollections(nextTicketCollections);
+    setCashMovements(nextCashMovements);
     if (editingTicketCollectionId === collectionId) cancelTicketCollectionEdit();
-    await deleteTicketCollectionOnline(collectionId, nextTicketCollections);
+    await deleteTicketCollectionOnline(collectionId, nextTicketCollections, nextCashMovements);
     setIsSavingTicketCollection(false);
   };
 
