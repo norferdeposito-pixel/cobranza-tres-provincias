@@ -119,6 +119,7 @@ type Rendition = {
 type CashMovement = {
   id: string;
   relatedTicketCollectionId?: string;
+  relatedReceiptCollectionId?: string;
   date: string;
   month: string;
   office: string;
@@ -1122,7 +1123,7 @@ const InsuranceCollections = () => {
     await saveCloudSnapshot({ affiliates: nextAffiliates });
   };
 
-  const saveReceiptsOnline = async (nextReceipts: ReceiptCollection[]) => {
+  const saveReceiptsOnline = async (nextReceipts: ReceiptCollection[], nextCashMovements: CashMovement[] = cashMovements, replaceReceiptCashIds: string[] = []) => {
     setCloudStatus("Guardando recibos online...");
     const { data, error } = await supabase
       .from("app_snapshots")
@@ -1136,11 +1137,21 @@ const InsuranceCollections = () => {
 
     const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
     const onlineReceipts = Array.isArray(onlineSnapshot.receipts) ? onlineSnapshot.receipts : [];
-    const mergedReceipts = mergeRowsById(onlineReceipts, nextReceipts);
+    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
+    const replaceCashIds = new Set(replaceReceiptCashIds);
+    const mergedReceipts = mergeRowsById(
+      onlineReceipts.filter((receipt) => !replaceCashIds.has(receipt.id)),
+      nextReceipts,
+    );
+    const mergedCashMovements = mergeRowsById(
+      onlineCashMovements.filter((item) => !item.relatedReceiptCollectionId || !replaceCashIds.has(item.relatedReceiptCollectionId)),
+      nextCashMovements,
+    );
     const snapshot = {
       ...buildCloudSnapshot(),
       ...onlineSnapshot,
       receipts: mergedReceipts,
+      cashMovements: mergedCashMovements,
     };
 
     const { error: saveError } = await supabase
@@ -1151,6 +1162,7 @@ const InsuranceCollections = () => {
       return;
     }
     setReceipts(mergedReceipts);
+    setCashMovements(mergedCashMovements);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
@@ -2938,6 +2950,33 @@ const InsuranceCollections = () => {
     };
   };
 
+  const buildReceiptCashMovement = (receipt: ReceiptCollection, existingMovement?: CashMovement): CashMovement | null => {
+    if (receipt.status === "anulado" || receipt.isProduction) return null;
+    const amount = receipt.monthCount * receipt.monthlyAmount;
+    if (amount <= 0) return null;
+    const office = existingMovement?.office || activeOffice || officeFromCollector(receipt.collector || "") || cashMovementForm.office.trim().toLocaleUpperCase("es-AR");
+    if (!office) return null;
+    if (!existingMovement && !isOfficeUser) return null;
+    const date = receipt.loadedDate || existingMovement?.date || defaultCashDateForActiveMonth();
+    return {
+      id: existingMovement?.id || `cash-receipt-tp-${receipt.id}`,
+      relatedReceiptCollectionId: receipt.id,
+      date,
+      month: date.slice(0, 7),
+      office,
+      shift: existingMovement?.shift || cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
+      user: existingMovement?.user || (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      type: "ingreso",
+      source: "TRES PROVINCIAS",
+      paymentMethod: receipt.paymentMethod === "T" ? "TRANSFERENCIA" : "EFECTIVO",
+      receiptType: "RECIBO",
+      receiptNumber: String(receipt.receiptNumber || receipt.id).toLocaleUpperCase("es-AR"),
+      concept: `RECIBO TRES PROVINCIAS - ${receipt.fullName || "AFILIADO"} - POLIZA ${receipt.policyNumber || "-"} - ${receipt.monthCount} MES(ES)`.toLocaleUpperCase("es-AR"),
+      amount,
+      notes: receipt.paymentMethod === "T" ? `TRANSFERENCIA ${receipt.transfer?.transactionNumber || receipt.transfer?.receiptNumber || ""}`.trim().toLocaleUpperCase("es-AR") : "",
+    };
+  };
+
   const saveTicketCollection = async (event: FormEvent) => {
     event.preventDefault();
     if (isSavingTicketCollection) return;
@@ -3125,23 +3164,31 @@ const InsuranceCollections = () => {
     });
   };
 
-  const voidReceipt = (receiptId: string) => {
+  const voidReceipt = async (receiptId: string) => {
     if (!isAdminUser) return;
     if (!window.confirm("¿Anular este recibo? Quedará visible, pero no sumará en totales ni rendición.")) return;
-    setReceipts((current) => current.map((receipt) => receipt.id === receiptId ? {
+    const nextReceipts: ReceiptCollection[] = receipts.map((receipt) => receipt.id === receiptId ? {
       ...receipt,
-      status: "anulado",
+      status: "anulado" as const,
       voidedAt: new Date().toISOString(),
       voidReason: "ANULADO POR ADMINISTRADOR",
-    } : receipt));
+    } : receipt);
+    const nextCashMovements = cashMovements.filter((item) => item.relatedReceiptCollectionId !== receiptId);
+    setReceipts(nextReceipts);
+    setCashMovements(nextCashMovements);
     if (editingReceiptId === receiptId) resetReceiptForm();
+    await saveReceiptsOnline(nextReceipts, nextCashMovements, [receiptId]);
   };
 
-  const deleteReceipt = (receiptId: string) => {
+  const deleteReceipt = async (receiptId: string) => {
     if (!isAdminUser) return;
     if (!window.confirm("¿Eliminar definitivamente este recibo? Esta acción no se puede deshacer.")) return;
-    setReceipts((current) => current.filter((receipt) => receipt.id !== receiptId));
+    const nextReceipts = receipts.filter((receipt) => receipt.id !== receiptId);
+    const nextCashMovements = cashMovements.filter((item) => item.relatedReceiptCollectionId !== receiptId);
+    setReceipts(nextReceipts);
+    setCashMovements(nextCashMovements);
     if (editingReceiptId === receiptId) resetReceiptForm();
+    await saveReceiptsOnline(nextReceipts, nextCashMovements, [receiptId]);
   };
 
   const saveReceipt = async (event: FormEvent) => {
@@ -3175,11 +3222,20 @@ const InsuranceCollections = () => {
     const nextReceipts = editingReceiptId
       ? receipts.map((receipt) => receipt.id === editingReceiptId ? receiptPayload : receipt)
       : [...receipts, receiptPayload];
+    const existingCashMovement = cashMovements.find((item) => item.relatedReceiptCollectionId === receiptPayload.id);
+    const receiptCashMovement = buildReceiptCashMovement(receiptPayload, existingCashMovement);
+    const nextCashMovements = receiptCashMovement
+      ? [
+        receiptCashMovement,
+        ...cashMovements.filter((item) => item.relatedReceiptCollectionId !== receiptPayload.id),
+      ]
+      : cashMovements.filter((item) => item.relatedReceiptCollectionId !== receiptPayload.id);
     setReceipts((current) => editingReceiptId
       ? current.map((receipt) => receipt.id === editingReceiptId ? receiptPayload : receipt)
       : current.some((receipt) => receipt.id === receiptPayload.id) ? current : [...current, receiptPayload]);
+    setCashMovements(nextCashMovements);
     resetReceiptForm();
-    await saveReceiptsOnline(nextReceipts);
+    await saveReceiptsOnline(nextReceipts, nextCashMovements, [receiptPayload.id]);
     setIsSavingReceipt(false);
   };
 
