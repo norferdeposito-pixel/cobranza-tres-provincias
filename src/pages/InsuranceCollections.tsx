@@ -637,7 +637,7 @@ const emptyTransferForm = emptyTransfer;
 const emptyCashMovementForm = () => ({
   date: today(),
   office: "",
-  shift: "",
+  shift: "MAÑANA",
   type: "ingreso" as CashMovement["type"],
   source: "SERVICIOS" as CashMovement["source"],
   paymentMethod: "EFECTIVO" as CashMovement["paymentMethod"],
@@ -663,7 +663,7 @@ const emptyCashOpeningForm = () => ({
 const emptyCashTurnNoteForm = () => ({
   date: today(),
   office: "",
-  shift: "",
+  shift: "MAÑANA",
   entryType: "NOVEDAD" as CashTurnNote["entryType"],
   text: "",
 });
@@ -683,6 +683,8 @@ const cashExpenseConcepts = [
   "PRODUCCIONES",
   "OTROS GASTOS",
 ];
+const cashShiftOptions = ["MAÑANA", "MAÑANA/TARDE", "TARDE", "TARDE/NOCHE", "NOCHE"];
+const cashShiftOrder = new Map(cashShiftOptions.map((shift, index) => [shift, index + 1]));
 const userRoleOptions = [
   { value: "cobrador", label: "Cobrador" },
   { value: "oficina", label: "Oficina" },
@@ -711,7 +713,7 @@ const InsuranceCollections = () => {
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [cashReportDate, setCashReportDate] = useState(today());
-  const [cashReportShift, setCashReportShift] = useState("");
+  const [cashReportShift, setCashReportShift] = useState("MAÑANA");
   const [rendition, setRendition] = useState<Rendition>(() => {
     const stored = loadStorage<any>(renditionStorageKey, { cashRenders: [], transferRenders: [] });
     return {
@@ -2282,20 +2284,33 @@ const InsuranceCollections = () => {
 
   const printCashTurnReport = () => {
     const reportOffice = isAdminUser ? cashOfficeFilter : activeOffice;
-    const normalizedShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
+    const normalizedShift = cashShiftOptions.includes(cashReportShift.trim().toLocaleUpperCase("es-AR"))
+      ? cashReportShift.trim().toLocaleUpperCase("es-AR")
+      : cashShiftOptions[0];
+    const selectedShiftOrder = cashShiftOrder.get(normalizedShift) || 0;
     const officeLabel = reportOffice === "todos" ? "TODAS LAS OFICINAS" : reportOffice || "SIN OFICINA";
+    const isSameOffice = (office: string) => reportOffice === "todos" || office === reportOffice;
+    const isBeforeSelectedTurn = (item: CashMovement) => {
+      if (item.date < cashReportDate) return true;
+      if (item.date > cashReportDate) return false;
+      const itemShiftOrder = cashShiftOrder.get((item.shift || "").trim().toLocaleUpperCase("es-AR")) || 0;
+      return itemShiftOrder > 0 && itemShiftOrder < selectedShiftOrder;
+    };
     const movementRows = cashMovements
       .filter((item) => item.date === cashReportDate)
-      .filter((item) => reportOffice === "todos" || item.office === reportOffice)
-      .filter((item) => !normalizedShift || item.shift === normalizedShift)
+      .filter((item) => isSameOffice(item.office))
+      .filter((item) => item.shift === normalizedShift)
       .sort((a, b) => `${a.office}-${a.shift}-${a.id}`.localeCompare(`${b.office}-${b.shift}-${b.id}`, "es-AR"));
     const openingRows = cashOpeningBalances
-      .filter((item) => item.month === activeMonth)
-      .filter((item) => reportOffice === "todos" || item.office === reportOffice);
+      .filter((item) => item.date <= cashReportDate)
+      .filter((item) => isSameOffice(item.office));
+    const previousMovementRows = cashMovements
+      .filter((item) => isSameOffice(item.office))
+      .filter(isBeforeSelectedTurn);
     const turnNoteRows = cashTurnNotes
       .filter((item) => item.date === cashReportDate)
-      .filter((item) => reportOffice === "todos" || item.office === reportOffice)
-      .filter((item) => !normalizedShift || item.shift === normalizedShift)
+      .filter((item) => isSameOffice(item.office))
+      .filter((item) => item.shift === normalizedShift)
       .sort((a, b) => `${a.office}-${a.shift}-${a.createdAt}`.localeCompare(`${b.office}-${b.shift}-${b.createdAt}`, "es-AR"));
     const totals = movementRows.reduce((acc, item) => {
       const signed = item.type === "ingreso" ? item.amount : -item.amount;
@@ -2310,6 +2325,9 @@ const InsuranceCollections = () => {
       return acc;
     }, { income: 0, expense: 0, balance: 0, cash: 0, card: 0, transfer: 0, check: 0, other: 0 });
     const openingTotal = openingRows.reduce((sum, item) => sum + item.amount, 0);
+    const previousMovementsBalance = previousMovementRows.reduce((sum, item) => sum + (item.type === "ingreso" ? item.amount : -item.amount), 0);
+    const previousBalance = openingTotal + previousMovementsBalance;
+    const finalBalance = previousBalance + totals.balance;
     const officeCollectors = reportOffice === "todos"
       ? officeNames.map(collectorForOffice).filter(Boolean)
       : [collectorForOffice(reportOffice)].filter(Boolean);
@@ -2358,10 +2376,14 @@ const InsuranceCollections = () => {
         };
       })
       .sort((a, b) => `${a.plan}-${a.fullName}-${a.policyNumber}`.localeCompare(`${b.plan}-${b.fullName}-${b.policyNumber}`, "es-AR", { numeric: true }));
+    const receiptMovementsByReceiptId = new Map(
+      movementRows
+        .filter((item) => item.source === "TRES PROVINCIAS" && item.receiptType === "RECIBO" && item.relatedReceiptCollectionId)
+        .map((item) => [item.relatedReceiptCollectionId as string, item]),
+    );
     const receiptRowsForTurn = collectionReceipts
       .filter((receipt) => receipt.collectionMonth === activeMonth)
-      .filter((receipt) => (receipt.loadedDate || "") === cashReportDate)
-      .filter((receipt) => !officeCollectorSet.size || officeCollectorSet.has(normalizeCollectorName(receipt.collector || "")))
+      .filter((receipt) => receiptMovementsByReceiptId.has(receipt.id))
       .sort(sortReceiptsByNumber);
     const ticketRowsTotal = ticketRowsForTurn.reduce((sum, row) => sum + row.amount, 0);
     const receiptRowsTotal = receiptRowsForTurn.reduce((sum, receipt) => sum + receipt.monthCount * receipt.monthlyAmount, 0);
@@ -2479,7 +2501,7 @@ const InsuranceCollections = () => {
             <div>
               <h1>REPORTE DE TURNO - CAJA</h1>
               <p><strong>Oficina:</strong> ${escapeHtml(officeLabel)}</p>
-              <p><strong>Fecha:</strong> ${escapeHtml(cashReportDate)} · <strong>Turno:</strong> ${escapeHtml(normalizedShift || "TODOS")}</p>
+              <p><strong>Fecha:</strong> ${escapeHtml(cashReportDate)} · <strong>Turno:</strong> ${escapeHtml(normalizedShift)}</p>
             </div>
             <div class="meta">
               <p><strong>Generado:</strong> ${escapeHtml(generatedAt)}</p>
@@ -2488,11 +2510,11 @@ const InsuranceCollections = () => {
             </div>
           </div>
           <div class="grid">
-            <div class="box"><div class="label">Saldo inicial</div><div class="value">${currency.format(openingTotal)}</div></div>
+            <div class="box"><div class="label">Saldo anterior</div><div class="value">${currency.format(previousBalance)}</div></div>
             <div class="box"><div class="label">Ingresos turno</div><div class="value">${currency.format(totals.income)}</div></div>
             <div class="box"><div class="label">Egresos turno</div><div class="value">${currency.format(totals.expense)}</div></div>
             <div class="box"><div class="label">Saldo turno</div><div class="value">${currency.format(totals.balance)}</div></div>
-            <div class="box"><div class="label">Saldo final</div><div class="value">${currency.format(openingTotal + totals.balance)}</div></div>
+            <div class="box"><div class="label">Saldo final</div><div class="value">${currency.format(finalBalance)}</div></div>
           </div>
           <div class="grid grid-payments">
             <div class="box"><div class="label">Efectivo</div><div class="value">${currency.format(totals.cash)}</div></div>
@@ -5040,7 +5062,13 @@ const InsuranceCollections = () => {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label>Turno</Label>
-                    <Input value={cashMovementForm.shift} onChange={(event) => setCashMovementForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MAÑANA" />
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={cashMovementForm.shift}
+                      onChange={(event) => setCashMovementForm((current) => ({ ...current, shift: event.target.value }))}
+                    >
+                      {cashShiftOptions.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                    </select>
                   </div>
                   <div>
                     <Label>Tipo</Label>
@@ -5211,7 +5239,13 @@ const InsuranceCollections = () => {
                   </div>
                   <div>
                     <Label>Turno</Label>
-                    <Input value={cashTurnNoteForm.shift} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))} placeholder="EJ: MANANA" />
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={cashTurnNoteForm.shift}
+                      onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, shift: event.target.value }))}
+                    >
+                      {cashShiftOptions.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                    </select>
                   </div>
                   <div>
                     <Label>Tipo</Label>
@@ -5258,12 +5292,14 @@ const InsuranceCollections = () => {
                     onChange={(event) => setCashReportDate(event.target.value)}
                     title="Fecha del reporte"
                   />
-                  <Input
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={cashReportShift}
-                    onChange={(event) => setCashReportShift(event.target.value.toLocaleUpperCase("es-AR"))}
-                    placeholder="TURNO"
+                    onChange={(event) => setCashReportShift(event.target.value)}
                     title="Turno del reporte"
-                  />
+                  >
+                    {cashShiftOptions.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                  </select>
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={isAdminUser ? cashOfficeFilter : activeOffice}
