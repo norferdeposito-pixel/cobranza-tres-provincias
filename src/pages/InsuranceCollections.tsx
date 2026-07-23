@@ -1196,6 +1196,141 @@ const InsuranceCollections = () => {
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const saveCashMovementsOnline = async (nextCashMovements: CashMovement[], successMessage = "Caja guardada online") => {
+    setCloudStatus("Guardando caja online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo guardar caja online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
+    const mergedCashMovements = mergeRowsById(onlineCashMovements, nextCashMovements);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      cashMovements: mergedCashMovements,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo guardar caja online: ${saveError.message}`);
+      return;
+    }
+    setCashMovements(mergedCashMovements);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
+  const deleteCashMovementOnline = async (movementId: string, nextCashMovements: CashMovement[]) => {
+    setCloudStatus("Eliminando movimiento de caja online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo eliminar caja online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
+    const mergedCashMovements = mergeRowsById(
+      onlineCashMovements.filter((item) => item.id !== movementId),
+      nextCashMovements.filter((item) => item.id !== movementId),
+    );
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      cashMovements: mergedCashMovements,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo eliminar caja online: ${saveError.message}`);
+      return;
+    }
+    setCashMovements(mergedCashMovements);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`Movimiento de caja eliminado online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
+  const saveCashOpeningBalancesOnline = async (nextOpeningBalances: CashOpeningBalance[], successMessage = "Saldo inicial guardado online") => {
+    setCloudStatus("Guardando saldo inicial online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo guardar saldo inicial online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineOpeningBalances = Array.isArray(onlineSnapshot.cashOpeningBalances) ? onlineSnapshot.cashOpeningBalances : [];
+    const mergedOpeningBalances = mergeRowsById(onlineOpeningBalances, nextOpeningBalances);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      cashOpeningBalances: mergedOpeningBalances,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo guardar saldo inicial online: ${saveError.message}`);
+      return;
+    }
+    setCashOpeningBalances(mergedOpeningBalances);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
+  const saveCashTurnNotesOnline = async (nextTurnNotes: CashTurnNote[], successMessage = "Novedad de turno guardada online") => {
+    setCloudStatus("Guardando novedades de turno online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudieron guardar novedades de turno online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineTurnNotes = Array.isArray(onlineSnapshot.cashTurnNotes) ? onlineSnapshot.cashTurnNotes : [];
+    const mergedTurnNotes = mergeRowsById(onlineTurnNotes, nextTurnNotes);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      cashTurnNotes: mergedTurnNotes,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudieron guardar novedades de turno online: ${saveError.message}`);
+      return;
+    }
+    setCashTurnNotes(mergedTurnNotes);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
   const saveTicketReturnControlsOnline = async (nextControls: TicketReturnControl[]) => {
     setCloudStatus("Guardando control de devolucion online...");
     const { data, error } = await supabase
@@ -1971,7 +2106,7 @@ const InsuranceCollections = () => {
     return totals;
   }, [visibleCashMovements, visibleCashOpeningBalances]);
 
-  const saveCashOpeningBalance = (event: FormEvent) => {
+  const saveCashOpeningBalance = async (event: FormEvent) => {
     event.preventDefault();
     const amount = parseMoney(cashOpeningForm.amount);
     const office = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
@@ -1992,11 +2127,13 @@ const InsuranceCollections = () => {
       amount,
       notes: cashOpeningForm.notes.trim().toLocaleUpperCase("es-AR"),
     };
-    setCashOpeningBalances((current) => [opening, ...current]);
+    const nextOpeningBalances = [opening, ...cashOpeningBalances];
+    setCashOpeningBalances(nextOpeningBalances);
     setCashOpeningForm((current) => ({ ...emptyCashOpeningForm(), date: defaultCashDateForActiveMonth(), office: current.office }));
+    await saveCashOpeningBalancesOnline(nextOpeningBalances);
   };
 
-  const saveCashMovement = (event: FormEvent) => {
+  const saveCashMovement = async (event: FormEvent) => {
     event.preventDefault();
     const amount = parseMoney(cashMovementForm.amount);
     const office = isAdminUser ? cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
@@ -2047,9 +2184,10 @@ const InsuranceCollections = () => {
           cashMovementForm.notes,
         ].filter(Boolean).join(" | ").trim().toLocaleUpperCase("es-AR"),
       }));
-      setCashMovements((current) => [...movements, ...current]);
+      const nextCashMovements = [...movements, ...cashMovements];
+      setCashMovements(nextCashMovements);
       setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
-      setCloudStatus(`Recibo cargado: ${currency.format(amount)} distribuido en ${paymentRows.length} medio(s) de pago.`);
+      await saveCashMovementsOnline(nextCashMovements, `Recibo cargado: ${currency.format(amount)} distribuido en ${paymentRows.length} medio(s) de pago. Sincronizado online`);
       return;
     }
     const movement: CashMovement = {
@@ -2068,16 +2206,20 @@ const InsuranceCollections = () => {
       amount,
       notes: cashMovementForm.notes.trim().toLocaleUpperCase("es-AR"),
     };
-    setCashMovements((current) => [movement, ...current]);
+    const nextCashMovements = [movement, ...cashMovements];
+    setCashMovements(nextCashMovements);
     setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+    await saveCashMovementsOnline(nextCashMovements, "Movimiento de caja guardado online");
   };
 
-  const deleteCashMovement = (id: string) => {
+  const deleteCashMovement = async (id: string) => {
     if (!window.confirm("Eliminar este movimiento de caja?")) return;
-    setCashMovements((current) => current.filter((item) => item.id !== id));
+    const nextCashMovements = cashMovements.filter((item) => item.id !== id);
+    setCashMovements(nextCashMovements);
+    await deleteCashMovementOnline(id, nextCashMovements);
   };
 
-  const saveCashTurnNote = (event: FormEvent) => {
+  const saveCashTurnNote = async (event: FormEvent) => {
     event.preventDefault();
     const office = isAdminUser ? cashTurnNoteForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
     const text = cashTurnNoteForm.text.trim().toLocaleUpperCase("es-AR");
@@ -2095,8 +2237,10 @@ const InsuranceCollections = () => {
       completed: false,
       createdAt: new Date().toISOString(),
     };
-    setCashTurnNotes((current) => [note, ...current]);
+    const nextTurnNotes = [note, ...cashTurnNotes];
+    setCashTurnNotes(nextTurnNotes);
     setCashTurnNoteForm((current) => ({ ...emptyCashTurnNoteForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+    await saveCashTurnNotesOnline(nextTurnNotes);
   };
 
   const deleteCashTurnNote = (id: string) => {
