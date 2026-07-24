@@ -900,7 +900,7 @@ const InsuranceCollections = () => {
     await saveActiveSession(office);
   };
 
-  const defaultCashDateForActiveMonth = () => activeMonth === currentMonth() ? today() : `${activeMonth}-01`;
+  const defaultCashDateForActiveMonth = () => today();
 
   useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
