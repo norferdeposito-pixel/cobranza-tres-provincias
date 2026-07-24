@@ -1530,13 +1530,13 @@ const InsuranceCollections = () => {
     return normalizeCollectorName(collection.collector || "") === currentCollectorName;
   };
   const canSeeReceiptInCobranza = (receipt: ReceiptCollection) => {
-    if (hasOfficeCollectorScope && normalizeCollectorName(receipt.collector || "") !== officeCollectorScope) return false;
+    const receiptCollector = normalizeCollectorName(receipt.collector || "");
+    if (hasOfficeCollectorScope) return receiptCollector === officeCollectorScope;
     const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
       || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
-    if (hasOfficeCollectorScope) return normalizeCollectorName(receipt.collector || "") === officeCollectorScope;
     if (isOfficeUser) return isAdminUser;
-    return normalizeCollectorName(receipt.collector || "") === currentCollectorName;
+    return receiptCollector === currentCollectorName;
   };
   const activeReceipts = useMemo(() => receipts.filter((receipt) => receipt.status !== "anulado"), [receipts]);
   const collectionReceipts = useMemo(() => activeReceipts.filter((receipt) => !receipt.isProduction), [activeReceipts]);
@@ -2290,13 +2290,99 @@ const InsuranceCollections = () => {
     const selectedShiftOrder = cashShiftOrder.get(normalizedShift) || 0;
     const officeLabel = reportOffice === "todos" ? "TODAS LAS OFICINAS" : reportOffice || "SIN OFICINA";
     const isSameOffice = (office: string) => reportOffice === "todos" || office === reportOffice;
+    const officeCollectors = reportOffice === "todos"
+      ? officeNames.map(collectorForOffice).filter(Boolean)
+      : [collectorForOffice(reportOffice)].filter(Boolean);
+    const officeCollectorSet = new Set(officeCollectors.map(normalizeCollectorName));
+    const collectorMatchesReportOffice = (collector?: string) => {
+      const normalizedCollector = normalizeCollectorName(collector || "");
+      if (!officeCollectorSet.size) return true;
+      return officeCollectorSet.has(normalizedCollector);
+    };
+    const reportOfficeForCollector = (collector?: string) => {
+      const office = officeFromCollector(collector || "");
+      if (office) return office;
+      return reportOffice === "todos" ? "" : reportOffice;
+    };
+    const existingTicketCashIds = new Set(
+      cashMovements
+        .filter((item) => item.relatedTicketCollectionId)
+        .map((item) => item.relatedTicketCollectionId as string),
+    );
+    const existingReceiptCashIds = new Set(
+      cashMovements
+        .filter((item) => item.relatedReceiptCollectionId)
+        .map((item) => item.relatedReceiptCollectionId as string),
+    );
+    const fallbackTicketMovements: CashMovement[] = ticketCollections
+      .filter((collection) => collection.month === activeMonth)
+      .filter((collection) => !existingTicketCashIds.has(collection.id))
+      .filter((collection) => collectorMatchesReportOffice(collection.collector))
+      .map((collection): CashMovement | null => {
+        const affiliate = affiliatesById.get(collection.affiliateId);
+        const office = reportOfficeForCollector(collection.collector || affiliate?.collector || "");
+        const amount = (collection.ticketValue || affiliate?.value || 0) * collection.ticketsCharged;
+        if (!office || amount <= 0) return null;
+        return {
+          id: `cash-ticket-report-${collection.id}`,
+          relatedTicketCollectionId: collection.id,
+          date: cashReportDate,
+          month: cashReportDate.slice(0, 7),
+          office,
+          shift: normalizedShift,
+          user: "SISTEMA",
+          type: "ingreso" as const,
+          source: "TRES PROVINCIAS" as const,
+          paymentMethod: collection.paymentMethod === "T" ? "TRANSFERENCIA" as const : "EFECTIVO" as const,
+          receiptType: "TICKET",
+          receiptNumber: String(collection.policyNumber || collection.id).toLocaleUpperCase("es-AR"),
+          concept: `COBRO TRES PROVINCIAS - ${collection.fullName || affiliate?.fullName || "AFILIADO"} - POLIZA ${collection.policyNumber || affiliate?.policyNumber || "-"} - ${collection.ticketsCharged} TICKET(S)`.toLocaleUpperCase("es-AR"),
+          amount,
+          notes: "MOVIMIENTO RECONSTRUIDO PARA REPORTE",
+        };
+      })
+      .filter((item): item is CashMovement => !!item);
+    const fallbackReceiptMovements: CashMovement[] = collectionReceipts
+      .filter((receipt) => receipt.collectionMonth === activeMonth)
+      .filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction)
+      .filter((receipt) => !existingReceiptCashIds.has(receipt.id))
+      .filter((receipt) => collectorMatchesReportOffice(receipt.collector))
+      .map((receipt): CashMovement | null => {
+        const office = reportOfficeForCollector(receipt.collector);
+        const date = receipt.loadedDate || cashReportDate;
+        const amount = receipt.monthCount * receipt.monthlyAmount;
+        if (!office || amount <= 0) return null;
+        return {
+          id: `cash-receipt-report-${receipt.id}`,
+          relatedReceiptCollectionId: receipt.id,
+          date,
+          month: date.slice(0, 7),
+          office,
+          shift: normalizedShift,
+          user: "SISTEMA",
+          type: "ingreso" as const,
+          source: "TRES PROVINCIAS" as const,
+          paymentMethod: receipt.paymentMethod === "T" ? "TRANSFERENCIA" as const : "EFECTIVO" as const,
+          receiptType: "RECIBO",
+          receiptNumber: String(receipt.receiptNumber || receipt.id).toLocaleUpperCase("es-AR"),
+          concept: `RECIBO TRES PROVINCIAS - ${receipt.fullName || "AFILIADO"} - POLIZA ${receipt.policyNumber || "-"} - ${receipt.monthCount} MES(ES)`.toLocaleUpperCase("es-AR"),
+          amount,
+          notes: "MOVIMIENTO RECONSTRUIDO PARA REPORTE",
+        };
+      })
+      .filter((item): item is CashMovement => !!item);
+    const reportCashMovements = [
+      ...cashMovements,
+      ...fallbackTicketMovements,
+      ...fallbackReceiptMovements,
+    ];
     const isBeforeSelectedTurn = (item: CashMovement) => {
       if (item.date < cashReportDate) return true;
       if (item.date > cashReportDate) return false;
       const itemShiftOrder = cashShiftOrder.get((item.shift || "").trim().toLocaleUpperCase("es-AR")) || 0;
       return itemShiftOrder > 0 && itemShiftOrder < selectedShiftOrder;
     };
-    const movementRows = cashMovements
+    const movementRows = reportCashMovements
       .filter((item) => item.date === cashReportDate)
       .filter((item) => isSameOffice(item.office))
       .filter((item) => item.shift === normalizedShift)
@@ -2304,7 +2390,7 @@ const InsuranceCollections = () => {
     const openingRows = cashOpeningBalances
       .filter((item) => item.date <= cashReportDate)
       .filter((item) => isSameOffice(item.office));
-    const previousMovementRows = cashMovements
+    const previousMovementRows = reportCashMovements
       .filter((item) => isSameOffice(item.office))
       .filter(isBeforeSelectedTurn);
     const turnNoteRows = cashTurnNotes
@@ -2328,10 +2414,6 @@ const InsuranceCollections = () => {
     const previousMovementsBalance = previousMovementRows.reduce((sum, item) => sum + (item.type === "ingreso" ? item.amount : -item.amount), 0);
     const previousBalance = openingTotal + previousMovementsBalance;
     const finalBalance = previousBalance + totals.balance;
-    const officeCollectors = reportOffice === "todos"
-      ? officeNames.map(collectorForOffice).filter(Boolean)
-      : [collectorForOffice(reportOffice)].filter(Boolean);
-    const officeCollectorSet = new Set(officeCollectors.map(normalizeCollectorName));
     const affiliateByIdForReport = new Map(affiliates.map((item) => [item.id, item]));
     const planStats = new Map<string, { received: number; charged: number; pending: number; chargedAmount: number; pendingAmount: number }>();
     monthlyItems
@@ -2944,9 +3026,9 @@ const InsuranceCollections = () => {
   };
 
   const buildTicketCashMovement = (collection: TicketCollection, existingMovement?: CashMovement): CashMovement | null => {
-    const office = existingMovement?.office || activeOffice;
+    const office = existingMovement?.office || activeOffice || officeFromCollector(collection.collector || "") || cashMovementForm.office.trim().toLocaleUpperCase("es-AR");
     if (!office) return null;
-    if (!existingMovement && !isOfficeUser) return null;
+    if (!existingMovement && !isOfficeUser && !isAdminUser) return null;
     const amount = (collection.ticketValue || 0) * collection.ticketsCharged;
     if (amount <= 0) return null;
     const date = existingMovement?.date || cashMovementForm.date || defaultCashDateForActiveMonth();
@@ -2978,7 +3060,7 @@ const InsuranceCollections = () => {
     if (amount <= 0) return null;
     const office = existingMovement?.office || activeOffice || officeFromCollector(receipt.collector || "") || cashMovementForm.office.trim().toLocaleUpperCase("es-AR");
     if (!office) return null;
-    if (!existingMovement && !isOfficeUser) return null;
+    if (!existingMovement && !isOfficeUser && !isAdminUser) return null;
     const date = receipt.loadedDate || existingMovement?.date || defaultCashDateForActiveMonth();
     return {
       id: existingMovement?.id || `cash-receipt-tp-${receipt.id}`,
