@@ -2294,7 +2294,54 @@ const InsuranceCollections = () => {
       ? officeNames.map(collectorForOffice).filter(Boolean)
       : [collectorForOffice(reportOffice)].filter(Boolean);
     const officeCollectorSet = new Set(officeCollectors.map(normalizeCollectorName));
-    const reportCashMovements = cashMovements;
+    const collectorMatchesReportOffice = (collector?: string) => {
+      const normalizedCollector = normalizeCollectorName(collector || "");
+      if (!officeCollectorSet.size) return true;
+      return officeCollectorSet.has(normalizedCollector);
+    };
+    const reportOfficeForCollector = (collector?: string) => {
+      const office = officeFromCollector(collector || "");
+      if (office) return office;
+      return reportOffice === "todos" ? "" : reportOffice;
+    };
+    const existingReceiptCashIds = new Set(
+      cashMovements
+        .filter((item) => item.relatedReceiptCollectionId)
+        .map((item) => item.relatedReceiptCollectionId as string),
+    );
+    const fallbackReceiptMovements: CashMovement[] = collectionReceipts
+      .filter((receipt) => receipt.collectionMonth === activeMonth)
+      .filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction)
+      .filter((receipt) => (receipt.loadedDate || "") === cashReportDate)
+      .filter((receipt) => !existingReceiptCashIds.has(receipt.id))
+      .filter((receipt) => collectorMatchesReportOffice(receipt.collector))
+      .map((receipt): CashMovement | null => {
+        const office = reportOfficeForCollector(receipt.collector);
+        const amount = receipt.monthCount * receipt.monthlyAmount;
+        if (!office || amount <= 0) return null;
+        return {
+          id: `cash-receipt-report-${receipt.id}`,
+          relatedReceiptCollectionId: receipt.id,
+          date: cashReportDate,
+          month: cashReportDate.slice(0, 7),
+          office,
+          shift: normalizedShift,
+          user: "SISTEMA",
+          type: "ingreso" as const,
+          source: "TRES PROVINCIAS" as const,
+          paymentMethod: receipt.paymentMethod === "T" ? "TRANSFERENCIA" as const : "EFECTIVO" as const,
+          receiptType: "RECIBO",
+          receiptNumber: String(receipt.receiptNumber || receipt.id).toLocaleUpperCase("es-AR"),
+          concept: `RECIBO TRES PROVINCIAS - ${receipt.fullName || "AFILIADO"} - POLIZA ${receipt.policyNumber || "-"} - ${receipt.monthCount} MES(ES)`.toLocaleUpperCase("es-AR"),
+          amount,
+          notes: "RECIBO DEL DIA SIN MOVIMIENTO DE CAJA VINCULADO",
+        };
+      })
+      .filter((item): item is CashMovement => !!item);
+    const reportCashMovements = [
+      ...cashMovements,
+      ...fallbackReceiptMovements,
+    ];
     const isBeforeSelectedTurn = (item: CashMovement) => {
       if (item.date < cashReportDate) return true;
       if (item.date > cashReportDate) return false;
