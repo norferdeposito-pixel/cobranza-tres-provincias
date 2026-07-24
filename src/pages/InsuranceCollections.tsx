@@ -5047,8 +5047,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Caja" && isOfficeUser && (
-          <section className="grid gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
-            <div className="grid gap-4">
+          <section className="grid items-start gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4 self-start xl:sticky xl:top-4">
             <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
               <div className="border-b p-4">
                 <h2 className="font-semibold">Estado inicial de caja</h2>
