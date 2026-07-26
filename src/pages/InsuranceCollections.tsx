@@ -2069,12 +2069,15 @@ const InsuranceCollections = () => {
   }, [assignedOfficeOptions, cashMovements, cashOpeningBalances, cashTurnNotes, isAdminUser]);
 
   const visibleCashMovements = useMemo(() => {
+    const normalizedReportShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
     return cashMovements
       .filter((item) => item.month === activeMonth)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
+      .filter((item) => item.date === cashReportDate)
+      .filter((item) => (item.shift || "").trim().toLocaleUpperCase("es-AR") === normalizedReportShift)
       .filter((item) => cashTypeFilter === "todos" || item.type === cashTypeFilter)
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [activeMonth, activeOffice, cashMovements, cashOfficeFilter, cashTypeFilter, isAdminUser]);
+      .sort((a, b) => `${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`, "es-AR"));
+  }, [activeMonth, activeOffice, cashMovements, cashOfficeFilter, cashReportDate, cashReportShift, cashTypeFilter, isAdminUser]);
 
   const visibleCashOpeningBalances = useMemo(() => {
     return cashOpeningBalances
@@ -2083,11 +2086,14 @@ const InsuranceCollections = () => {
   }, [activeMonth, activeOffice, cashOpeningBalances, cashOfficeFilter, isAdminUser]);
 
   const visibleCashTurnNotes = useMemo(() => {
+    const normalizedReportShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
     return cashTurnNotes
       .filter((item) => item.month === activeMonth)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
+      .filter((item) => item.date === cashReportDate)
+      .filter((item) => (item.shift || "").trim().toLocaleUpperCase("es-AR") === normalizedReportShift)
       .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`, "es-AR"));
-  }, [activeMonth, activeOffice, cashOfficeFilter, cashTurnNotes, isAdminUser]);
+  }, [activeMonth, activeOffice, cashOfficeFilter, cashReportDate, cashReportShift, cashTurnNotes, isAdminUser]);
 
   const cashTotals = useMemo(() => {
     const totals = {
