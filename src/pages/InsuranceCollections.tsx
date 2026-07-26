@@ -159,6 +159,30 @@ type CashTurnNote = {
   createdAt: string;
 };
 
+type CashTurnClosure = {
+  id: string;
+  date: string;
+  month: string;
+  office: string;
+  shift: string;
+  user: string;
+  createdAt: string;
+  totals: {
+    opening: number;
+    income: number;
+    expense: number;
+    balance: number;
+    cash: number;
+    card: number;
+    transfer: number;
+    check: number;
+    other: number;
+    movementCount: number;
+  };
+  movements: CashMovement[];
+  notes: CashTurnNote[];
+};
+
 type AffiliateForm = Omit<Affiliate, "id" | "selectedForMonthly">;
 
 type AffiliateImportPreview = {
@@ -192,6 +216,7 @@ type CloudSnapshot = {
   cashMovements: CashMovement[];
   cashOpeningBalances: CashOpeningBalance[];
   cashTurnNotes?: CashTurnNote[];
+  cashTurnClosures?: CashTurnClosure[];
   collectorRecords: CollectorRecord[];
   customDependencies: string[];
   collectorWhatsapp: string;
@@ -220,6 +245,7 @@ const renditionStorageKey = "insurance-rendition-v2";
 const cashMovementsStorageKey = "insurance-cash-movements-v1";
 const cashOpeningBalancesStorageKey = "insurance-cash-opening-balances-v1";
 const cashTurnNotesStorageKey = "insurance-cash-turn-notes-v1";
+const cashTurnClosuresStorageKey = "insurance-cash-turn-closures-v1";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
@@ -707,6 +733,7 @@ const InsuranceCollections = () => {
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => loadStorage(cashMovementsStorageKey, []));
   const [cashOpeningBalances, setCashOpeningBalances] = useState<CashOpeningBalance[]>(() => loadStorage(cashOpeningBalancesStorageKey, []));
   const [cashTurnNotes, setCashTurnNotes] = useState<CashTurnNote[]>(() => loadStorage(cashTurnNotesStorageKey, []));
+  const [cashTurnClosures, setCashTurnClosures] = useState<CashTurnClosure[]>(() => loadStorage(cashTurnClosuresStorageKey, []));
   const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
   const [cashOpeningForm, setCashOpeningForm] = useState(emptyCashOpeningForm);
   const [cashTurnNoteForm, setCashTurnNoteForm] = useState(emptyCashTurnNoteForm);
@@ -714,6 +741,7 @@ const InsuranceCollections = () => {
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [cashReportDate, setCashReportDate] = useState(today());
   const [cashReportShift, setCashReportShift] = useState("MAÑANA");
+  const [cashClosureDateFilter, setCashClosureDateFilter] = useState(today());
   const [rendition, setRendition] = useState<Rendition>(() => {
     const stored = loadStorage<any>(renditionStorageKey, { cashRenders: [], transferRenders: [] });
     return {
@@ -912,6 +940,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(cashMovementsStorageKey, cashMovements), [cashMovements]);
   useEffect(() => saveStorage(cashOpeningBalancesStorageKey, cashOpeningBalances), [cashOpeningBalances]);
   useEffect(() => saveStorage(cashTurnNotesStorageKey, cashTurnNotes), [cashTurnNotes]);
+  useEffect(() => saveStorage(cashTurnClosuresStorageKey, cashTurnClosures), [cashTurnClosures]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
@@ -1001,6 +1030,7 @@ const InsuranceCollections = () => {
     cashMovements: overrides.cashMovements ?? cashMovements,
     cashOpeningBalances: overrides.cashOpeningBalances ?? cashOpeningBalances,
     cashTurnNotes: overrides.cashTurnNotes ?? cashTurnNotes,
+    cashTurnClosures: overrides.cashTurnClosures ?? cashTurnClosures,
     collectorRecords: overrides.collectorRecords ?? collectorRecords,
     customDependencies: overrides.customDependencies ?? customDependencies,
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
@@ -1018,6 +1048,7 @@ const InsuranceCollections = () => {
     setCashMovements(Array.isArray(snapshot.cashMovements) ? snapshot.cashMovements : []);
     setCashOpeningBalances(Array.isArray(snapshot.cashOpeningBalances) ? snapshot.cashOpeningBalances : []);
     setCashTurnNotes(Array.isArray(snapshot.cashTurnNotes) ? snapshot.cashTurnNotes : []);
+    setCashTurnClosures(Array.isArray(snapshot.cashTurnClosures) ? snapshot.cashTurnClosures : []);
     setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
@@ -1345,6 +1376,39 @@ const InsuranceCollections = () => {
     setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
+  const saveCashTurnClosuresOnline = async (nextClosures: CashTurnClosure[], successMessage = "Cierre de caja guardado online") => {
+    setCloudStatus("Guardando cierre de caja online...");
+    const { data, error } = await supabase
+      .from("app_snapshots")
+      .select("data, updated_at")
+      .eq("key", cloudSnapshotKey)
+      .maybeSingle();
+    if (error) {
+      setCloudStatus(`No se pudo guardar cierre de caja online: ${error.message}`);
+      return;
+    }
+
+    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+    const onlineClosures = Array.isArray(onlineSnapshot.cashTurnClosures) ? onlineSnapshot.cashTurnClosures : [];
+    const mergedClosures = mergeRowsById(onlineClosures, nextClosures);
+    const snapshot = {
+      ...buildCloudSnapshot(),
+      ...onlineSnapshot,
+      cashTurnClosures: mergedClosures,
+    };
+
+    const { error: saveError } = await supabase
+      .from("app_snapshots")
+      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (saveError) {
+      setCloudStatus(`No se pudo guardar cierre de caja online: ${saveError.message}`);
+      return;
+    }
+    setCashTurnClosures(mergedClosures);
+    setLastCloudLoadedAt(new Date().toISOString());
+    setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
   const saveTicketReturnControlsOnline = async (nextControls: TicketReturnControl[]) => {
     setCloudStatus("Guardando control de devolucion online...");
     const { data, error } = await supabase
@@ -1486,7 +1550,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, cashTurnNotes, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, cashTurnNotes, cashTurnClosures, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2095,6 +2159,14 @@ const InsuranceCollections = () => {
       .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`, "es-AR"));
   }, [activeMonth, activeOffice, cashOfficeFilter, cashReportDate, cashReportShift, cashTurnNotes, isAdminUser]);
 
+  const visibleCashTurnClosures = useMemo(() => {
+    return cashTurnClosures
+      .filter((item) => item.month === activeMonth)
+      .filter((item) => item.date === cashClosureDateFilter)
+      .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt, "es-AR"));
+  }, [activeMonth, activeOffice, cashClosureDateFilter, cashOfficeFilter, cashTurnClosures, isAdminUser]);
+
   const cashTotals = useMemo(() => {
     const totals = {
       opening: 0,
@@ -2125,6 +2197,43 @@ const InsuranceCollections = () => {
     });
     return totals;
   }, [visibleCashMovements, visibleCashOpeningBalances]);
+
+  const saveCashTurnClosure = async () => {
+    const office = isAdminUser ? cashOfficeFilter : activeOffice;
+    const normalizedShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
+    if (!office || office === "todos") {
+      setCloudStatus("Seleccioná una oficina puntual para guardar el cierre del turno.");
+      return;
+    }
+    if (!cashReportDate || !normalizedShift) return;
+    const closure: CashTurnClosure = {
+      id: `cash-turn-closure-${Date.now()}`,
+      date: cashReportDate,
+      month: cashReportDate.slice(0, 7),
+      office,
+      shift: normalizedShift,
+      user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      createdAt: new Date().toISOString(),
+      totals: {
+        opening: cashTotals.opening,
+        income: cashTotals.income,
+        expense: cashTotals.expense,
+        balance: cashTotals.balance,
+        cash: cashTotals.cash,
+        card: cashTotals.card,
+        transfer: cashTotals.transfer,
+        check: cashTotals.check,
+        other: cashTotals.other,
+        movementCount: visibleCashMovements.length,
+      },
+      movements: visibleCashMovements.map((item) => ({ ...item })),
+      notes: visibleCashTurnNotes.map((item) => ({ ...item })),
+    };
+    const nextClosures = [closure, ...cashTurnClosures];
+    setCashTurnClosures(nextClosures);
+    setCashClosureDateFilter(cashReportDate);
+    await saveCashTurnClosuresOnline(nextClosures, `Cierre de ${office} ${normalizedShift} guardado online`);
+  };
 
   const saveCashOpeningBalance = async (event: FormEvent) => {
     event.preventDefault();
@@ -5335,7 +5444,7 @@ const InsuranceCollections = () => {
               </div>
 
               <div className="rounded-md border bg-card">
-                <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1fr_145px_150px_165px_165px_155px]">
+                <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1fr_145px_150px_165px_165px_145px_145px]">
                   <div>
                     <h3 className="font-semibold">Movimientos de caja</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
@@ -5370,6 +5479,9 @@ const InsuranceCollections = () => {
                   </select>
                   <Button type="button" variant="command" onClick={printCashTurnReport}>
                     Imprimir reporte
+                  </Button>
+                  <Button type="button" variant="outline" onClick={saveCashTurnClosure}>
+                    Guardar cierre
                   </Button>
                 </div>
                 <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
@@ -5508,6 +5620,89 @@ const InsuranceCollections = () => {
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="border-t p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h3 className="font-semibold">Cajas anteriores</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">Copias guardadas de cierres de turno. Se consultan por fecha.</p>
+                    </div>
+                    <div className="w-full sm:w-48">
+                      <Label>Fecha</Label>
+                      <Input type="date" value={cashClosureDateFilter} onChange={(event) => setCashClosureDateFilter(event.target.value)} />
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {visibleCashTurnClosures.map((closure) => (
+                      <details key={closure.id} className="rounded-md border bg-background p-3 text-sm">
+                        <summary className="cursor-pointer font-semibold">
+                          {closure.office} - {closure.shift} - {new Date(closure.createdAt).toLocaleString("es-AR")}
+                        </summary>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div className="rounded-md bg-surface-subtle p-2">
+                            <p className="text-xs text-muted-foreground">Ingresos</p>
+                            <p className="font-semibold">{currency.format(closure.totals.income)}</p>
+                          </div>
+                          <div className="rounded-md bg-surface-subtle p-2">
+                            <p className="text-xs text-muted-foreground">Egresos</p>
+                            <p className="font-semibold">{currency.format(closure.totals.expense)}</p>
+                          </div>
+                          <div className="rounded-md bg-surface-subtle p-2">
+                            <p className="text-xs text-muted-foreground">Saldo caja</p>
+                            <p className="font-semibold">{currency.format(closure.totals.balance)}</p>
+                          </div>
+                          <div className="rounded-md bg-surface-subtle p-2">
+                            <p className="text-xs text-muted-foreground">Movimientos</p>
+                            <p className="font-semibold">{closure.totals.movementCount}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 overflow-x-auto rounded-md border">
+                          <table className="w-full min-w-[760px] text-xs">
+                            <thead className="bg-surface-subtle text-left uppercase text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2">Fecha</th>
+                                <th className="px-3 py-2">Tipo</th>
+                                <th className="px-3 py-2">Origen</th>
+                                <th className="px-3 py-2">Medio</th>
+                                <th className="px-3 py-2">Comprobante</th>
+                                <th className="px-3 py-2">Concepto</th>
+                                <th className="px-3 py-2 text-right">Monto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {closure.movements.map((movement) => (
+                                <tr key={movement.id} className="border-t">
+                                  <td className="px-3 py-2">{movement.date}</td>
+                                  <td className="px-3 py-2">{movement.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
+                                  <td className="px-3 py-2">{movement.source}</td>
+                                  <td className="px-3 py-2">{movement.paymentMethod}</td>
+                                  <td className="px-3 py-2">{[movement.receiptType, movement.receiptNumber].filter(Boolean).join(" ") || "-"}</td>
+                                  <td className="px-3 py-2">{movement.concept || "-"}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{currency.format(movement.amount)}</td>
+                                </tr>
+                              ))}
+                              {closure.movements.length === 0 && (
+                                <tr><td className="px-3 py-6 text-center text-muted-foreground" colSpan={7}>Cierre guardado sin movimientos.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        {closure.notes.length > 0 && (
+                          <div className="mt-3 rounded-md border bg-surface-subtle p-3">
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">Novedades guardadas</p>
+                            <div className="mt-2 grid gap-2">
+                              {closure.notes.map((note) => (
+                                <p key={note.id} className="text-xs">{note.entryType || "NOVEDAD"}: {note.text}</p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </details>
+                    ))}
+                    {visibleCashTurnClosures.length === 0 && (
+                      <p className="rounded-md border bg-surface-subtle px-3 py-3 text-sm text-muted-foreground">No hay cierres guardados para esa fecha.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
