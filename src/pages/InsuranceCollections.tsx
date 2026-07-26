@@ -5047,8 +5047,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Caja" && isOfficeUser && (
-          <section className="grid items-start gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
-            <div className="flex flex-col gap-4 self-start xl:sticky xl:top-4">
+          <section className="grid items-start gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4 self-start 2xl:sticky 2xl:top-4">
             <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
               <div className="border-b p-4">
                 <h2 className="font-semibold">Estado inicial de caja</h2>
@@ -5271,7 +5271,7 @@ const InsuranceCollections = () => {
                   <h2 className="font-semibold">Novedades del turno</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Texto libre para dejar asentadas situaciones del turno. Se imprime en el reporte de caja.</p>
                 </div>
-                <div className="grid gap-3 p-4 xl:grid-cols-[145px_175px_160px_170px_minmax(320px,1fr)_170px] xl:items-end">
+                <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[135px_150px_145px_145px_minmax(220px,1fr)_150px] 2xl:items-end">
                   <div>
                     <Label>Fecha</Label>
                     <Input type="date" value={cashTurnNoteForm.date} onChange={(event) => setCashTurnNoteForm((current) => ({ ...current, date: event.target.value }))} />
@@ -5320,7 +5320,7 @@ const InsuranceCollections = () => {
                 </div>
               </form>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                 <SummaryBox label="Saldo inicial" value={currency.format(cashTotals.opening)} />
                 <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
                 <SummaryBox label="Egresos" value={currency.format(cashTotals.expense)} />
@@ -5329,7 +5329,7 @@ const InsuranceCollections = () => {
               </div>
 
               <div className="rounded-md border bg-card">
-                <div className="grid gap-3 border-b p-4 md:grid-cols-[1fr_150px_160px_180px_180px_170px]">
+                <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1fr_145px_150px_165px_165px_155px]">
                   <div>
                     <h3 className="font-semibold">Movimientos de caja</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
@@ -5366,7 +5366,7 @@ const InsuranceCollections = () => {
                     Imprimir reporte
                   </Button>
                 </div>
-                <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="grid gap-3 border-b bg-surface-subtle p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                   <div>
                     <p className="text-xs font-semibold uppercase text-muted-foreground">Efectivo</p>
                     <p className="text-lg font-semibold">{currency.format(cashTotals.cash)}</p>
