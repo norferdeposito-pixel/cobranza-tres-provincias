@@ -61,6 +61,7 @@ type TicketCollection = {
   id: string;
   month: string;
   affiliateId: string;
+  createdAt?: string;
   fullName?: string;
   policyNumber?: string;
   plan?: PlanType;
@@ -271,6 +272,12 @@ const monthLabel = (month: string) => {
 const receiptSortValue = (value: string) => {
   const numeric = Number(String(value || "").replace(/\D/g, ""));
   return Number.isFinite(numeric) && numeric > 0 ? numeric : Number.MAX_SAFE_INTEGER;
+};
+const dateTimeLabel = (value?: string) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("es-AR");
 };
 const sortReceiptsByNumber = (a: ReceiptCollection, b: ReceiptCollection) => (
   receiptSortValue(a.receiptNumber) - receiptSortValue(b.receiptNumber)
@@ -3184,6 +3191,9 @@ const InsuranceCollections = () => {
       id: editingTicketCollectionId || `ticket-${Date.now()}`,
       month: activeMonth,
       affiliateId: selectedMonthlyAffiliate.id,
+      createdAt: editingTicketCollectionId
+        ? ticketCollections.find((item) => item.id === editingTicketCollectionId)?.createdAt || new Date().toISOString()
+        : new Date().toISOString(),
       fullName: selectedMonthlyAffiliate.fullName,
       policyNumber: selectedMonthlyAffiliate.policyNumber,
       plan: selectedMonthlyAffiliate.plan,
@@ -6617,9 +6627,12 @@ const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = fa
             <strong>{fullName}</strong>
             <p className="text-xs text-muted-foreground">Poliza {policyNumber} - {plan} - Dep. {dependency}</p>
             {isAdminUser && (
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => onEdit?.(item)}>Editar</Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => onDelete?.(item.id)}>Eliminar</Button>
+              <div className="mt-2">
+                <p className="text-xs font-medium text-muted-foreground">Cargado: {dateTimeLabel(item.createdAt)}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => onEdit?.(item)}>Editar</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => onDelete?.(item.id)}>Eliminar</Button>
+                </div>
               </div>
             )}
             <p className="text-muted-foreground">{item.ticketsCharged} ticket(s) · {methodLabel(item.paymentMethod)} · {amountLabel}</p>
