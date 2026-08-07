@@ -1207,7 +1207,12 @@ const InsuranceCollections = () => {
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
-  const saveTicketCollectionsOnline = async (nextTicketCollections: TicketCollection[], nextNotes: AffiliateNote[] = notes, nextCashMovements: CashMovement[] = cashMovements) => {
+  const saveTicketCollectionsOnline = async (
+    nextTicketCollections: TicketCollection[],
+    nextNotes: AffiliateNote[] = notes,
+    nextCashMovements: CashMovement[] = cashMovements,
+    guard?: { affiliateId: string; month: string; requestedTickets: number; editingCollectionId?: string | null; monthlyTicketsFallback?: number },
+  ) => {
     setCloudStatus("Guardando tickets online...");
     const { data, error } = await supabase
       .from("app_snapshots")
@@ -1216,13 +1221,32 @@ const InsuranceCollections = () => {
       .maybeSingle();
     if (error) {
       setCloudStatus(`No se pudieron guardar tickets online: ${error.message}`);
-      return;
+      return false;
     }
 
     const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
     const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
     const onlineNotes = Array.isArray(onlineSnapshot.notes) ? onlineSnapshot.notes : [];
     const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
+    if (guard) {
+      const onlineMonthlyItems = Array.isArray(onlineSnapshot.monthlyItems) ? onlineSnapshot.monthlyItems : [];
+      const onlineMonthlyTickets = onlineMonthlyItems.find((item) => item.month === guard.month && item.affiliateId === guard.affiliateId)?.tickets;
+      const monthTickets = onlineMonthlyTickets ?? guard.monthlyTicketsFallback ?? 0;
+      const onlineChargedTickets = onlineTicketCollections
+        .filter((item) => item.month === guard.month && item.affiliateId === guard.affiliateId && item.id !== guard.editingCollectionId)
+        .reduce((sum, item) => sum + item.ticketsCharged, 0);
+      const onlinePendingTickets = Math.max(monthTickets - onlineChargedTickets, 0);
+      if (guard.requestedTickets > onlinePendingTickets) {
+        setTicketCollections(onlineTicketCollections);
+        setNotes(onlineNotes);
+        setCashMovements(onlineCashMovements);
+        if (Array.isArray(onlineSnapshot.monthlyItems)) setMonthlyItems(onlineSnapshot.monthlyItems);
+        const message = "Esta póliza ya no tiene tickets pendientes en la base online. Cargá online y revisá antes de volver a cobrar.";
+        setCloudStatus(message);
+        alert(message);
+        return false;
+      }
+    }
     const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
     const mergedNotes = mergeRowsById(onlineNotes, nextNotes);
     const mergedCashMovements = mergeRowsById(onlineCashMovements, nextCashMovements);
@@ -1239,13 +1263,14 @@ const InsuranceCollections = () => {
       .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
     if (saveError) {
       setCloudStatus(`No se pudieron guardar tickets online: ${saveError.message}`);
-      return;
+      return false;
     }
     setTicketCollections(mergedTicketCollections);
     setNotes(mergedNotes);
     setCashMovements(mergedCashMovements);
     setLastCloudLoadedAt(new Date().toISOString());
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
+    return true;
   };
 
   const saveCashMovementsOnline = async (nextCashMovements: CashMovement[], successMessage = "Caja guardada online") => {
@@ -3225,18 +3250,23 @@ const InsuranceCollections = () => {
         ...cashMovements.filter((item) => item.relatedTicketCollectionId !== payload.id),
       ]
       : cashMovements;
-    setTicketCollections((current) => editingTicketCollectionId
-      ? current.map((item) => item.id === editingTicketCollectionId ? payload : item)
-      : current.some((item) => item.id === payload.id) ? current : [...current, payload]);
-    if (ticketCashMovement) setCashMovements(nextCashMovements);
+    const saved = await saveTicketCollectionsOnline(nextTicketCollections, nextNotes, nextCashMovements, {
+      affiliateId: selectedMonthlyAffiliate.id,
+      month: activeMonth,
+      requestedTickets: tickets,
+      editingCollectionId: editingTicketCollectionId,
+      monthlyTicketsFallback: selectedMonthlyItem?.tickets || 0,
+    });
+    if (!saved) {
+      setIsSavingTicketCollection(false);
+      return;
+    }
     setEditingTicketCollectionId(null);
     setCollectionTickets("1");
     setCollectionMethod("E");
     setCollectionTransfer(emptyTransfer());
     setMobileSelectedAffiliateId("");
     setMobileNoteText("");
-    if (automaticNote) setNotes(nextNotes);
-    await saveTicketCollectionsOnline(nextTicketCollections, nextNotes, nextCashMovements);
     setIsSavingTicketCollection(false);
   };
 
