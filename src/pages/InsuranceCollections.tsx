@@ -2045,7 +2045,12 @@ const InsuranceCollections = () => {
 
   const receiptMonthOptions = useMemo(() => {
     const year = Number(activeMonth.split("-")[0]) || new Date().getFullYear();
-    return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
+    const monthsAhead = 12 * 6;
+    return Array.from({ length: monthsAhead }, (_, index) => {
+      const optionYear = year + Math.floor(index / 12);
+      const optionMonth = (index % 12) + 1;
+      return `${optionYear}-${String(optionMonth).padStart(2, "0")}`;
+    });
   }, [activeMonth]);
 
   const totalsByPlan = useMemo(() => {
