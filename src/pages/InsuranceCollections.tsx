@@ -1628,6 +1628,7 @@ const InsuranceCollections = () => {
   const canSeeReceiptInCobranza = (receipt: ReceiptCollection) => {
     const receiptCollector = normalizeCollectorName(receipt.collector || "");
     if (hasOfficeCollectorScope) return receiptCollector === officeCollectorScope;
+    if (!isOfficeUser && receiptCollector && receiptCollector === currentCollectorName) return true;
     const affiliate = affiliates.find((item) => item.policyNumber === receipt.policyNumber && item.plan === receipt.plan)
       || affiliates.find((item) => item.policyNumber === receipt.policyNumber);
     if (affiliate) return canSeeAffiliateInCobranza(affiliate);
