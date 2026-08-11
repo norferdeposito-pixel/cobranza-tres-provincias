@@ -3657,6 +3657,19 @@ const InsuranceCollections = () => {
       return rows;
     }, new Map<string, number>()))
       .sort(([planA], [planB]) => planA.localeCompare(planB, "es-AR", { numeric: true }));
+    const normalizedReportCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
+    const receiptRows = collectionReceipts
+      .filter((receipt) => receipt.collectionMonth === activeMonth)
+      .filter((receipt) => {
+        const receiptCollector = receipt.collector ? normalizeCollectorName(receipt.collector) : "";
+        return receiptCollector === normalizedReportCollector;
+      })
+      .sort((a, b) =>
+        (a.loadedDate || "").localeCompare(b.loadedDate || "")
+        || a.fullName.localeCompare(b.fullName, "es-AR")
+        || receiptSortValue(a.receiptNumber) - receiptSortValue(b.receiptNumber)
+      );
+    const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
 
     const summaryData: any[][] = [
       [{ value: "REPORTE DE COBRANZA", columnSpan: 2, fontWeight: "bold", fontSize: 16, backgroundColor: "#0B5CAD", textColor: "#FFFFFF", align: "center" }],
@@ -3748,6 +3761,39 @@ const InsuranceCollections = () => {
       chargedData.push([{ value: "SIN TICKETS COBRADOS", columnSpan: 8, align: "center", fontWeight: "bold" }]);
     }
 
+    const receiptsData: any[][] = [
+      [
+        headerCell("N° recibo"),
+        headerCell("Fecha de carga"),
+        headerCell("Apellido y nombre"),
+        headerCell("N° póliza"),
+        headerCell("Tipo de plan"),
+        headerCell("Meses que paga"),
+        headerCell("Cantidad meses"),
+        headerCell("Monto mensual"),
+        headerCell("Total"),
+        headerCell("Forma de pago"),
+        headerCell("Comprobante"),
+      ],
+      ...receiptRows.map((receipt) => [
+        receipt.receiptNumber || "-",
+        receipt.loadedDate || "-",
+        receipt.fullName || "-",
+        receipt.policyNumber || "-",
+        receipt.plan || "-",
+        receipt.paidMonths?.length ? receipt.paidMonths.map(monthLabel).join(" / ") : monthLabel(receipt.paidMonth),
+        receipt.monthCount,
+        moneyCell(receipt.monthlyAmount),
+        moneyCell(receiptAmount(receipt)),
+        methodLabel(receipt.paymentMethod),
+        receipt.transfer?.receiptNumber || receipt.transfer?.transactionNumber || "-",
+      ]),
+    ];
+
+    if (receiptRows.length === 0) {
+      receiptsData.push([{ value: "SIN RECIBOS COBRADOS", columnSpan: 11, align: "center", fontWeight: "bold" }]);
+    }
+
     const safeCollectorName = (selectedCollectorName || "cobrador").toLocaleLowerCase("es-AR").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     await writeExcelFile([
       {
@@ -3768,6 +3814,13 @@ const InsuranceCollections = () => {
         data: chargedData,
         sheet: "Tickets cobrados",
         columns: [{ width: 34 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }],
+        orientation: "landscape",
+        stickyRowsCount: 1,
+      },
+      {
+        data: receiptsData,
+        sheet: "Recibos cobrados",
+        columns: [{ width: 16 }, { width: 16 }, { width: 34 }, { width: 16 }, { width: 14 }, { width: 36 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }],
         orientation: "landscape",
         stickyRowsCount: 1,
       },
