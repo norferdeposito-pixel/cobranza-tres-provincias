@@ -820,6 +820,7 @@ const InsuranceCollections = () => {
     paidMonth: "",
     paidMonths: [] as string[],
     monthCount: "0",
+    totalAmount: "",
     monthlyAmount: "",
     paymentMethod: "E" as PaymentMethod,
     isProduction: false,
@@ -3320,7 +3321,10 @@ const InsuranceCollections = () => {
       fullName: affiliate.fullName,
       collector: isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
       plan: affiliate.plan,
-      monthlyAmount: affiliate.value ? String(affiliate.value) : current.monthlyAmount,
+      totalAmount: current.totalAmount || (affiliate.value && current.paidMonths.length ? String(affiliate.value * current.paidMonths.length) : current.totalAmount),
+      monthlyAmount: current.totalAmount
+        ? calculateReceiptMonthlyAmount(current.totalAmount, current.paidMonths.length)
+        : affiliate.value ? String(affiliate.value) : current.monthlyAmount,
     }));
   };
 
@@ -3343,16 +3347,39 @@ const InsuranceCollections = () => {
     setReceiptForm((current) => ({ ...current, plan }));
   };
 
+  const formatReceiptAmountInput = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const rounded = Math.round(value * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(".", ",");
+  };
+
+  const calculateReceiptMonthlyAmount = (totalValue: string, monthCount: number) => {
+    const total = parseMoney(totalValue);
+    if (!total || monthCount <= 0) return "";
+    return formatReceiptAmountInput(total / monthCount);
+  };
+
+  const updateReceiptTotalAmount = (value: string) => {
+    setReceiptForm((current) => ({
+      ...current,
+      totalAmount: value,
+      monthlyAmount: calculateReceiptMonthlyAmount(value, current.paidMonths.length),
+    }));
+  };
+
   const updateReceiptPaidMonth = (month: string, checked: boolean) => {
     setReceiptForm((current) => {
       const paidMonths = checked
         ? uniqueSorted([...current.paidMonths, month])
         : current.paidMonths.filter((item) => item !== month);
+      const totalAmount = current.totalAmount || (current.monthlyAmount && paidMonths.length ? formatReceiptAmountInput(parseMoney(current.monthlyAmount) * paidMonths.length) : "");
       return {
         ...current,
         paidMonths,
         paidMonth: paidMonths[0] || "",
         monthCount: String(paidMonths.length),
+        totalAmount,
+        monthlyAmount: calculateReceiptMonthlyAmount(totalAmount, paidMonths.length),
       };
     });
   };
@@ -3369,6 +3396,7 @@ const InsuranceCollections = () => {
       paidMonth: "",
       paidMonths: [],
       monthCount: "0",
+      totalAmount: "",
       monthlyAmount: "",
       paymentMethod: "E",
       isProduction: false,
@@ -3388,6 +3416,7 @@ const InsuranceCollections = () => {
       paidMonth: receipt.paidMonth || "",
       paidMonths: receipt.paidMonths?.length ? receipt.paidMonths : receipt.paidMonth ? [receipt.paidMonth] : [],
       monthCount: String(receipt.paidMonths?.length || receipt.monthCount || 0),
+      totalAmount: formatReceiptAmountInput((receipt.monthCount || 0) * (receipt.monthlyAmount || 0)),
       monthlyAmount: receipt.monthlyAmount ? String(receipt.monthlyAmount) : "",
       paymentMethod: receipt.paymentMethod || "E",
       isProduction: !!receipt.isProduction,
@@ -3429,6 +3458,12 @@ const InsuranceCollections = () => {
       alert("Seleccioná al menos un mes que paga el afiliado.");
       return;
     }
+    const totalReceiptAmount = parseMoney(receiptForm.totalAmount);
+    const monthlyReceiptAmount = parseMoney(receiptForm.monthlyAmount) || (receiptForm.paidMonths.length ? totalReceiptAmount / receiptForm.paidMonths.length : 0);
+    if (!totalReceiptAmount || !monthlyReceiptAmount) {
+      alert("Colocá el total del recibo para calcular la cuota mensual.");
+      return;
+    }
     setIsSavingReceipt(true);
     const receiptPayload: ReceiptCollection = {
       id: editingReceiptId || `receipt-${Date.now()}`,
@@ -3442,7 +3477,7 @@ const InsuranceCollections = () => {
       paidMonth: receiptForm.paidMonths[0] || receiptForm.paidMonth,
       paidMonths: receiptForm.paidMonths,
       monthCount: receiptForm.paidMonths.length,
-      monthlyAmount: parseMoney(receiptForm.monthlyAmount),
+      monthlyAmount: monthlyReceiptAmount,
       paymentMethod: receiptForm.paymentMethod,
       transfer: receiptForm.paymentMethod === "T" ? receiptForm.transfer : undefined,
       status: receipts.find((receipt) => receipt.id === editingReceiptId)?.status || "activo",
@@ -5944,7 +5979,8 @@ const InsuranceCollections = () => {
                   </details>
                 </div>
                 <div className="space-y-2"><Label>Cant. de meses</Label><Input readOnly value={receiptForm.monthCount} className="bg-surface-subtle" /></div>
-                <div className="space-y-2"><Label>Monto mensual</Label><Input value={receiptForm.monthlyAmount} onChange={(event) => setReceiptForm({ ...receiptForm, monthlyAmount: event.target.value })} required /></div>
+                <div className="space-y-2"><Label>Total del recibo</Label><Input value={receiptForm.totalAmount} onChange={(event) => updateReceiptTotalAmount(event.target.value)} required /></div>
+                <div className="space-y-2"><Label>Monto mensual</Label><Input readOnly value={receiptForm.monthlyAmount} className="bg-surface-subtle" /></div>
                 <div className="space-y-2"><Label>Método de pago</Label><select value={receiptForm.paymentMethod} onChange={(event) => setReceiptForm({ ...receiptForm, paymentMethod: event.target.value as PaymentMethod })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
               <label className="mt-3 flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
