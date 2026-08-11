@@ -3648,8 +3648,8 @@ const InsuranceCollections = () => {
       })
       .sort((a, b) =>
         (a.affiliate?.plan || a.collection.plan || "").localeCompare(b.affiliate?.plan || b.collection.plan || "", "es-AR", { numeric: true })
-        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
         || (a.affiliate?.policyNumber || a.collection.policyNumber || "").localeCompare(b.affiliate?.policyNumber || b.collection.policyNumber || "", "es-AR", { numeric: true })
+        || (a.affiliate?.fullName || a.collection.fullName || "").localeCompare(b.affiliate?.fullName || b.collection.fullName || "", "es-AR")
       );
     const chargedTicketsByPlanRows = Array.from(chargedRows.reduce((rows, { collection, affiliate }) => {
       const plan = affiliate?.plan || collection.plan || "SIN PLAN";
@@ -3665,8 +3665,10 @@ const InsuranceCollections = () => {
         return receiptCollector === normalizedReportCollector;
       })
       .sort((a, b) =>
-        (a.loadedDate || "").localeCompare(b.loadedDate || "")
+        (a.plan || "").localeCompare(b.plan || "", "es-AR", { numeric: true })
+        || (a.policyNumber || "").localeCompare(b.policyNumber || "", "es-AR", { numeric: true })
         || a.fullName.localeCompare(b.fullName, "es-AR")
+        || (a.loadedDate || "").localeCompare(b.loadedDate || "")
         || receiptSortValue(a.receiptNumber) - receiptSortValue(b.receiptNumber)
       );
     const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
