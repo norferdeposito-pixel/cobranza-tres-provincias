@@ -10,6 +10,7 @@ import { UserProfileProvider } from "@/contexts/UserProfileContext";
 import { RequireUserProfile } from "@/components/RequireUserProfile";
 import { isCollectionsApp } from "@/lib/appBrand";
 
+// Stable application entrypoint. This comment intentionally triggers a clean production redeploy.
 const queryClient = new QueryClient();
 const collectionsDeployment = isCollectionsApp();
 
