@@ -3315,17 +3315,21 @@ const InsuranceCollections = () => {
 
   const applyReceiptAffiliate = (affiliate: Affiliate | null) => {
     if (!affiliate) return;
-    setReceiptForm((current) => ({
-      ...current,
-      policyNumber: affiliate.policyNumber,
-      fullName: affiliate.fullName,
-      collector: isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
-      plan: affiliate.plan,
-      totalAmount: current.totalAmount || (affiliate.value && current.paidMonths.length ? String(affiliate.value * current.paidMonths.length) : current.totalAmount),
-      monthlyAmount: current.totalAmount
-        ? calculateReceiptMonthlyAmount(current.totalAmount, current.paidMonths.length)
-        : affiliate.value ? String(affiliate.value) : current.monthlyAmount,
-    }));
+    setReceiptForm((current) => {
+      const monthlyAmount = affiliate.value ? formatReceiptAmountInput(affiliate.value) : current.monthlyAmount;
+      const totalAmount = affiliate.value && current.paidMonths.length
+        ? formatReceiptAmountInput(affiliate.value * current.paidMonths.length)
+        : "";
+      return {
+        ...current,
+        policyNumber: affiliate.policyNumber,
+        fullName: affiliate.fullName,
+        collector: isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
+        plan: affiliate.plan,
+        totalAmount,
+        monthlyAmount,
+      };
+    });
   };
 
   const updateReceiptPolicy = (value: string) => {
@@ -3372,14 +3376,19 @@ const InsuranceCollections = () => {
       const paidMonths = checked
         ? uniqueSorted([...current.paidMonths, month])
         : current.paidMonths.filter((item) => item !== month);
-      const totalAmount = current.totalAmount || (current.monthlyAmount && paidMonths.length ? formatReceiptAmountInput(parseMoney(current.monthlyAmount) * paidMonths.length) : "");
+      const affiliate = editingReceiptId ? null : findReceiptAffiliate(current.policyNumber, current.plan);
+      const monthlyValue = affiliate?.value || parseMoney(current.monthlyAmount);
+      const monthlyAmount = monthlyValue ? formatReceiptAmountInput(monthlyValue) : "";
+      const totalAmount = monthlyValue && paidMonths.length
+        ? formatReceiptAmountInput(monthlyValue * paidMonths.length)
+        : "";
       return {
         ...current,
         paidMonths,
         paidMonth: paidMonths[0] || "",
         monthCount: String(paidMonths.length),
         totalAmount,
-        monthlyAmount: calculateReceiptMonthlyAmount(totalAmount, paidMonths.length),
+        monthlyAmount,
       };
     });
   };
