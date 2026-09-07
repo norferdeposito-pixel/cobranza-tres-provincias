@@ -1,0 +1,1 @@
+Este archivo identifica el punto estable previo a la migracion de PC. La rama de trabajo sigue siendo main.
