@@ -3339,7 +3339,13 @@ const InsuranceCollections = () => {
       applyReceiptAffiliate(affiliate);
       return;
     }
-    setReceiptForm((current) => ({ ...current, policyNumber }));
+    setReceiptForm((current) => ({
+      ...current,
+      policyNumber,
+      fullName: editingReceiptId ? current.fullName : "",
+      totalAmount: editingReceiptId ? current.totalAmount : "",
+      monthlyAmount: editingReceiptId ? current.monthlyAmount : "",
+    }));
   };
 
   const updateReceiptPlan = (plan: PlanType) => {
@@ -3369,6 +3375,20 @@ const InsuranceCollections = () => {
       totalAmount: value,
       monthlyAmount: calculateReceiptMonthlyAmount(value, current.paidMonths.length),
     }));
+  };
+
+
+  const updateReceiptMonthlyAmount = (value: string) => {
+    setReceiptForm((current) => {
+      const monthlyValue = parseMoney(value);
+      return {
+        ...current,
+        monthlyAmount: value,
+        totalAmount: monthlyValue && current.paidMonths.length
+          ? formatReceiptAmountInput(monthlyValue * current.paidMonths.length)
+          : current.totalAmount,
+      };
+    });
   };
 
   const updateReceiptPaidMonth = (month: string, checked: boolean) => {
@@ -3469,8 +3489,20 @@ const InsuranceCollections = () => {
     }
     const totalReceiptAmount = parseMoney(receiptForm.totalAmount);
     const monthlyReceiptAmount = parseMoney(receiptForm.monthlyAmount) || (receiptForm.paidMonths.length ? totalReceiptAmount / receiptForm.paidMonths.length : 0);
+    if (!receiptForm.fullName.trim()) {
+      alert("Colocá el apellido y nombre del afiliado.");
+      return;
+    }
+    if (!receiptForm.policyNumber.trim()) {
+      alert("Colocá el número de póliza del recibo.");
+      return;
+    }
+    if (!receiptForm.plan.trim()) {
+      alert("Colocá el plan del recibo.");
+      return;
+    }
     if (!totalReceiptAmount || !monthlyReceiptAmount) {
-      alert("Colocá el total del recibo para calcular la cuota mensual.");
+      alert("Colocá el total del recibo o el monto mensual.");
       return;
     }
     setIsSavingReceipt(true);
@@ -5966,7 +5998,19 @@ const InsuranceCollections = () => {
                 <div className="space-y-2"><Label>N° de póliza</Label><Input inputMode="numeric" value={receiptForm.policyNumber} onChange={(event) => updateReceiptPolicy(event.target.value)} placeholder="EJ: 31774" /></div>
                 <div className="space-y-2"><Label>Apellido y nombre</Label><Input value={receiptForm.fullName} onChange={(event) => setReceiptForm({ ...receiptForm, fullName: event.target.value.toLocaleUpperCase("es-AR") })} required /></div>
                 <div className="space-y-2"><Label>Cobrador</Label><select value={isOfficeUser ? receiptForm.collector : currentCollectorName} onChange={(event) => setReceiptForm({ ...receiptForm, collector: event.target.value })} disabled={!isOfficeUser} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{(isOfficeUser ? visibleCollectorsForCobranza : [currentCollectorName]).filter(Boolean).map((collector) => <option key={collector} value={collector}>{collector}</option>)}</select></div>
-                <div className="space-y-2"><Label>Plan</Label><select value={receiptForm.plan} onChange={(event) => updateReceiptPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{receiptPlanOptions.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+                <div className="space-y-2">
+                  <Label>Plan</Label>
+                  {receiptForm.policyNumber.trim() && !selectedReceiptAffiliate ? (
+                    <Input
+                      value={receiptForm.plan}
+                      onChange={(event) => setReceiptForm((current) => ({ ...current, plan: event.target.value.toLocaleUpperCase("es-AR") }))}
+                      placeholder="PLAN DEL RECIBO"
+                      required
+                    />
+                  ) : (
+                    <select value={receiptForm.plan} onChange={(event) => updateReceiptPlan(event.target.value as PlanType)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{receiptPlanOptions.map((plan) => <option key={plan}>{plan}</option>)}</select>
+                  )}
+                </div>
                 <div className="space-y-2">
                   <Label>Meses que paga</Label>
                   <details className="rounded-md border border-input bg-background">
@@ -5989,7 +6033,16 @@ const InsuranceCollections = () => {
                 </div>
                 <div className="space-y-2"><Label>Cant. de meses</Label><Input readOnly value={receiptForm.monthCount} className="bg-surface-subtle" /></div>
                 <div className="space-y-2"><Label>Total del recibo</Label><Input value={receiptForm.totalAmount} onChange={(event) => updateReceiptTotalAmount(event.target.value)} required /></div>
-                <div className="space-y-2"><Label>Monto mensual</Label><Input readOnly value={receiptForm.monthlyAmount} className="bg-surface-subtle" /></div>
+                <div className="space-y-2">
+                  <Label>Monto mensual</Label>
+                  <Input
+                    value={receiptForm.monthlyAmount}
+                    onChange={(event) => updateReceiptMonthlyAmount(event.target.value)}
+                    readOnly={!!selectedReceiptAffiliate}
+                    className={selectedReceiptAffiliate ? "bg-surface-subtle" : ""}
+                    placeholder={selectedReceiptAffiliate ? "" : "MONTO MANUAL"}
+                  />
+                </div>
                 <div className="space-y-2"><Label>Método de pago</Label><select value={receiptForm.paymentMethod} onChange={(event) => setReceiptForm({ ...receiptForm, paymentMethod: event.target.value as PaymentMethod })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="E">E</option><option value="T">T</option></select></div>
               </div>
               <label className="mt-3 flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
@@ -6011,9 +6064,10 @@ const InsuranceCollections = () => {
                 </p>
               )}
               {receiptForm.policyNumber.trim() && !selectedReceiptAffiliate && (
-                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
-                  Poliza no encontrada en la base. Se puede guardar igual como recibo manual externo.
-                </p>
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <p className="font-semibold">Recibo de afiliado externo</p>
+                  <p className="mt-1">La póliza no está en la base. Completá manualmente nombre, plan, cobrador, meses y monto. El recibo se guardará normalmente sin crear al afiliado en la base.</p>
+                </div>
               )}
               {receiptForm.paymentMethod === "T" && <TransferFields value={receiptForm.transfer} onChange={(transfer) => setReceiptForm({ ...receiptForm, transfer })} />}
               <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row">
