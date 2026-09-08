@@ -3342,9 +3342,6 @@ const InsuranceCollections = () => {
     setReceiptForm((current) => ({
       ...current,
       policyNumber,
-      fullName: editingReceiptId ? current.fullName : "",
-      totalAmount: editingReceiptId ? current.totalAmount : "",
-      monthlyAmount: editingReceiptId ? current.monthlyAmount : "",
     }));
   };
 
