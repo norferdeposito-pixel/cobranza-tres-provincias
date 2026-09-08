@@ -1,0 +1,40 @@
+name: Corregir carga manual de recibos
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-manual-receipt-draft.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Aplicar correccion
+        run: python3 scripts/fix_manual_receipt_draft.py
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Verificar build
+        run: npm run build
+      - name: Publicar correccion
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/InsuranceCollections.tsx
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+            exit 0
+          fi
+          git commit -m "Conservar datos al cargar recibos manuales"
+          git push origin HEAD:main
