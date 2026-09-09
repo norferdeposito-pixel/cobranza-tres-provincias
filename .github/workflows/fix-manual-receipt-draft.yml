@@ -1,4 +1,4 @@
-name: Corregir carga manual de recibos
+name: Corregir seleccion de polizas duplicadas
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
           node-version: 20
           cache: npm
       - name: Aplicar correccion
-        run: python3 scripts/fix_manual_receipt_draft.py
+        run: python3 scripts/fix_duplicate_policy_ticket_selection.py
       - name: Instalar dependencias
         run: npm ci
       - name: Verificar build
@@ -36,5 +36,5 @@ jobs:
             echo "Sin cambios"
             exit 0
           fi
-          git commit -m "Conservar datos al cargar recibos manuales"
+          git commit -m "Permitir elegir afiliado en polizas duplicadas"
           git push origin HEAD:main
