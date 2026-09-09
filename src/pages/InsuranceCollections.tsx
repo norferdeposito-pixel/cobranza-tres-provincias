@@ -5934,8 +5934,36 @@ const InsuranceCollections = () => {
                 )}
               </div>
               <div className="mt-4 grid gap-4">
-                <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => setCollectionPolicy(event.target.value)} /></div>
+                <div className="space-y-2"><Label>N° de póliza</Label><Input value={collectionPolicy} onChange={(event) => { setCollectionPolicy(event.target.value); setMobileSelectedAffiliateId(""); }} /></div>
               </div>
+              {selectedMonthlyCandidates.length > 1 && (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <Label htmlFor="collection-affiliate-match">Afiliado de esta póliza</Label>
+                  <select
+                    id="collection-affiliate-match"
+                    className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={selectedMonthlyAffiliate?.id || ""}
+                    onChange={(event) => {
+                      const affiliateId = event.target.value;
+                      setMobileSelectedAffiliateId(affiliateId);
+                      const affiliate = selectedMonthlyCandidates.find((item) => item.id === affiliateId);
+                      if (affiliate) setCollectionTickets(String(Math.max(0, getPendingTickets(affiliate.id))));
+                    }}
+                  >
+                    {selectedMonthlyCandidates
+                      .slice()
+                      .sort((a, b) => a.fullName.localeCompare(b.fullName, "es-AR") || a.plan.localeCompare(b.plan, "es-AR", { numeric: true }))
+                      .map((affiliate) => (
+                        <option key={affiliate.id} value={affiliate.id}>
+                          {affiliate.fullName} · {affiliate.plan} · {currency.format(affiliate.value)} · {getPendingTickets(affiliate.id)} pend.
+                        </option>
+                      ))}
+                  </select>
+                  <p className="mt-2 text-xs font-medium text-amber-900">
+                    Esta póliza corresponde a más de un afiliado. Elegí a quién se le va a registrar el cobro.
+                  </p>
+                </div>
+              )}
               {selectedMonthlyAffiliate && (
                 <div className="mt-4 rounded-md border bg-surface-subtle p-3 text-sm">
                   <strong>{selectedMonthlyAffiliate.fullName}</strong>
@@ -5948,7 +5976,7 @@ const InsuranceCollections = () => {
                   <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
                   {selectedMonthlyCandidates.length > 1 && (
                     <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                      Esta póliza tiene {selectedMonthlyCandidates.length} registros. Se toma el que tiene tickets pendientes.
+                      Seleccionado: {selectedMonthlyAffiliate.fullName} · {selectedMonthlyAffiliate.plan}.
                     </p>
                   )}
                   {selectedMonthlyAffiliate.request?.trim() && (
