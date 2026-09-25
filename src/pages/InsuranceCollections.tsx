@@ -854,6 +854,9 @@ const InsuranceCollections = () => {
   const loadedRemoteVersionRef = useRef<string | null>(null);
   const loadedSnapshotStatsRef = useRef({ affiliates: 0, ticketCollections: 0, receipts: 0 });
   const hasLocalChangesRef = useRef(false);
+  // Monotonic marker used to tell pre-existing local work (which a manual
+  // load can explicitly replace) from an edit made while a fetch is pending.
+  const localChangesRevisionRef = useRef(0);
   const syncConflictRef = useRef(false);
   const skipNextAutoSaveRef = useRef(false);
   const syncInFlightRef = useRef(false);
@@ -1525,8 +1528,25 @@ const InsuranceCollections = () => {
   };
 
   const loadCloudSnapshot = async ({ automatic = false } = {}) => {
-    if (syncInFlightRef.current || (automatic && (!isDocumentVisible() || hasLocalChangesRef.current))) return false;
-    if (!automatic && hasLocalChangesRef.current && !window.confirm("Hay cambios locales pendientes. Cargar online los reemplazará en esta pantalla. ¿Continuar?")) return false;
+    if (automatic && (!isDocumentVisible() || hasLocalChangesRef.current || syncInFlightRef.current)) return false;
+
+    if (!automatic && syncInFlightRef.current) {
+      setCloudBusy(true);
+      setCloudStatus("Esperando que termine la verificación online...");
+      const syncIsIdle = await waitForSyncIdle();
+      if (!syncIsIdle || syncInFlightRef.current) {
+        setCloudBusy(false);
+        setCloudStatus("La sincronización online sigue en curso. Esperá unos segundos y volvé a intentar.");
+        return false;
+      }
+    }
+
+    if (!automatic && hasLocalChangesRef.current && !window.confirm("Hay cambios locales pendientes. Cargar online los reemplazará en esta pantalla. ¿Continuar?")) {
+      setCloudBusy(false);
+      setCloudStatus("Carga online cancelada. Tus cambios locales se conservaron.");
+      return false;
+    }
+    const localRevisionAtLoadStart = localChangesRevisionRef.current;
     syncInFlightRef.current = true;
     if (!automatic) {
       setCloudBusy(true);
@@ -1548,12 +1568,14 @@ const InsuranceCollections = () => {
         setCloudReady(true);
         return true;
       }
-      // A user may edit while this network request is in flight. Never let an
-      // automatic hydration replace that new local work.
-      if (hasLocalChangesRef.current) {
+      // Automatic loads never replace local work. A manual load may replace
+      // the changes explicitly confirmed above, but not an edit made while
+      // this request was pending.
+      const localChangesDuringLoad = localChangesRevisionRef.current !== localRevisionAtLoadStart;
+      if ((automatic && hasLocalChangesRef.current) || localChangesDuringLoad) {
         syncConflictRef.current = true;
         setCloudReady(true);
-        setCloudStatus("Llegaron cambios online, pero esta pantalla tiene cambios locales pendientes. No se reemplazaron tus datos.");
+        setCloudStatus("Llegaron cambios online, pero esta pantalla cambió durante la carga. No se reemplazaron tus datos.");
         return false;
       }
       applyRemoteSnapshot(data.data as Partial<CloudSnapshot>, data.updated_at || new Date().toISOString());
@@ -1670,6 +1692,7 @@ const InsuranceCollections = () => {
       skipNextAutoSaveRef.current = false;
       return;
     }
+    localChangesRevisionRef.current += 1;
     hasLocalChangesRef.current = true;
     if (!isDocumentVisible() || syncInFlightRef.current || syncConflictRef.current) return;
     clearPendingAutoSave();
