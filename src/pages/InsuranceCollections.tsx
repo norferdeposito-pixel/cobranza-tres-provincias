@@ -849,6 +849,17 @@ const InsuranceCollections = () => {
   const [cloudReady, setCloudReady] = useState(false);
   const [lastCloudLoadedAt, setLastCloudLoadedAt] = useState("");
   const autoSaveTimer = useRef<number | null>(null);
+  // Snapshot sync is intentionally version-based: never let a remote hydration
+  // look like a local edit, and never overwrite a newer remote snapshot.
+  const loadedRemoteVersionRef = useRef<string | null>(null);
+  const loadedSnapshotStatsRef = useRef({ affiliates: 0, ticketCollections: 0, receipts: 0 });
+  const hasLocalChangesRef = useRef(false);
+  const syncConflictRef = useRef(false);
+  const skipNextAutoSaveRef = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const snapshotWriteInFlightRef = useRef(false);
+  const specializedSnapshotReadInFlightRef = useRef(false);
+  const currentCloudSnapshotRef = useRef<CloudSnapshot | null>(null);
   const userRole = (currentUserProfile?.rol || "").trim().toLowerCase();
   const isAdminUser = userRole === "admin";
   const isOfficeUser = ["admin", "oficina", "oficina_cobrador", "administracion", "compras"].includes(userRole);
@@ -1044,6 +1055,9 @@ const InsuranceCollections = () => {
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
     activeMonth: overrides.activeMonth ?? activeMonth,
   });
+  // Keep asynchronous listeners bound to the latest rendered data, rather
+  // than to the render in which the listener was registered.
+  currentCloudSnapshotRef.current = buildCloudSnapshot();
 
   const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>) => {
     setAffiliates(Array.isArray(snapshot.affiliates) ? snapshot.affiliates : demoAffiliates);
@@ -1064,32 +1078,63 @@ const InsuranceCollections = () => {
     if (snapshot.activeMonth) setActiveMonth(snapshot.activeMonth);
   };
 
-  const validateCloudSnapshotBeforeSave = async (snapshot: CloudSnapshot) => {
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
-    if (error) return { ok: false, message: `No se pudo verificar la base online: ${error.message}` };
+  const snapshotStats = (snapshot: Partial<CloudSnapshot>) => ({
+    affiliates: Array.isArray(snapshot.affiliates) ? snapshot.affiliates.length : 0,
+    ticketCollections: Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections.length : 0,
+    receipts: Array.isArray(snapshot.receipts) ? snapshot.receipts.length : 0,
+  });
 
-    const onlineSnapshot = data?.data as Partial<CloudSnapshot> | undefined;
-    const onlineCount = Array.isArray(onlineSnapshot?.affiliates) ? onlineSnapshot.affiliates.length : 0;
+  const clearPendingAutoSave = () => {
+    if (autoSaveTimer.current) {
+      window.clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+  };
+
+  const markSnapshotSaved = (
+    updatedAt: string,
+    snapshot: Partial<CloudSnapshot> = buildCloudSnapshot(),
+    suppressNextAutoSave = false,
+  ) => {
+    loadedRemoteVersionRef.current = updatedAt;
+    loadedSnapshotStatsRef.current = snapshotStats(snapshot);
+    hasLocalChangesRef.current = false;
+    syncConflictRef.current = false;
+    if (suppressNextAutoSave) skipNextAutoSaveRef.current = true;
+    clearPendingAutoSave();
+    setLastCloudLoadedAt(updatedAt);
+  };
+
+  const applyRemoteSnapshot = (snapshot: Partial<CloudSnapshot>, updatedAt: string) => {
+    // React state updates below must not schedule a write back to Supabase.
+    skipNextAutoSaveRef.current = true;
+    clearPendingAutoSave();
+    applyCloudSnapshot(snapshot);
+    loadedRemoteVersionRef.current = updatedAt;
+    loadedSnapshotStatsRef.current = snapshotStats(snapshot);
+    hasLocalChangesRef.current = false;
+    syncConflictRef.current = false;
+    setLastCloudLoadedAt(updatedAt);
+  };
+
+  const validateCloudSnapshotBeforeSave = (snapshot: CloudSnapshot) => {
+    const expectedVersion = loadedRemoteVersionRef.current;
+    // No snapshot exists yet: allow the guarded insert path to create it.
+    if (!expectedVersion) return { ok: true, message: "" };
+
+    const onlineCount = loadedSnapshotStatsRef.current.affiliates;
     const nextCount = Array.isArray(snapshot.affiliates) ? snapshot.affiliates.length : 0;
     const isDangerousShrink = onlineCount >= 1000 && nextCount > 0 && nextCount < onlineCount * 0.8;
-    const onlineCollections = Array.isArray(onlineSnapshot?.ticketCollections) ? onlineSnapshot.ticketCollections.length : 0;
+    const onlineCollections = loadedSnapshotStatsRef.current.ticketCollections;
     const nextCollections = Array.isArray(snapshot.ticketCollections) ? snapshot.ticketCollections.length : 0;
-    const onlineReceipts = Array.isArray(onlineSnapshot?.receipts) ? onlineSnapshot.receipts.length : 0;
+    const onlineReceipts = loadedSnapshotStatsRef.current.receipts;
     const nextReceipts = Array.isArray(snapshot.receipts) ? snapshot.receipts.length : 0;
     const isLosingMovements = (onlineCollections > nextCollections) || (onlineReceipts > nextReceipts);
-    const onlineUpdatedAt = data?.updated_at ? new Date(data.updated_at).getTime() : 0;
-    const loadedAt = lastCloudLoadedAt ? new Date(lastCloudLoadedAt).getTime() : 0;
-    const remoteChangedAfterLoad = onlineUpdatedAt > 0 && loadedAt > 0 && onlineUpdatedAt > loadedAt + 1000;
 
     if (isDangerousShrink) {
-      const updatedAt = data?.updated_at ? ` Ultima base online: ${new Date(data.updated_at).toLocaleString("es-AR")}.` : "";
       return {
         ok: false,
-        message: `Proteccion activa: no se guardo online porque esta pantalla tiene ${nextCount} afiliados y la base online tiene ${onlineCount}.${updatedAt} Primero usá Cargar online.`,
+        message: `Proteccion activa: no se guardo online porque esta pantalla tiene ${nextCount} afiliados y la última base cargada tiene ${onlineCount}. Primero usá Cargar online.`,
       };
     }
 
@@ -1100,53 +1145,80 @@ const InsuranceCollections = () => {
       };
     }
 
-    if (remoteChangedAfterLoad) {
-      return {
-        ok: false,
-        message: "Proteccion activa: otra PC actualizo la base online. Se cancelo el guardado; usá Cargar online antes de guardar.",
-      };
-    }
-
     return { ok: true, message: "" };
+  };
+
+  const writeSnapshotWithVersionGuard = async (snapshot: CloudSnapshot, expectedVersion: string | null) => {
+    if (snapshotWriteInFlightRef.current) {
+      return { ok: false, conflict: false, message: "Ya hay un guardado online en curso. Esperá unos segundos y volvé a intentar." };
+    }
+    snapshotWriteInFlightRef.current = true;
+    const updatedAt = new Date().toISOString();
+    try {
+      if (!expectedVersion) {
+        const { data, error } = await supabase
+          .from("app_snapshots")
+          .insert({ key: cloudSnapshotKey, data: snapshot, updated_at: updatedAt })
+          .select("updated_at")
+          .maybeSingle();
+        if (error) {
+          syncConflictRef.current = true;
+          return { ok: false, conflict: true, message: "La base online cambió o ya fue creada por otra sesión. Usá Cargar online antes de guardar." };
+        }
+        return { ok: true, conflict: false, updatedAt: data?.updated_at || updatedAt, message: "" };
+      }
+
+      const { data, error } = await supabase
+        .from("app_snapshots")
+        .update({ data: snapshot, updated_at: updatedAt })
+        .eq("key", cloudSnapshotKey)
+        .eq("updated_at", expectedVersion)
+        .select("updated_at")
+        .maybeSingle();
+      if (error) return { ok: false, conflict: false, message: error.message };
+      if (!data) {
+        syncConflictRef.current = true;
+        return { ok: false, conflict: true, message: "Otra sesión actualizó la base online. Tus cambios locales se conservaron, pero no se enviaron. Usá Cargar online y revisá antes de guardar." };
+      }
+      return { ok: true, conflict: false, updatedAt: data.updated_at || updatedAt, message: "" };
+    } finally {
+      snapshotWriteInFlightRef.current = false;
+    }
   };
 
   const saveCloudSnapshot = async (overrides: Partial<CloudSnapshot> = {}) => {
     setCloudBusy(true);
     setCloudStatus("Guardando en la base online...");
-    const snapshot = buildCloudSnapshot(overrides);
-    const validation = await validateCloudSnapshotBeforeSave(snapshot);
+    const snapshot = { ...(currentCloudSnapshotRef.current || buildCloudSnapshot()), ...overrides };
+    const validation = validateCloudSnapshotBeforeSave(snapshot);
     if (!validation.ok) {
       setCloudBusy(false);
       setCloudStatus(validation.message);
       return;
     }
-    const { error } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    const result = await writeSnapshotWithVersionGuard(snapshot, loadedRemoteVersionRef.current);
     setCloudBusy(false);
-    if (error) {
-      setCloudStatus(`No se pudo guardar online: ${error.message}`);
+    if (!result.ok) {
+      setCloudStatus(`No se pudo guardar online: ${result.message}`);
       return;
     }
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(result.updatedAt, snapshot);
     setCloudStatus(`Guardado online ${new Date().toLocaleString("es-AR")}`);
   };
 
   const saveCloudSnapshotSilent = async () => {
-    const snapshot = buildCloudSnapshot();
-    const validation = await validateCloudSnapshotBeforeSave(snapshot);
+    const snapshot = currentCloudSnapshotRef.current || buildCloudSnapshot();
+    const validation = validateCloudSnapshotBeforeSave(snapshot);
     if (!validation.ok) {
       setCloudStatus(validation.message);
       return;
     }
-    const { error } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (error) {
-      setCloudStatus(`No se pudo sincronizar online: ${error.message}`);
+    const result = await writeSnapshotWithVersionGuard(snapshot, loadedRemoteVersionRef.current);
+    if (!result.ok) {
+      setCloudStatus(`No se pudo sincronizar online: ${result.message}`);
       return;
     }
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(result.updatedAt, snapshot);
     setCloudStatus(`Sincronizado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
@@ -1166,11 +1238,7 @@ const InsuranceCollections = () => {
 
   const saveReceiptsOnline = async (nextReceipts: ReceiptCollection[], nextCashMovements: CashMovement[] = cashMovements, replaceReceiptCashIds: string[] = []) => {
     setCloudStatus("Guardando recibos online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudieron guardar recibos online: ${error.message}`);
       return;
@@ -1195,16 +1263,14 @@ const InsuranceCollections = () => {
       cashMovements: mergedCashMovements,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudieron guardar recibos online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudieron guardar recibos online: ${saveResult.message}`);
       return;
     }
     setReceipts(mergedReceipts);
     setCashMovements(mergedCashMovements);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`Recibos guardados online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
@@ -1215,11 +1281,7 @@ const InsuranceCollections = () => {
     guard?: { affiliateId: string; month: string; requestedTickets: number; editingCollectionId?: string | null; monthlyTicketsFallback?: number },
   ) => {
     setCloudStatus("Guardando tickets online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudieron guardar tickets online: ${error.message}`);
       return false;
@@ -1238,6 +1300,13 @@ const InsuranceCollections = () => {
         .reduce((sum, item) => sum + item.ticketsCharged, 0);
       const onlinePendingTickets = Math.max(monthTickets - onlineChargedTickets, 0);
       if (guard.requestedTickets > onlinePendingTickets) {
+        // This is a partial remote reconciliation, not a local edit.
+        skipNextAutoSaveRef.current = true;
+        clearPendingAutoSave();
+        loadedRemoteVersionRef.current = data?.updated_at || loadedRemoteVersionRef.current;
+        loadedSnapshotStatsRef.current = snapshotStats(onlineSnapshot);
+        hasLocalChangesRef.current = false;
+        syncConflictRef.current = false;
         setTicketCollections(onlineTicketCollections);
         setNotes(onlineNotes);
         setCashMovements(onlineCashMovements);
@@ -1259,28 +1328,22 @@ const InsuranceCollections = () => {
       cashMovements: mergedCashMovements,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudieron guardar tickets online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudieron guardar tickets online: ${saveResult.message}`);
       return false;
     }
     setTicketCollections(mergedTicketCollections);
     setNotes(mergedNotes);
     setCashMovements(mergedCashMovements);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
     return true;
   };
 
   const saveCashMovementsOnline = async (nextCashMovements: CashMovement[], successMessage = "Caja guardada online") => {
     setCloudStatus("Guardando caja online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo guardar caja online: ${error.message}`);
       return;
@@ -1295,25 +1358,19 @@ const InsuranceCollections = () => {
       cashMovements: mergedCashMovements,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo guardar caja online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo guardar caja online: ${saveResult.message}`);
       return;
     }
     setCashMovements(mergedCashMovements);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const deleteCashMovementOnline = async (movementId: string, nextCashMovements: CashMovement[]) => {
     setCloudStatus("Eliminando movimiento de caja online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo eliminar caja online: ${error.message}`);
       return;
@@ -1331,25 +1388,19 @@ const InsuranceCollections = () => {
       cashMovements: mergedCashMovements,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo eliminar caja online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo eliminar caja online: ${saveResult.message}`);
       return;
     }
     setCashMovements(mergedCashMovements);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`Movimiento de caja eliminado online ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const saveCashOpeningBalancesOnline = async (nextOpeningBalances: CashOpeningBalance[], successMessage = "Saldo inicial guardado online") => {
     setCloudStatus("Guardando saldo inicial online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo guardar saldo inicial online: ${error.message}`);
       return;
@@ -1364,25 +1415,19 @@ const InsuranceCollections = () => {
       cashOpeningBalances: mergedOpeningBalances,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo guardar saldo inicial online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo guardar saldo inicial online: ${saveResult.message}`);
       return;
     }
     setCashOpeningBalances(mergedOpeningBalances);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const saveCashTurnNotesOnline = async (nextTurnNotes: CashTurnNote[], successMessage = "Novedad de turno guardada online") => {
     setCloudStatus("Guardando novedades de turno online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudieron guardar novedades de turno online: ${error.message}`);
       return;
@@ -1397,25 +1442,19 @@ const InsuranceCollections = () => {
       cashTurnNotes: mergedTurnNotes,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudieron guardar novedades de turno online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudieron guardar novedades de turno online: ${saveResult.message}`);
       return;
     }
     setCashTurnNotes(mergedTurnNotes);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const saveCashTurnClosuresOnline = async (nextClosures: CashTurnClosure[], successMessage = "Cierre de caja guardado online") => {
     setCloudStatus("Guardando cierre de caja online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo guardar cierre de caja online: ${error.message}`);
       return;
@@ -1430,25 +1469,19 @@ const InsuranceCollections = () => {
       cashTurnClosures: mergedClosures,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo guardar cierre de caja online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo guardar cierre de caja online: ${saveResult.message}`);
       return;
     }
     setCashTurnClosures(mergedClosures);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`${successMessage} ${new Date().toLocaleTimeString("es-AR")}`);
   };
 
   const saveTicketReturnControlsOnline = async (nextControls: TicketReturnControl[]) => {
     setCloudStatus("Guardando control de devolucion online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo guardar el control online: ${error.message}`);
       return;
@@ -1463,53 +1496,136 @@ const InsuranceCollections = () => {
       ticketReturnControls: mergedControls,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo guardar el control online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo guardar el control online: ${saveResult.message}`);
       return;
     }
     setTicketReturnControls(mergedControls);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`Control de devolucion guardado online ${new Date().toLocaleTimeString("es-AR")}`);
+  };
+
+  const isDocumentVisible = () => typeof document === "undefined" || document.visibilityState === "visible";
+
+  const readCloudSnapshotForMutation = async () => {
+    if (specializedSnapshotReadInFlightRef.current || snapshotWriteInFlightRef.current) {
+      return { data: null, error: { message: "Ya hay una sincronización de datos en curso. Esperá unos segundos y volvé a intentar." } };
+    }
+    specializedSnapshotReadInFlightRef.current = true;
+    try {
+      return await supabase
+        .from("app_snapshots")
+        .select("data, updated_at")
+        .eq("key", cloudSnapshotKey)
+        .maybeSingle();
+    } finally {
+      specializedSnapshotReadInFlightRef.current = false;
+    }
+  };
+
+  const loadCloudSnapshot = async ({ automatic = false } = {}) => {
+    if (syncInFlightRef.current || (automatic && (!isDocumentVisible() || hasLocalChangesRef.current))) return false;
+    if (!automatic && hasLocalChangesRef.current && !window.confirm("Hay cambios locales pendientes. Cargar online los reemplazará en esta pantalla. ¿Continuar?")) return false;
+    syncInFlightRef.current = true;
+    if (!automatic) {
+      setCloudBusy(true);
+      setCloudStatus("Cargando datos online...");
+    }
+    try {
+      const { data, error } = await supabase
+        .from("app_snapshots")
+        .select("data, updated_at")
+        .eq("key", cloudSnapshotKey)
+        .maybeSingle();
+      if (error) {
+        setCloudStatus(`No se pudo cargar online: ${error.message}`);
+        return false;
+      }
+      if (!data?.data) {
+        loadedRemoteVersionRef.current = null;
+        setCloudStatus("Todavía no hay datos guardados online.");
+        setCloudReady(true);
+        return true;
+      }
+      // A user may edit while this network request is in flight. Never let an
+      // automatic hydration replace that new local work.
+      if (hasLocalChangesRef.current) {
+        syncConflictRef.current = true;
+        setCloudReady(true);
+        setCloudStatus("Llegaron cambios online, pero esta pantalla tiene cambios locales pendientes. No se reemplazaron tus datos.");
+        return false;
+      }
+      applyRemoteSnapshot(data.data as Partial<CloudSnapshot>, data.updated_at || new Date().toISOString());
+      setCloudStatus(`Datos online cargados. Última actualización: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
+      setCloudReady(true);
+      return true;
+    } finally {
+      syncInFlightRef.current = false;
+      if (!automatic) setCloudBusy(false);
+    }
+  };
+
+  const waitForSyncIdle = async () => {
+    for (let attempt = 0; attempt < 25 && syncInFlightRef.current; attempt += 1) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
+    }
+    return !syncInFlightRef.current;
+  };
+
+  const checkRemoteSnapshotVersion = async ({ announce = false, waitForInFlight = false } = {}) => {
+    if (!isDocumentVisible()) return "skipped" as const;
+    if (syncInFlightRef.current) {
+      if (!waitForInFlight || !await waitForSyncIdle()) return "skipped" as const;
+      return checkRemoteSnapshotVersion({ announce, waitForInFlight: false });
+    }
+    syncInFlightRef.current = true;
+    try {
+      const { data, error } = await supabase
+        .from("app_snapshots")
+        .select("updated_at")
+        .eq("key", cloudSnapshotKey)
+        .maybeSingle();
+      if (error) {
+        if (announce) setCloudStatus(`No se pudo verificar la base online: ${error.message}`);
+        return "error" as const;
+      }
+      const remoteVersion = data?.updated_at || null;
+      if (!remoteVersion || remoteVersion === loadedRemoteVersionRef.current) {
+        if (announce) setCloudStatus(`Base online verificada ${new Date().toLocaleTimeString("es-AR")}`);
+        return "current" as const;
+      }
+      if (hasLocalChangesRef.current) {
+        syncConflictRef.current = true;
+        setCloudStatus("Hay cambios nuevos en otra sesión. Tus cambios locales se conservaron; cargá online y revisá antes de guardar.");
+        return "conflict" as const;
+      }
+    } finally {
+      syncInFlightRef.current = false;
+    }
+    const loaded = await loadCloudSnapshot({ automatic: true });
+    if (loaded && announce) setCloudStatus("La base online tenía cambios. Se actualizó la pantalla; volvé a descargar el reporte.");
+    return loaded ? "updated" as const : "error" as const;
   };
 
   const ensureLatestOnlineDataBeforeReport = async () => {
     setCloudStatus("Verificando base online antes del reporte...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
-    if (error) {
-      setCloudStatus(`No se pudo verificar la base online: ${error.message}`);
-      alert("No se pudo verificar la base online. Volve a intentar en unos segundos.");
+    const result = await checkRemoteSnapshotVersion({ announce: true, waitForInFlight: true });
+    if (result === "updated") {
+      alert("Había cambios online de otra PC. Actualicé la pantalla con la última base. Volvé a tocar Descargar reporte Excel.");
       return false;
     }
-    if (!data?.data) return true;
-
-    const onlineUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
-    const loadedAt = lastCloudLoadedAt ? new Date(lastCloudLoadedAt).getTime() : 0;
-    if (!loadedAt || (onlineUpdatedAt > 0 && onlineUpdatedAt > loadedAt + 1000)) {
-      applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
-      setLastCloudLoadedAt(data.updated_at || new Date().toISOString());
-      setCloudStatus("La base online tenia cambios. Se actualizo la pantalla; volve a descargar el reporte.");
-      alert("Habia cambios online de otra PC. Actualice la pantalla con la ultima base. Volve a tocar Descargar reporte Excel.");
+    if (result === "error" || result === "conflict" || result === "skipped") {
+      if (result === "error") alert("No se pudo verificar la base online. Volvé a intentar en unos segundos.");
+      if (result === "skipped") alert("La base online todavía se está sincronizando. Esperá unos segundos y volvé a descargar el reporte.");
       return false;
     }
-
-    setCloudStatus(`Base online verificada ${new Date().toLocaleTimeString("es-AR")}`);
     return true;
   };
 
   const deleteTicketCollectionOnline = async (collectionId: string, nextTicketCollections: TicketCollection[], nextCashMovements: CashMovement[] = cashMovements) => {
     setCloudStatus("Eliminando ticket online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
+    const { data, error } = await readCloudSnapshotForMutation();
     if (error) {
       setCloudStatus(`No se pudo eliminar el ticket online: ${error.message}`);
       return;
@@ -1533,41 +1649,15 @@ const InsuranceCollections = () => {
       cashMovements: mergedCashMovements,
     };
 
-    const { error: saveError } = await supabase
-      .from("app_snapshots")
-      .upsert({ key: cloudSnapshotKey, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (saveError) {
-      setCloudStatus(`No se pudo eliminar el ticket online: ${saveError.message}`);
+    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+    if (!saveResult.ok) {
+      setCloudStatus(`No se pudo eliminar el ticket online: ${saveResult.message}`);
       return;
     }
     setTicketCollections(mergedTicketCollections);
     setCashMovements(mergedCashMovements);
-    setLastCloudLoadedAt(new Date().toISOString());
+    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
     setCloudStatus(`Ticket eliminado online ${new Date().toLocaleTimeString("es-AR")}`);
-  };
-
-  const loadCloudSnapshot = async () => {
-    setCloudBusy(true);
-    setCloudStatus("Cargando datos online...");
-    const { data, error } = await supabase
-      .from("app_snapshots")
-      .select("data, updated_at")
-      .eq("key", cloudSnapshotKey)
-      .maybeSingle();
-    setCloudBusy(false);
-    if (error) {
-      setCloudStatus(`No se pudo cargar online: ${error.message}`);
-      return;
-    }
-    if (!data?.data) {
-      setCloudStatus("Todavia no hay datos guardados online.");
-      setCloudReady(true);
-      return;
-    }
-    applyCloudSnapshot(data.data as Partial<CloudSnapshot>);
-    setLastCloudLoadedAt(data.updated_at || new Date().toISOString());
-    setCloudStatus(`Datos online cargados. Ultima actualizacion: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
-    setCloudReady(true);
   };
 
   useEffect(() => {
@@ -1576,9 +1666,15 @@ const InsuranceCollections = () => {
 
   useEffect(() => {
     if (!cloudReady) return;
-    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return;
+    }
+    hasLocalChangesRef.current = true;
+    if (!isDocumentVisible() || syncInFlightRef.current || syncConflictRef.current) return;
+    clearPendingAutoSave();
     autoSaveTimer.current = window.setTimeout(() => {
-      void saveCloudSnapshotSilent();
+      if (isDocumentVisible() && hasLocalChangesRef.current && !syncInFlightRef.current && !syncConflictRef.current) void saveCloudSnapshotSilent();
     }, 1200);
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
@@ -1587,9 +1683,25 @@ const InsuranceCollections = () => {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void loadCloudSnapshot();
+      void checkRemoteSnapshotVersion();
     }, 30000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!isDocumentVisible()) return;
+      if (hasLocalChangesRef.current && !syncConflictRef.current) {
+        clearPendingAutoSave();
+        autoSaveTimer.current = window.setTimeout(() => {
+          if (hasLocalChangesRef.current && !syncInFlightRef.current && !syncConflictRef.current) void saveCloudSnapshotSilent();
+        }, 1200);
+      } else {
+        void checkRemoteSnapshotVersion();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
   const loadUserProfiles = async () => {
@@ -4517,7 +4629,7 @@ const InsuranceCollections = () => {
               <FileSpreadsheet className="h-4 w-4" />
               Exportar base Excel
             </Button>}
-            {canUseManualSync && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={loadCloudSnapshot} disabled={cloudBusy}>
+            {canUseManualSync && <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => void loadCloudSnapshot()} disabled={cloudBusy}>
               Cargar online
             </Button>}
             {canUseManualSync && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>
