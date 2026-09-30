@@ -1062,7 +1062,7 @@ const InsuranceCollections = () => {
   // than to the render in which the listener was registered.
   currentCloudSnapshotRef.current = buildCloudSnapshot();
 
-  const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>) => {
+  const applyCloudSnapshot = (snapshot: Partial<CloudSnapshot>, { preserveActiveMonth = false } = {}) => {
     setAffiliates(Array.isArray(snapshot.affiliates) ? snapshot.affiliates : demoAffiliates);
     setMonthlyItems(Array.isArray(snapshot.monthlyItems) ? snapshot.monthlyItems : []);
     setMonthlyNewPolicyIds(snapshot.monthlyNewPolicyIds && typeof snapshot.monthlyNewPolicyIds === "object" ? snapshot.monthlyNewPolicyIds : {});
@@ -1078,7 +1078,7 @@ const InsuranceCollections = () => {
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
     setCollectorWhatsapp(String(snapshot.collectorWhatsapp || ""));
-    if (snapshot.activeMonth) setActiveMonth(snapshot.activeMonth);
+    if (snapshot.activeMonth && !preserveActiveMonth) setActiveMonth(snapshot.activeMonth);
   };
 
   const snapshotStats = (snapshot: Partial<CloudSnapshot>) => ({
@@ -1108,11 +1108,11 @@ const InsuranceCollections = () => {
     setLastCloudLoadedAt(updatedAt);
   };
 
-  const applyRemoteSnapshot = (snapshot: Partial<CloudSnapshot>, updatedAt: string) => {
+  const applyRemoteSnapshot = (snapshot: Partial<CloudSnapshot>, updatedAt: string, { preserveActiveMonth = false } = {}) => {
     // React state updates below must not schedule a write back to Supabase.
     skipNextAutoSaveRef.current = true;
     clearPendingAutoSave();
-    applyCloudSnapshot(snapshot);
+    applyCloudSnapshot(snapshot, { preserveActiveMonth });
     loadedRemoteVersionRef.current = updatedAt;
     loadedSnapshotStatsRef.current = snapshotStats(snapshot);
     hasLocalChangesRef.current = false;
@@ -1578,7 +1578,7 @@ const InsuranceCollections = () => {
         setCloudStatus("Llegaron cambios online, pero esta pantalla cambió durante la carga. No se reemplazaron tus datos.");
         return false;
       }
-      applyRemoteSnapshot(data.data as Partial<CloudSnapshot>, data.updated_at || new Date().toISOString());
+      applyRemoteSnapshot(data.data as Partial<CloudSnapshot>, data.updated_at || new Date().toISOString(), { preserveActiveMonth: automatic });
       setCloudStatus(`Datos online cargados. Última actualización: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
       setCloudReady(true);
       return true;
