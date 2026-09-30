@@ -4574,6 +4574,24 @@ const InsuranceCollections = () => {
     return ["CobradorMovil", "Cobranza", "Recibos", "Pedidos", "Novedades", "Rendicion"].includes(item.id);
   });
 
+  const activeMonthOptions = useMemo(() => {
+    const months = new Set<string>([
+      activeMonth,
+      ...monthlyItems.map((item) => item.month),
+      ...Object.keys(monthlyNewPolicyIds),
+      ...ticketCollections.map((item) => item.month),
+      ...ticketReturnControls.map((item) => item.month),
+      ...receipts.map((item) => item.collectionMonth),
+      ...notes.map((item) => item.month),
+      ...cashMovements.map((item) => item.month),
+      ...cashOpeningBalances.map((item) => item.month),
+      ...cashTurnNotes.map((item) => item.month),
+      ...cashTurnClosures.map((item) => item.month),
+    ]);
+    for (let offset = -24; offset <= 12; offset += 1) months.add(addMonths(currentMonth(), offset));
+    return Array.from(months).filter(Boolean).sort();
+  }, [activeMonth, cashMovements, cashOpeningBalances, cashTurnClosures, cashTurnNotes, monthlyItems, monthlyNewPolicyIds, notes, receipts, ticketCollections, ticketReturnControls]);
+
   const forceUppercaseInput = (event: React.FormEvent<HTMLElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
@@ -4636,8 +4654,10 @@ const InsuranceCollections = () => {
           )}
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <div className="col-span-2 flex h-10 items-center gap-2 rounded-md border bg-background px-3 sm:col-span-1">
-              <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Mes</Label>
-              <Input id="active-month" type="month" value={activeMonth} onChange={(event) => setActiveMonth(event.target.value || currentMonth())} className="h-8 w-36 border-0 p-0 shadow-none focus-visible:ring-0" />
+              <Label htmlFor="active-month" className="mb-0 text-xs text-muted-foreground">Período</Label>
+              <select id="active-month" value={activeMonth} onChange={(event) => setActiveMonth(event.target.value)} className="h-8 min-w-44 border-0 bg-transparent p-0 text-sm shadow-none focus:outline-none focus-visible:ring-0">
+                {activeMonthOptions.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}
+              </select>
             </div>
             {isOfficeUser && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => openAffiliateForm()}>
               <Plus className="h-4 w-4" />
