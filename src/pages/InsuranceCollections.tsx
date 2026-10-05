@@ -5544,6 +5544,7 @@ const InsuranceCollections = () => {
                 </Button>
               </div>
             </form>
+            </div>
             <div className="grid gap-4">
             <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
               <div className="border-b p-4">
