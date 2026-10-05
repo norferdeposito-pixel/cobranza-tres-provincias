@@ -742,6 +742,9 @@ const InsuranceCollections = () => {
   const [cashTurnNotes, setCashTurnNotes] = useState<CashTurnNote[]>(() => loadStorage(cashTurnNotesStorageKey, []));
   const [cashTurnClosures, setCashTurnClosures] = useState<CashTurnClosure[]>(() => loadStorage(cashTurnClosuresStorageKey, []));
   const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
+  const [cashCardPayments, setCashCardPayments] = useState([{ id: "card-1", amount: "", detail: "" }]);
+  const [cashTransferPayments, setCashTransferPayments] = useState([{ id: "transfer-1", amount: "", detail: "" }]);
+  const [cashCheckPayments, setCashCheckPayments] = useState([{ id: "check-1", amount: "", detail: "" }]);
   const [cashOpeningForm, setCashOpeningForm] = useState(emptyCashOpeningForm);
   const [cashTurnNoteForm, setCashTurnNoteForm] = useState(emptyCashTurnNoteForm);
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
@@ -2451,9 +2454,9 @@ const InsuranceCollections = () => {
     if (isCoachIncomeReceipt) {
       const paymentRows = [
         { method: "EFECTIVO" as const, amount: parseMoney(cashMovementForm.cashAmount), detail: "" },
-        { method: "TARJETA" as const, amount: parseMoney(cashMovementForm.cardAmount), detail: cashMovementForm.cardDetail },
-        { method: "TRANSFERENCIA" as const, amount: parseMoney(cashMovementForm.transferAmount), detail: cashMovementForm.transferDetail },
-        { method: "CHEQUE" as const, amount: parseMoney(cashMovementForm.checkAmount), detail: cashMovementForm.checkDetail },
+        ...cashCardPayments.map((payment) => ({ method: "TARJETA" as const, amount: parseMoney(payment.amount), detail: payment.detail })),
+        ...cashTransferPayments.map((payment) => ({ method: "TRANSFERENCIA" as const, amount: parseMoney(payment.amount), detail: payment.detail })),
+        ...cashCheckPayments.map((payment) => ({ method: "CHEQUE" as const, amount: parseMoney(payment.amount), detail: payment.detail })),
       ].filter((row) => row.amount > 0);
       const paymentTotal = paymentRows.reduce((sum, row) => sum + row.amount, 0);
       if (paymentRows.length === 0) {
@@ -2495,6 +2498,9 @@ const InsuranceCollections = () => {
       const nextCashMovements = [...movements, ...cashMovements];
       setCashMovements(nextCashMovements);
       setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+      setCashCardPayments([{ id: `card-${Date.now()}`, amount: "", detail: "" }]);
+      setCashTransferPayments([{ id: `transfer-${Date.now()}`, amount: "", detail: "" }]);
+      setCashCheckPayments([{ id: `check-${Date.now()}`, amount: "", detail: "" }]);
       await saveCashMovementsOnline(nextCashMovements, `Recibo cargado: ${currency.format(amount)} distribuido en ${paymentRows.length} medio(s) de pago. Sincronizado online`);
       return;
     }
@@ -2571,9 +2577,9 @@ const InsuranceCollections = () => {
   const cashOpeningAlreadyExists = !!cashOpeningExisting;
   const isCashCoachIncome = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
   const cashPaymentBreakdownTotal = parseMoney(cashMovementForm.cashAmount)
-    + parseMoney(cashMovementForm.cardAmount)
-    + parseMoney(cashMovementForm.transferAmount)
-    + parseMoney(cashMovementForm.checkAmount);
+    + cashCardPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0)
+    + cashTransferPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0)
+    + cashCheckPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0);
   const cashReceiptTotal = parseMoney(cashMovementForm.amount);
   const cashBreakdownMatchesTotal = !isCashCoachIncome || (cashReceiptTotal > 0 && Math.abs(cashPaymentBreakdownTotal - cashReceiptTotal) <= 0.01);
 
@@ -5497,8 +5503,8 @@ const InsuranceCollections = () => {
         )}
 
         {activeSection === "Caja" && isOfficeUser && (
-          <section className="grid items-start gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="flex flex-col gap-4 self-start 2xl:sticky 2xl:top-4">
+          <section className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4 self-start xl:sticky xl:top-4">
             <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
               <div className="border-b p-4">
                 <h2 className="font-semibold">Estado inicial de caja</h2>
@@ -5538,6 +5544,7 @@ const InsuranceCollections = () => {
                 </Button>
               </div>
             </form>
+            <div className="grid gap-4">
             <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
               <div className="border-b p-4">
                 <h2 className="font-semibold">Caja</h2>
@@ -5663,34 +5670,58 @@ const InsuranceCollections = () => {
                         Suma medios: {currency.format(cashPaymentBreakdownTotal)}
                       </p>
                     </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div>
+                    <div className="mt-3 grid gap-4">
+                      <div className="max-w-sm">
                         <Label>Efectivo</Label>
                         <Input inputMode="decimal" value={cashMovementForm.cashAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, cashAmount: event.target.value }))} placeholder="$ 0" />
                       </div>
-                      <div>
-                        <Label>Tarjeta</Label>
-                        <Input inputMode="decimal" value={cashMovementForm.cardAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, cardAmount: event.target.value }))} placeholder="$ 0" />
+
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">Tarjeta</p>
+                          <Button type="button" size="sm" variant="outline" onClick={() => setCashCardPayments((current) => [...current, { id: `card-${Date.now()}-${current.length}`, amount: "", detail: "" }])}>+ Agregar pago</Button>
+                        </div>
+                        <div className="grid gap-3">
+                          {cashCardPayments.map((payment, index) => (
+                            <div key={payment.id} className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
+                              <div><Label>Importe {index + 1}</Label><Input inputMode="decimal" value={payment.amount} onChange={(event) => setCashCardPayments((current) => current.map((item) => item.id === payment.id ? { ...item, amount: event.target.value } : item))} placeholder="$ 0" /></div>
+                              <div><Label>Datos tarjeta</Label><Input value={payment.detail} onChange={(event) => setCashCardPayments((current) => current.map((item) => item.id === payment.id ? { ...item, detail: event.target.value } : item))} placeholder="TARJETA / CUPON / LOTE / AUTORIZACION" /></div>
+                              {cashCardPayments.length > 1 && <Button type="button" variant="outline" onClick={() => setCashCardPayments((current) => current.filter((item) => item.id !== payment.id))}>Quitar</Button>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="sm:col-span-2">
-                        <Label>Datos tarjeta</Label>
-                        <Input value={cashMovementForm.cardDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, cardDetail: event.target.value }))} placeholder="TARJETA / CUPON / LOTE / AUTORIZACION" />
+
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">Transferencia / Mercado Pago</p>
+                          <Button type="button" size="sm" variant="outline" onClick={() => setCashTransferPayments((current) => [...current, { id: `transfer-${Date.now()}-${current.length}`, amount: "", detail: "" }])}>+ Agregar pago</Button>
+                        </div>
+                        <div className="grid gap-3">
+                          {cashTransferPayments.map((payment, index) => (
+                            <div key={payment.id} className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
+                              <div><Label>Importe {index + 1}</Label><Input inputMode="decimal" value={payment.amount} onChange={(event) => setCashTransferPayments((current) => current.map((item) => item.id === payment.id ? { ...item, amount: event.target.value } : item))} placeholder="$ 0" /></div>
+                              <div><Label>Datos transferencia</Label><Input value={payment.detail} onChange={(event) => setCashTransferPayments((current) => current.map((item) => item.id === payment.id ? { ...item, detail: event.target.value } : item))} placeholder="COMPROBANTE / TITULAR / BANCO" /></div>
+                              {cashTransferPayments.length > 1 && <Button type="button" variant="outline" onClick={() => setCashTransferPayments((current) => current.filter((item) => item.id !== payment.id))}>Quitar</Button>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div>
-                        <Label>Transferencia / Mercado Pago</Label>
-                        <Input inputMode="decimal" value={cashMovementForm.transferAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, transferAmount: event.target.value }))} placeholder="$ 0" />
-                      </div>
-                      <div>
-                        <Label>Datos transferencia</Label>
-                        <Input value={cashMovementForm.transferDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, transferDetail: event.target.value }))} placeholder="COMPROBANTE / TITULAR / BANCO" />
-                      </div>
-                      <div>
-                        <Label>Cheque</Label>
-                        <Input inputMode="decimal" value={cashMovementForm.checkAmount} onChange={(event) => setCashMovementForm((current) => ({ ...current, checkAmount: event.target.value }))} placeholder="$ 0" />
-                      </div>
-                      <div>
-                        <Label>Datos cheque</Label>
-                        <Input value={cashMovementForm.checkDetail} onChange={(event) => setCashMovementForm((current) => ({ ...current, checkDetail: event.target.value }))} placeholder="BANCO / NRO CHEQUE / FECHA COBRO" />
+
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">Cheque</p>
+                          <Button type="button" size="sm" variant="outline" onClick={() => setCashCheckPayments((current) => [...current, { id: `check-${Date.now()}-${current.length}`, amount: "", detail: "" }])}>+ Agregar pago</Button>
+                        </div>
+                        <div className="grid gap-3">
+                          {cashCheckPayments.map((payment, index) => (
+                            <div key={payment.id} className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
+                              <div><Label>Importe {index + 1}</Label><Input inputMode="decimal" value={payment.amount} onChange={(event) => setCashCheckPayments((current) => current.map((item) => item.id === payment.id ? { ...item, amount: event.target.value } : item))} placeholder="$ 0" /></div>
+                              <div><Label>Datos cheque</Label><Input value={payment.detail} onChange={(event) => setCashCheckPayments((current) => current.map((item) => item.id === payment.id ? { ...item, detail: event.target.value } : item))} placeholder="BANCO / NRO CHEQUE / FECHA COBRO" /></div>
+                              {cashCheckPayments.length > 1 && <Button type="button" variant="outline" onClick={() => setCashCheckPayments((current) => current.filter((item) => item.id !== payment.id))}>Quitar</Button>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     {!cashBreakdownMatchesTotal && cashReceiptTotal > 0 && (
@@ -5715,9 +5746,6 @@ const InsuranceCollections = () => {
                 <Button type="submit" variant="command" disabled={isCashCoachIncome && !cashBreakdownMatchesTotal}>Agregar movimiento</Button>
               </div>
             </form>
-            </div>
-
-            <div className="grid gap-4">
               <form onSubmit={saveCashTurnNote} className="rounded-md border bg-card">
                 <div className="border-b p-4">
                   <h2 className="font-semibold">Novedades del turno</h2>
@@ -5912,134 +5940,8 @@ const InsuranceCollections = () => {
                     )}
                   </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
-                    <thead className="bg-surface-subtle text-left text-xs uppercase text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Oficina</th>
-                        <th className="px-4 py-3">Turno</th>
-                        <th className="px-4 py-3">Tipo</th>
-                        <th className="px-4 py-3">Origen</th>
-                        <th className="px-4 py-3">Medio</th>
-                        <th className="px-4 py-3">Comprobante</th>
-                        <th className="px-4 py-3">Concepto</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
-                        <th className="px-4 py-3">Usuario</th>
-                        <th className="px-4 py-3 text-right">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleCashMovements.map((item) => (
-                        <tr key={item.id} className="border-t">
-                          <td className="px-4 py-3">{item.date}</td>
-                          <td className="px-4 py-3">{item.office}</td>
-                          <td className="px-4 py-3">{item.shift || "-"}</td>
-                          <td className="px-4 py-3 font-medium">{item.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
-                          <td className="px-4 py-3">{item.source}</td>
-                          <td className="px-4 py-3">{item.paymentMethod}</td>
-                          <td className="px-4 py-3">{[item.receiptType, item.receiptNumber].filter(Boolean).join(" ") || "-"}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{item.concept || "-"}</p>
-                            {item.notes && <p className="mt-1 text-xs text-muted-foreground">{item.notes}</p>}
-                          </td>
-                          <td className={`px-4 py-3 text-right font-semibold ${item.type === "egreso" ? "text-destructive" : ""}`}>{currency.format(item.amount)}</td>
-                          <td className="px-4 py-3">{item.user}</td>
-                          <td className="px-4 py-3 text-right">
-                            <Button type="button" size="sm" variant="outline" onClick={() => deleteCashMovement(item.id)}>Eliminar</Button>
-                          </td>
-                        </tr>
-                      ))}
-                      {visibleCashMovements.length === 0 && (
-                        <tr>
-                          <td className="px-4 py-8 text-center text-muted-foreground" colSpan={11}>No hay movimientos de caja cargados para este periodo.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
                 <div className="border-t p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <h3 className="font-semibold">Cajas anteriores</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">Copias guardadas de cierres de turno. Se consultan por fecha.</p>
-                    </div>
-                    <div className="w-full sm:w-48">
-                      <Label>Fecha</Label>
-                      <Input type="date" value={cashClosureDateFilter} onChange={(event) => setCashClosureDateFilter(event.target.value)} />
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-3">
-                    {visibleCashTurnClosures.map((closure) => (
-                      <details key={closure.id} className="rounded-md border bg-background p-3 text-sm">
-                        <summary className="cursor-pointer font-semibold">
-                          {closure.office} - {closure.shift} - {new Date(closure.createdAt).toLocaleString("es-AR")}
-                        </summary>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                          <div className="rounded-md bg-surface-subtle p-2">
-                            <p className="text-xs text-muted-foreground">Ingresos</p>
-                            <p className="font-semibold">{currency.format(closure.totals.income)}</p>
-                          </div>
-                          <div className="rounded-md bg-surface-subtle p-2">
-                            <p className="text-xs text-muted-foreground">Egresos</p>
-                            <p className="font-semibold">{currency.format(closure.totals.expense)}</p>
-                          </div>
-                          <div className="rounded-md bg-surface-subtle p-2">
-                            <p className="text-xs text-muted-foreground">Saldo caja</p>
-                            <p className="font-semibold">{currency.format(closure.totals.balance)}</p>
-                          </div>
-                          <div className="rounded-md bg-surface-subtle p-2">
-                            <p className="text-xs text-muted-foreground">Movimientos</p>
-                            <p className="font-semibold">{closure.totals.movementCount}</p>
-                          </div>
-                        </div>
-                        <div className="mt-3 overflow-x-auto rounded-md border">
-                          <table className="w-full min-w-[760px] text-xs">
-                            <thead className="bg-surface-subtle text-left uppercase text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2">Fecha</th>
-                                <th className="px-3 py-2">Tipo</th>
-                                <th className="px-3 py-2">Origen</th>
-                                <th className="px-3 py-2">Medio</th>
-                                <th className="px-3 py-2">Comprobante</th>
-                                <th className="px-3 py-2">Concepto</th>
-                                <th className="px-3 py-2 text-right">Monto</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {closure.movements.map((movement) => (
-                                <tr key={movement.id} className="border-t">
-                                  <td className="px-3 py-2">{movement.date}</td>
-                                  <td className="px-3 py-2">{movement.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
-                                  <td className="px-3 py-2">{movement.source}</td>
-                                  <td className="px-3 py-2">{movement.paymentMethod}</td>
-                                  <td className="px-3 py-2">{[movement.receiptType, movement.receiptNumber].filter(Boolean).join(" ") || "-"}</td>
-                                  <td className="px-3 py-2">{movement.concept || "-"}</td>
-                                  <td className="px-3 py-2 text-right font-semibold">{currency.format(movement.amount)}</td>
-                                </tr>
-                              ))}
-                              {closure.movements.length === 0 && (
-                                <tr><td className="px-3 py-6 text-center text-muted-foreground" colSpan={7}>Cierre guardado sin movimientos.</td></tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                        {closure.notes.length > 0 && (
-                          <div className="mt-3 rounded-md border bg-surface-subtle p-3">
-                            <p className="text-xs font-semibold uppercase text-muted-foreground">Novedades guardadas</p>
-                            <div className="mt-2 grid gap-2">
-                              {closure.notes.map((note) => (
-                                <p key={note.id} className="text-xs">{note.entryType || "NOVEDAD"}: {note.text}</p>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </details>
-                    ))}
-                    {visibleCashTurnClosures.length === 0 && (
-                      <p className="rounded-md border bg-surface-subtle px-3 py-3 text-sm text-muted-foreground">No hay cierres guardados para esa fecha.</p>
-                    )}
-                  </div>
+                  <p className="text-sm text-muted-foreground">El detalle de movimientos y los cierres anteriores se consultan únicamente desde el reporte de caja.</p>
                 </div>
               </div>
             </div>
