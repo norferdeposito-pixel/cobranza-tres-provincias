@@ -127,7 +127,9 @@ type CashMovement = {
   shift: string;
   user: string;
   type: "ingreso" | "egreso";
-  source: "SERVICIOS" | "PRE NECESIDAD" | "TRES PROVINCIAS" | "OTROS";
+  source: "SERVICIOS" | "PRE NECESIDAD" | "TRES PROVINCIAS" | "FONDO FIJO" | "OTROS";
+  fundingSource?: "TRES PROVINCIAS" | "CAJA";
+  fundingAmount?: number;
   paymentMethod: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "CHEQUE" | "OTRO";
   receiptType: string;
   receiptNumber: string;
@@ -686,6 +688,7 @@ const emptyCashMovementForm = () => ({
   checkAmount: "",
   checkDetail: "",
   notes: "",
+  fundingSource: "TRES PROVINCIAS" as "TRES PROVINCIAS" | "CAJA",
 });
 const emptyCashOpeningForm = () => ({
   date: today(),
@@ -2356,7 +2359,6 @@ const InsuranceCollections = () => {
     visibleCashOpeningBalances.forEach((item) => {
       totals.opening += item.amount;
       totals.balance += item.amount;
-      totals.cash += item.amount;
     });
     visibleCashMovements.forEach((item) => {
       const signed = item.type === "ingreso" ? item.amount : -item.amount;
@@ -2372,10 +2374,16 @@ const InsuranceCollections = () => {
     return totals;
   }, [visibleCashMovements, visibleCashOpeningBalances]);
 
+  const fixedFundBalance = useMemo(() => {
+    const office = isAdminUser ? cashOfficeFilter : activeOffice;
+    return office && office !== "todos" ? Math.max(0, fixedFundFor(cashReportDate, office, cashReportShift)) : visibleCashOpeningBalances.reduce((sum, item) => sum + item.amount, 0);
+  }, [activeOffice, cashMovements, cashOfficeFilter, cashOpeningBalances, cashReportDate, cashReportShift, isAdminUser, visibleCashOpeningBalances]);
+
   const tresProvinciasCollectedForTurn = useMemo(() => {
-    return visibleCashMovements
-      .filter((item) => item.type === "ingreso" && item.source === "TRES PROVINCIAS")
-      .reduce((sum, item) => sum + item.amount, 0);
+    const collected = visibleCashMovements.filter((item) => item.type === "ingreso" && item.source === "TRES PROVINCIAS").reduce((sum, item) => sum + item.amount, 0);
+    const transferred = visibleCashMovements.filter((item) => item.type === "ingreso" && item.source === "FONDO FIJO" && item.fundingSource === "TRES PROVINCIAS").reduce((sum, item) => sum + item.amount, 0);
+    const expenseSupport = visibleCashMovements.filter((item) => item.type === "egreso" && item.fundingSource === "TRES PROVINCIAS").reduce((sum, item) => sum + (item.fundingAmount || 0), 0);
+    return collected - transferred - expenseSupport;
   }, [visibleCashMovements]);
 
   const saveCashTurnClosure = async () => {
@@ -2444,12 +2452,46 @@ const InsuranceCollections = () => {
     await saveCashOpeningBalancesOnline(nextOpeningBalances);
   };
 
+  const fixedFundFor = (date: string, office: string, shift?: string) => {
+    const normalizedOffice = office.trim().toLocaleUpperCase("es-AR");
+    if (!normalizedOffice || normalizedOffice === "TODOS") return 0;
+    const shiftOrder = shift ? (cashShiftOrder.get(shift.trim().toLocaleUpperCase("es-AR")) || 99) : 99;
+    const opening = cashOpeningBalances.filter((item) => item.office === normalizedOffice && item.date <= date).reduce((sum, item) => sum + item.amount, 0);
+    return cashMovements.filter((item) => item.office === normalizedOffice)
+      .filter((item) => item.date < date || (item.date === date && (cashShiftOrder.get((item.shift || "").trim().toLocaleUpperCase("es-AR")) || 0) <= shiftOrder))
+      .reduce((total, item) => {
+        if (item.type === "ingreso" && item.source === "FONDO FIJO") return total + item.amount;
+        if (item.type === "egreso") return total - Math.max(0, item.amount - (item.fundingAmount || 0));
+        return total;
+      }, opening);
+  };
+
   const saveCashMovement = async (event: FormEvent) => {
     event.preventDefault();
     const amount = parseMoney(cashMovementForm.amount);
     const office = isAdminUser ? cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
     if (!isAdminUser && !office) return;
     if (!cashMovementForm.date || amount <= 0) return;
+    const isFixedFundIncome = cashMovementForm.type === "ingreso" && cashMovementForm.source === "FONDO FIJO";
+    const currentFixedFund = Math.max(0, fixedFundFor(cashMovementForm.date, office, cashMovementForm.shift));
+    const expenseShortfall = cashMovementForm.type === "egreso" ? Math.max(0, amount - currentFixedFund) : 0;
+    if (isFixedFundIncome) {
+      const movement: CashMovement = {
+        id: `cash-fixed-fund-${Date.now()}`, date: cashMovementForm.date, month: cashMovementForm.date.slice(0, 7), office,
+        shift: cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
+        user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+        type: "ingreso", source: "FONDO FIJO", fundingSource: cashMovementForm.fundingSource, fundingAmount: amount,
+        paymentMethod: "EFECTIVO", receiptType: cashMovementForm.receiptType.trim().toLocaleUpperCase("es-AR"),
+        receiptNumber: cashMovementForm.receiptNumber.trim().toLocaleUpperCase("es-AR"),
+        concept: `INGRESO A FONDO FIJO DESDE ${cashMovementForm.fundingSource}`, amount,
+        notes: cashMovementForm.notes.trim().toLocaleUpperCase("es-AR"),
+      };
+      const nextCashMovements = [movement, ...cashMovements];
+      setCashMovements(nextCashMovements);
+      setCashMovementForm((current) => ({ ...emptyCashMovementForm(), date: defaultCashDateForActiveMonth(), office, shift: current.shift }));
+      await saveCashMovementsOnline(nextCashMovements, `Fondo fijo incrementado en ${currency.format(amount)} desde ${cashMovementForm.fundingSource}. Sincronizado online`);
+      return;
+    }
     const isCoachIncomeReceipt = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
     if (isCoachIncomeReceipt) {
       const paymentRows = [
@@ -2512,8 +2554,10 @@ const InsuranceCollections = () => {
       shift: cashMovementForm.shift.trim().toLocaleUpperCase("es-AR"),
       user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
       type: cashMovementForm.type,
-      source: cashMovementForm.source,
-      paymentMethod: cashMovementForm.paymentMethod,
+      source: cashMovementForm.type === "egreso" ? "FONDO FIJO" : cashMovementForm.source,
+      fundingSource: cashMovementForm.type === "egreso" && expenseShortfall > 0 ? cashMovementForm.fundingSource : undefined,
+      fundingAmount: cashMovementForm.type === "egreso" ? expenseShortfall : undefined,
+      paymentMethod: cashMovementForm.type === "egreso" ? "EFECTIVO" : cashMovementForm.paymentMethod,
       receiptType: cashMovementForm.receiptType.trim().toLocaleUpperCase("es-AR"),
       receiptNumber: cashMovementForm.receiptNumber.trim().toLocaleUpperCase("es-AR"),
       concept: cashMovementForm.concept.trim().toLocaleUpperCase("es-AR"),
@@ -2576,6 +2620,10 @@ const InsuranceCollections = () => {
   const cashOpeningExisting = cashOpeningBalances.find((item) => item.date === cashOpeningForm.date && item.office === cashOpeningFormOffice);
   const cashOpeningAlreadyExists = !!cashOpeningExisting;
   const isCashCoachIncome = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
+  const isCashFixedFundIncome = cashMovementForm.type === "ingreso" && cashMovementForm.source === "FONDO FIJO";
+  const cashFormOffice = isAdminUser ? cashMovementForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
+  const currentFixedFundForForm = Math.max(0, fixedFundFor(cashMovementForm.date, cashFormOffice, cashMovementForm.shift));
+  const cashExpenseShortfall = cashMovementForm.type === "egreso" ? Math.max(0, parseMoney(cashMovementForm.amount) - currentFixedFundForForm) : 0;
   const cashPaymentBreakdownTotal = parseMoney(cashMovementForm.cashAmount)
     + cashCardPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0)
     + cashTransferPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0)
@@ -2749,7 +2797,7 @@ const InsuranceCollections = () => {
           <td>${escapeHtml(item.office)}</td>
           <td>${escapeHtml(item.shift || "-")}</td>
           <td>${item.type === "ingreso" ? "INGRESO" : "EGRESO"}</td>
-          <td>${escapeHtml(item.source)}</td>
+          <td>${escapeHtml(item.source)}${item.fundingSource ? `<br><small>DESDE ${escapeHtml(item.fundingSource)}${item.fundingAmount ? ` ${currency.format(item.fundingAmount)}` : ""}</small>` : ""}</td>
           <td>${escapeHtml(item.paymentMethod)}</td>
           <td>${escapeHtml([item.receiptType, item.receiptNumber].filter(Boolean).join(" ") || "-")}</td>
           <td>${escapeHtml(item.concept || "-")}${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ""}</td>
@@ -2819,27 +2867,28 @@ const InsuranceCollections = () => {
           <title>Reporte de turno - ${escapeHtml(officeLabel)}</title>
           <style>
             * { box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
-            h1 { font-size: 20px; margin: 0 0 4px; }
-            h2 { font-size: 15px; margin: 22px 0 8px; }
+            body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; font-size: 9px; line-height: 1.15; }
+            h1 { font-size: 16px; margin: 0 0 2px; }
+            h2 { font-size: 11px; margin: 8px 0 4px; }
             p { margin: 2px 0; }
-            .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #0b5cad; padding-bottom: 12px; }
-            .meta { text-align: right; font-size: 12px; }
-            .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
+            .header { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #0b5cad; padding-bottom: 5px; }
+            .meta { text-align: right; font-size: 9px; }
+            .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 6px 0; }
             .grid-payments { grid-template-columns: repeat(6, 1fr); }
-            .box { border: 1px solid #cbd5e1; padding: 8px; min-height: 54px; }
-            .label { color: #475569; font-size: 11px; text-transform: uppercase; }
-            .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th { background: #0b5cad; color: #fff; text-align: left; padding: 7px; }
-            td { border: 1px solid #d8e1ec; padding: 6px; vertical-align: top; }
+            .box { border: 1px solid #cbd5e1; padding: 4px; min-height: 34px; }
+            .label { color: #475569; font-size: 8px; text-transform: uppercase; }
+            .value { font-size: 12px; font-weight: 700; margin-top: 2px; }
+            table { width: 100%; border-collapse: collapse; font-size: 8px; }
+            th { background: #0b5cad; color: #fff; text-align: left; padding: 3px; }
+            td { border: 1px solid #d8e1ec; padding: 3px; vertical-align: top; }
             .right { text-align: right; }
-            .empty { text-align: center; color: #64748b; padding: 14px; }
+            .empty { text-align: center; color: #64748b; padding: 5px; }
             .done { text-decoration: line-through; color: #64748b; }
-            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 52px; }
-            .signature { border-top: 1px solid #0f172a; text-align: center; padding-top: 8px; font-size: 12px; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 22px; }
+            .signature { border-top: 1px solid #0f172a; text-align: center; padding-top: 4px; font-size: 9px; }
             @media print {
-              body { margin: 12mm; }
+              @page { size: A4 portrait; margin: 7mm; }
+              body { margin: 0; }
               button { display: none; }
               .page-break { break-before: page; }
             }
@@ -2859,7 +2908,7 @@ const InsuranceCollections = () => {
             </div>
           </div>
           <div class="grid">
-            <div class="box"><div class="label">Saldo anterior</div><div class="value">${currency.format(previousBalance)}</div></div>
+            <div class="box"><div class="label">Fondo fijo</div><div class="value">${currency.format(reportOffice === "todos" ? openingTotal : Math.max(0, fixedFundFor(cashReportDate, reportOffice, normalizedShift)))}</div></div>
             <div class="box"><div class="label">Ingresos turno</div><div class="value">${currency.format(totals.income)}</div></div>
             <div class="box"><div class="label">Egresos turno</div><div class="value">${currency.format(totals.expense)}</div></div>
             <div class="box"><div class="label">Saldo turno</div><div class="value">${currency.format(totals.balance)}</div></div>
@@ -2873,13 +2922,7 @@ const InsuranceCollections = () => {
             <div class="box"><div class="label">Otro</div><div class="value">${currency.format(totals.other)}</div></div>
             <div class="box"><div class="label">Movimientos</div><div class="value">${movementRows.length}</div></div>
           </div>
-          <h2>NOVEDADES DEL TURNO</h2>
-          <table>
-            <thead>
-              <tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Usuario</th><th>Detalle</th></tr>
-            </thead>
-            <tbody>${turnNotesHtml}</tbody>
-          </table>
+          ${turnNoteRows.length ? `<h2>NOVEDADES DEL TURNO</h2><table><thead><tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Usuario</th><th>Detalle</th></tr></thead><tbody>${turnNotesHtml}</tbody></table>` : ""}
           <h2>MOVIMIENTOS DEL TURNO</h2>
           <table>
             <thead>
@@ -2894,22 +2937,22 @@ const InsuranceCollections = () => {
             </thead>
             <tbody>${planHtml}</tbody>
           </table>
-          <h2>TICKETS COBRADOS DE TRES PROVINCIAS</h2>
-          <p><strong>Total tickets:</strong> ${ticketRowsForTurn.reduce((sum, row) => sum + row.collection.ticketsCharged, 0)} Â· <strong>Monto:</strong> ${currency.format(ticketRowsTotal)}</p>
+          ${ticketRowsForTurn.length ? `<h2>TICKETS COBRADOS DE TRES PROVINCIAS</h2>
+          <p><strong>Total tickets:</strong> \${ticketRowsForTurn.reduce((sum, row) => sum + row.collection.ticketsCharged, 0)} Â· <strong>Monto:</strong> \${currency.format(ticketRowsTotal)}</p>
           <table>
             <thead>
               <tr><th>Fecha</th><th>Turno</th><th>Afiliado</th><th>Poliza</th><th>Plan</th><th>Tickets</th><th>Medio</th><th>Monto</th></tr>
             </thead>
-            <tbody>${ticketDetailHtml}</tbody>
-          </table>
-          <h2>RECIBOS COBRADOS DE TRES PROVINCIAS</h2>
-          <p><strong>Total recibos:</strong> ${new Set(receiptRowsForTurn.map((receipt) => `${receipt.receiptNumber}-${receipt.plan}`)).size} Â· <strong>Monto:</strong> ${currency.format(receiptRowsTotal)}</p>
+            <tbody>\${ticketDetailHtml}</tbody>
+          </table>` : ""}
+          ${receiptRowsForTurn.length ? `<h2>RECIBOS COBRADOS DE TRES PROVINCIAS</h2>
+          <p><strong>Total recibos:</strong> \${new Set(receiptRowsForTurn.map((receipt) => \`\${receipt.receiptNumber}-\${receipt.plan}\`)).size} Â· <strong>Monto:</strong> \${currency.format(receiptRowsTotal)}</p>
           <table>
             <thead>
               <tr><th>Fecha carga</th><th>Recibo</th><th>Afiliado</th><th>Poliza</th><th>Plan</th><th>Meses</th><th>Medio</th><th>Monto</th></tr>
             </thead>
-            <tbody>${receiptDetailHtml}</tbody>
-          </table>
+            <tbody>\${receiptDetailHtml}</tbody>
+          </table>` : ""}
           <div class="signatures">
             <div class="signature">FIRMA TURNO SALIENTE</div>
             <div class="signature">FIRMA TURNO ENTRANTE</div>
@@ -5505,10 +5548,10 @@ const InsuranceCollections = () => {
         {activeSection === "Caja" && isOfficeUser && (
           <section className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
             <div className="flex flex-col gap-4 self-start xl:sticky xl:top-4">
-            <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
+            {isAdminUser && <form onSubmit={saveCashOpeningBalance} className="rounded-md border bg-card">
               <div className="border-b p-4">
-                <h2 className="font-semibold">Estado inicial de caja</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Carga por unica vez el saldo con el que arranca la caja.</p>
+                <h2 className="font-semibold">Fondo fijo inicial</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Configuración administrativa del fondo fijo inicial de la oficina.</p>
               </div>
               <div className="grid gap-3 p-4">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -5527,7 +5570,7 @@ const InsuranceCollections = () => {
                   </div>
                 </div>
                 <div>
-                  <Label>Saldo inicial</Label>
+                  <Label>Fondo fijo inicial</Label>
                   <Input inputMode="decimal" value={cashOpeningForm.amount} onChange={(event) => setCashOpeningForm((current) => ({ ...current, amount: event.target.value }))} placeholder="$ 0" />
                 </div>
                 <div>
@@ -5536,14 +5579,14 @@ const InsuranceCollections = () => {
                 </div>
                 {cashOpeningAlreadyExists && (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                    YA EXISTE SALDO INICIAL PARA {cashOpeningFormOffice} EL {cashOpeningForm.date}. {isAdminUser ? "PODÉS ACTUALIZARLO." : ""}
+                    YA EXISTE FONDO FIJO INICIAL PARA {cashOpeningFormOffice} EL {cashOpeningForm.date}. {isAdminUser ? "PODÉS ACTUALIZARLO." : ""}
                   </p>
                 )}
                 <Button type="submit" variant="command" disabled={cashOpeningAlreadyExists && !isAdminUser}>
-                  {cashOpeningAlreadyExists && isAdminUser ? "Actualizar saldo inicial" : "Cargar saldo inicial"}
+                  {cashOpeningAlreadyExists && isAdminUser ? "Actualizar fondo fijo" : "Cargar fondo fijo"}
                 </Button>
               </div>
-            </form>
+            </form>}
             </div>
             <div className="grid gap-4">
             <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
@@ -5588,7 +5631,7 @@ const InsuranceCollections = () => {
                         return {
                           ...current,
                           type,
-                          source: type === "ingreso" ? "SERVICIOS" : current.source === "TRES PROVINCIAS" ? "OTROS" : current.source,
+                          source: type === "ingreso" ? "SERVICIOS" : "FONDO FIJO",
                           concept: "",
                         };
                       })}
@@ -5606,28 +5649,29 @@ const InsuranceCollections = () => {
                         <>
                           <option value="SERVICIOS">Cobranza de servicios</option>
                           <option value="PRE NECESIDAD">Pre Necesidad</option>
+                          <option value="FONDO FIJO">Fondo Fijo</option>
                         </>
                       ) : (
-                        <>
-                          <option value="SERVICIOS">Servicios</option>
-                          <option value="PRE NECESIDAD">Pre Necesidad</option>
-                          <option value="OTROS">Otros</option>
-                        </>
+                        <option value="FONDO FIJO">Fondo Fijo</option>
                       )}
                     </select>
                   </div>
-                  {!isCashCoachIncome && (
+                  {(isCashFixedFundIncome || cashExpenseShortfall > 0) ? (
+                    <div>
+                      <Label>{isCashFixedFundIncome ? "Retirar de" : `Fondo fijo insuficiente · faltan ${currency.format(cashExpenseShortfall)} · retirar de`}</Label>
+                      <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.fundingSource} onChange={(event) => setCashMovementForm((current) => ({ ...current, fundingSource: event.target.value as "TRES PROVINCIAS" | "CAJA" }))}>
+                        <option value="TRES PROVINCIAS">Tres Provincias</option>
+                        <option value="CAJA">Caja</option>
+                      </select>
+                    </div>
+                  ) : !isCashCoachIncome && cashMovementForm.type !== "egreso" ? (
                     <div>
                       <Label>Medio de pago</Label>
                       <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashMovementForm.paymentMethod} onChange={(event) => setCashMovementForm((current) => ({ ...current, paymentMethod: event.target.value as CashMovement["paymentMethod"] }))}>
-                        <option value="EFECTIVO">Efectivo</option>
-                        <option value="TARJETA">Tarjeta</option>
-                        <option value="TRANSFERENCIA">Transferencia</option>
-                        <option value="CHEQUE">Cheque</option>
-                        <option value="OTRO">Otro</option>
+                        <option value="EFECTIVO">Efectivo</option><option value="TARJETA">Tarjeta</option><option value="TRANSFERENCIA">Transferencia</option><option value="CHEQUE">Cheque</option><option value="OTRO">Otro</option>
                       </select>
                     </div>
-                  )}
+                  ) : null}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -5802,7 +5846,7 @@ const InsuranceCollections = () => {
               </form>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-                <SummaryBox label="Saldo inicial" value={currency.format(cashTotals.opening)} />
+                <SummaryBox label="Fondo fijo" value={currency.format(fixedFundBalance)} />
                 <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
                 <SummaryBox label="Egresos" value={currency.format(cashTotals.expense)} />
                 <SummaryBox label="Saldo caja" value={currency.format(cashTotals.balance)} />
