@@ -2369,6 +2369,12 @@ const InsuranceCollections = () => {
     return totals;
   }, [visibleCashMovements, visibleCashOpeningBalances]);
 
+  const tresProvinciasCollectedForTurn = useMemo(() => {
+    return visibleCashMovements
+      .filter((item) => item.type === "ingreso" && item.source === "TRES PROVINCIAS")
+      .reduce((sum, item) => sum + item.amount, 0);
+  }, [visibleCashMovements]);
+
   const saveCashTurnClosure = async () => {
     const office = isAdminUser ? cashOfficeFilter : activeOffice;
     const normalizedShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
@@ -5771,7 +5777,7 @@ const InsuranceCollections = () => {
                 <SummaryBox label="Ingresos" value={currency.format(cashTotals.income)} />
                 <SummaryBox label="Egresos" value={currency.format(cashTotals.expense)} />
                 <SummaryBox label="Saldo caja" value={currency.format(cashTotals.balance)} />
-                <SummaryBox label="Movimientos" value={String(visibleCashMovements.length)} />
+                <SummaryBox label="Cobrado Tres Provincias" value={currency.format(tresProvinciasCollectedForTurn)} />
               </div>
 
               <div className="rounded-md border bg-card">
