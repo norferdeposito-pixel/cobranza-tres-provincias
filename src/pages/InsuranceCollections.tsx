@@ -2309,37 +2309,34 @@ const InsuranceCollections = () => {
   const visibleCashMovements = useMemo(() => {
     const normalizedReportShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
     return cashMovements
-      .filter((item) => item.month === activeMonth)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
       .filter((item) => item.date === cashReportDate)
       .filter((item) => (item.shift || "").trim().toLocaleUpperCase("es-AR") === normalizedReportShift)
       .filter((item) => cashTypeFilter === "todos" || item.type === cashTypeFilter)
       .sort((a, b) => `${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`, "es-AR"));
-  }, [activeMonth, activeOffice, cashMovements, cashOfficeFilter, cashReportDate, cashReportShift, cashTypeFilter, isAdminUser]);
+  }, [activeOffice, cashMovements, cashOfficeFilter, cashReportDate, cashReportShift, cashTypeFilter, isAdminUser]);
 
   const visibleCashOpeningBalances = useMemo(() => {
     return cashOpeningBalances
-      .filter((item) => item.month === activeMonth)
+      .filter((item) => item.date === cashReportDate)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice);
-  }, [activeMonth, activeOffice, cashOpeningBalances, cashOfficeFilter, isAdminUser]);
+  }, [activeOffice, cashOpeningBalances, cashOfficeFilter, cashReportDate, isAdminUser]);
 
   const visibleCashTurnNotes = useMemo(() => {
     const normalizedReportShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
     return cashTurnNotes
-      .filter((item) => item.month === activeMonth)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
       .filter((item) => item.date === cashReportDate)
       .filter((item) => (item.shift || "").trim().toLocaleUpperCase("es-AR") === normalizedReportShift)
       .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`, "es-AR"));
-  }, [activeMonth, activeOffice, cashOfficeFilter, cashReportDate, cashReportShift, cashTurnNotes, isAdminUser]);
+  }, [activeOffice, cashOfficeFilter, cashReportDate, cashReportShift, cashTurnNotes, isAdminUser]);
 
   const visibleCashTurnClosures = useMemo(() => {
     return cashTurnClosures
-      .filter((item) => item.month === activeMonth)
       .filter((item) => item.date === cashClosureDateFilter)
       .filter((item) => isAdminUser ? cashOfficeFilter === "todos" || item.office === cashOfficeFilter : item.office === activeOffice)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt, "es-AR"));
-  }, [activeMonth, activeOffice, cashClosureDateFilter, cashOfficeFilter, cashTurnClosures, isAdminUser]);
+  }, [activeOffice, cashClosureDateFilter, cashOfficeFilter, cashTurnClosures, isAdminUser]);
 
   const cashTotals = useMemo(() => {
     const totals = {
@@ -2416,13 +2413,13 @@ const InsuranceCollections = () => {
     if (!isAdminUser && !office) return;
     if (!cashOpeningForm.date || amount < 0) return;
     const month = cashOpeningForm.date.slice(0, 7);
-    const alreadyExists = cashOpeningBalances.some((item) => item.month === month && item.office === office);
-    if (alreadyExists) {
-      setCloudStatus(`La caja de ${office} ya tiene saldo inicial cargado para ${month}.`);
+    const existingOpening = cashOpeningBalances.find((item) => item.date === cashOpeningForm.date && item.office === office);
+    if (existingOpening && !isAdminUser) {
+      setCloudStatus(`La caja de ${office} ya tiene saldo inicial cargado para ${cashOpeningForm.date}.`);
       return;
     }
     const opening: CashOpeningBalance = {
-      id: `cash-opening-${Date.now()}`,
+      id: existingOpening?.id || `cash-opening-${Date.now()}`,
       date: cashOpeningForm.date,
       month,
       office,
@@ -2430,7 +2427,9 @@ const InsuranceCollections = () => {
       amount,
       notes: cashOpeningForm.notes.trim().toLocaleUpperCase("es-AR"),
     };
-    const nextOpeningBalances = [opening, ...cashOpeningBalances];
+    const nextOpeningBalances = existingOpening
+      ? cashOpeningBalances.map((item) => item.id === existingOpening.id ? opening : item)
+      : [opening, ...cashOpeningBalances];
     setCashOpeningBalances(nextOpeningBalances);
     setCashOpeningForm((current) => ({ ...emptyCashOpeningForm(), date: defaultCashDateForActiveMonth(), office: current.office }));
     await saveCashOpeningBalancesOnline(nextOpeningBalances);
@@ -2562,7 +2561,8 @@ const InsuranceCollections = () => {
   };
 
   const cashOpeningFormOffice = isAdminUser ? cashOpeningForm.office.trim().toLocaleUpperCase("es-AR") || "SIN OFICINA" : activeOffice;
-  const cashOpeningAlreadyExists = cashOpeningBalances.some((item) => item.month === cashOpeningForm.date.slice(0, 7) && item.office === cashOpeningFormOffice);
+  const cashOpeningExisting = cashOpeningBalances.find((item) => item.date === cashOpeningForm.date && item.office === cashOpeningFormOffice);
+  const cashOpeningAlreadyExists = !!cashOpeningExisting;
   const isCashCoachIncome = cashMovementForm.type === "ingreso" && ["SERVICIOS", "PRE NECESIDAD"].includes(cashMovementForm.source);
   const cashPaymentBreakdownTotal = parseMoney(cashMovementForm.cashAmount)
     + parseMoney(cashMovementForm.cardAmount)
@@ -5524,10 +5524,12 @@ const InsuranceCollections = () => {
                 </div>
                 {cashOpeningAlreadyExists && (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                    YA EXISTE SALDO INICIAL PARA {cashOpeningFormOffice} EN {cashOpeningForm.date.slice(0, 7)}.
+                    YA EXISTE SALDO INICIAL PARA {cashOpeningFormOffice} EL {cashOpeningForm.date}. {isAdminUser ? "PODÉS ACTUALIZARLO." : ""}
                   </p>
                 )}
-                <Button type="submit" variant="command" disabled={cashOpeningAlreadyExists}>Cargar saldo inicial</Button>
+                <Button type="submit" variant="command" disabled={cashOpeningAlreadyExists && !isAdminUser}>
+                  {cashOpeningAlreadyExists && isAdminUser ? "Actualizar saldo inicial" : "Cargar saldo inicial"}
+                </Button>
               </div>
             </form>
             <form onSubmit={saveCashMovement} className="rounded-md border bg-card">
@@ -5776,7 +5778,7 @@ const InsuranceCollections = () => {
                 <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1fr_145px_150px_165px_165px_145px_145px]">
                   <div>
                     <h3 className="font-semibold">Movimientos de caja</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">Periodo {activeMonth}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Fecha de caja {cashReportDate}</p>
                   </div>
                   <Input
                     type="date"
