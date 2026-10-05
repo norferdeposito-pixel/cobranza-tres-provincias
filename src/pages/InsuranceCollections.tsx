@@ -2452,7 +2452,7 @@ const InsuranceCollections = () => {
     await saveCashOpeningBalancesOnline(nextOpeningBalances);
   };
 
-  const fixedFundFor = (date: string, office: string, shift?: string) => {
+  function fixedFundFor(date: string, office: string, shift?: string) {
     const normalizedOffice = office.trim().toLocaleUpperCase("es-AR");
     if (!normalizedOffice || normalizedOffice === "TODOS") return 0;
     const shiftOrder = shift ? (cashShiftOrder.get(shift.trim().toLocaleUpperCase("es-AR")) || 99) : 99;
@@ -2464,7 +2464,7 @@ const InsuranceCollections = () => {
         if (item.type === "egreso") return total - Math.max(0, item.amount - (item.fundingAmount || 0));
         return total;
       }, opening);
-  };
+  }
 
   const saveCashMovement = async (event: FormEvent) => {
     event.preventDefault();
