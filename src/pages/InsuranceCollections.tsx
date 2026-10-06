@@ -753,6 +753,9 @@ const InsuranceCollections = () => {
   const [cashOfficeFilter, setCashOfficeFilter] = useState("todos");
   const [cashTypeFilter, setCashTypeFilter] = useState("todos");
   const [cashReportDate, setCashReportDate] = useState(today());
+  const [cashPeriodFrom, setCashPeriodFrom] = useState(today());
+  const [cashPeriodTo, setCashPeriodTo] = useState(today());
+  const [cashPeriodScope, setCashPeriodScope] = useState<"todos" | "caja" | "tres_provincias">("todos");
   const [cashReportShift, setCashReportShift] = useState("MAÑANA");
   const [cashClosureDateFilter, setCashClosureDateFilter] = useState(today());
   const [rendition, setRendition] = useState<Rendition>(() => {
@@ -2659,6 +2662,67 @@ const InsuranceCollections = () => {
     + cashCheckPayments.reduce((sum, payment) => sum + parseMoney(payment.amount), 0);
   const cashReceiptTotal = parseMoney(cashMovementForm.amount);
   const cashBreakdownMatchesTotal = !isCashCoachIncome || (cashReceiptTotal > 0 && Math.abs(cashPaymentBreakdownTotal - cashReceiptTotal) <= 0.01);
+
+  const printCashPeriodReport = () => {
+    if (!isAdminUser) return;
+    if (!cashPeriodFrom || !cashPeriodTo || cashPeriodFrom > cashPeriodTo) {
+      setCloudStatus("Revisá las fechas del reporte de movimientos.");
+      return;
+    }
+    const office = cashOfficeFilter;
+    const officeMatches = (value: string) => office === "todos" || value === office;
+    const cashRows = cashMovements
+      .filter((item) => item.date >= cashPeriodFrom && item.date <= cashPeriodTo)
+      .filter((item) => officeMatches(item.office))
+      .filter((item) => cashPeriodScope !== "tres_provincias" ? item.source !== "TRES PROVINCIAS" : item.source === "TRES PROVINCIAS");
+
+    const existingReceiptIds = new Set(cashMovements.filter((item) => item.relatedReceiptCollectionId).map((item) => item.relatedReceiptCollectionId as string));
+    const fallbackReceipts: CashMovement[] = receipts
+      .filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction)
+      .filter((receipt) => (receipt.loadedDate || "") >= cashPeriodFrom && (receipt.loadedDate || "") <= cashPeriodTo)
+      .filter((receipt) => !existingReceiptIds.has(receipt.id))
+      .map((receipt): CashMovement | null => {
+        const receiptOffice = officeFromCollector(receipt.collector || "");
+        const amount = receipt.monthCount * receipt.monthlyAmount;
+        if (!receiptOffice || !officeMatches(receiptOffice) || amount <= 0) return null;
+        return {
+          id: `cash-period-receipt-${receipt.id}`, relatedReceiptCollectionId: receipt.id,
+          date: receipt.loadedDate || cashPeriodFrom, month: (receipt.loadedDate || cashPeriodFrom).slice(0, 7),
+          office: receiptOffice, shift: "-", user: "SISTEMA", type: "ingreso", source: "TRES PROVINCIAS",
+          paymentMethod: receipt.paymentMethod === "T" ? "TRANSFERENCIA" : "EFECTIVO", receiptType: "RECIBO",
+          receiptNumber: String(receipt.receiptNumber || receipt.id).toLocaleUpperCase("es-AR"),
+          concept: `RECIBO TRES PROVINCIAS - ${receipt.fullName || "AFILIADO"} - POLIZA ${receipt.policyNumber || "-"}`.toLocaleUpperCase("es-AR"),
+          amount, notes: "",
+        };
+      }).filter((item): item is CashMovement => !!item);
+
+    const rows = [...cashRows, ...(cashPeriodScope === "caja" ? [] : fallbackReceipts)]
+      .filter((item) => cashPeriodScope === "todos" || (cashPeriodScope === "caja" ? item.source !== "TRES PROVINCIAS" : item.source === "TRES PROVINCIAS"))
+      .sort((a, b) => `${a.date}-${a.office}-${a.id}`.localeCompare(`${b.date}-${b.office}-${b.id}`, "es-AR"));
+
+    const income = rows.filter((item) => item.type === "ingreso").reduce((sum, item) => sum + item.amount, 0);
+    const expense = rows.filter((item) => item.type === "egreso").reduce((sum, item) => sum + item.amount, 0);
+    const tp = rows.filter((item) => item.source === "TRES PROVINCIAS").reduce((sum, item) => sum + item.amount, 0);
+    const caja = rows.filter((item) => item.source !== "TRES PROVINCIAS").reduce((sum, item) => sum + (item.type === "ingreso" ? item.amount : -item.amount), 0);
+    const generatedAt = new Date().toLocaleString("es-AR");
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) { alert("No se pudo abrir el reporte. Revisá si el navegador bloqueó la ventana emergente."); return; }
+    const rowHtml = rows.length ? rows.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.date)}</td><td>${escapeHtml(item.office)}</td><td>${escapeHtml(item.shift || "-")}</td>
+        <td>${item.type === "ingreso" ? "INGRESO" : "EGRESO"}</td><td>${escapeHtml(item.source)}</td>
+        <td>${escapeHtml(item.paymentMethod)}</td><td>${escapeHtml([item.receiptType, item.receiptNumber].filter(Boolean).join(" ") || "-")}</td>
+        <td>${escapeHtml(item.concept || "-")}${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ""}</td>
+        <td class="right">${currency.format(item.amount)}</td><td>${escapeHtml(item.user)}</td>
+      </tr>`).join("") : '<tr><td colspan="10" class="empty">SIN MOVIMIENTOS EN EL PERÍODO SELECCIONADO</td></tr>';
+    reportWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Reporte de movimientos</title>
+      <style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#0f172a;margin:0;font-size:9px}h1{font-size:16px;margin:0 0 3px}.header{display:flex;justify-content:space-between;border-bottom:1px solid #0b5cad;padding-bottom:5px}.meta{text-align:right}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:7px 0}.box{border:1px solid #cbd5e1;padding:5px}.label{font-size:8px;color:#475569;text-transform:uppercase}.value{font-size:12px;font-weight:700;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:8px}th{background:#0b5cad;color:#fff;text-align:left;padding:3px}td{border:1px solid #d8e1ec;padding:3px;vertical-align:top}.right{text-align:right}.empty{text-align:center;padding:8px}@media print{@page{size:A4 landscape;margin:7mm}body{margin:0}}</style>
+      </head><body><div class="header"><div><h1>REPORTE DE MOVIMIENTOS</h1><div>Desde <strong>${escapeHtml(cashPeriodFrom)}</strong> hasta <strong>${escapeHtml(cashPeriodTo)}</strong> · ${escapeHtml(office === "todos" ? "TODAS LAS OFICINAS" : office)}</div><div>Alcance: <strong>${cashPeriodScope === "todos" ? "CAJA + TRES PROVINCIAS" : cashPeriodScope === "caja" ? "CAJA" : "TRES PROVINCIAS"}</strong></div></div><div class="meta">Generado: ${escapeHtml(generatedAt)}</div></div>
+      <div class="grid"><div class="box"><div class="label">Ingresos</div><div class="value">${currency.format(income)}</div></div><div class="box"><div class="label">Egresos</div><div class="value">${currency.format(expense)}</div></div><div class="box"><div class="label">Caja neto</div><div class="value">${currency.format(caja)}</div></div><div class="box"><div class="label">Tres Provincias</div><div class="value">${currency.format(tp)}</div></div></div>
+      <table><thead><tr><th>Fecha</th><th>Oficina</th><th>Turno</th><th>Tipo</th><th>Origen</th><th>Medio</th><th>Comprobante</th><th>Concepto / detalle</th><th>Monto</th><th>Usuario</th></tr></thead><tbody>${rowHtml}</tbody></table>
+      <script>window.onload=()=>window.print();</script></body></html>`);
+    reportWindow.document.close();
+  };
 
   const printCashTurnReport = () => {
     const reportOffice = isAdminUser ? cashOfficeFilter : activeOffice;
@@ -5883,6 +5947,22 @@ const InsuranceCollections = () => {
                 <SummaryBox label="Saldo caja" value={currency.format(cashTotals.balance)} />
                 <SummaryBox label="Cobrado Tres Provincias" value={currency.format(tresProvinciasCollectedForTurn)} />
               </div>
+
+              {isAdminUser && (
+                <div className="rounded-md border bg-card">
+                  <div className="border-b p-4">
+                    <h3 className="font-semibold">Reporte de movimientos por período</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">Consulta administrativa de Caja y Tres Provincias entre dos fechas.</p>
+                  </div>
+                  <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+                    <div><Label>Desde</Label><Input type="date" value={cashPeriodFrom} onChange={(event) => setCashPeriodFrom(event.target.value)} /></div>
+                    <div><Label>Hasta</Label><Input type="date" value={cashPeriodTo} onChange={(event) => setCashPeriodTo(event.target.value)} /></div>
+                    <div><Label>Movimientos</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashPeriodScope} onChange={(event) => setCashPeriodScope(event.target.value as "todos" | "caja" | "tres_provincias")}><option value="todos">Caja + Tres Provincias</option><option value="caja">Caja</option><option value="tres_provincias">Tres Provincias</option></select></div>
+                    <div><Label>Oficina</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={cashOfficeFilter} onChange={(event) => setCashOfficeFilter(event.target.value)}><option value="todos">Todas las oficinas</option>{cashOfficeOptions.map((office) => <option key={office} value={office}>{office}</option>)}</select></div>
+                    <div className="flex items-end"><Button type="button" className="w-full" variant="command" onClick={printCashPeriodReport}>Generar reporte</Button></div>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-md border bg-card">
                 <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1fr_145px_150px_165px_165px_145px_145px]">
