@@ -2509,7 +2509,7 @@ const InsuranceCollections = () => {
         setCloudStatus(`La suma de los medios de pago (${currency.format(paymentTotal)}) no coincide con el total del recibo (${currency.format(amount)}).`);
         return;
       }
-      const receiptType = cashMovementForm.receiptType.trim().toLocaleUpperCase("es-AR") || "RECIBO";
+      const receiptType = "RECIBO";
       const receiptNumber = cashMovementForm.receiptNumber.trim().toLocaleUpperCase("es-AR");
       if (!receiptNumber) {
         setCloudStatus("Cargá el número de recibo antes de guardar.");
@@ -5673,11 +5673,13 @@ const InsuranceCollections = () => {
                     </div>
                   ) : null}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label>Tipo comprobante</Label>
-                    <Input value={cashMovementForm.receiptType} onChange={(event) => setCashMovementForm((current) => ({ ...current, receiptType: event.target.value }))} placeholder="RECIBO / TICKET" />
-                  </div>
+                <div className={isCashCoachIncome ? "" : "grid gap-3 sm:grid-cols-2"}>
+                  {!isCashCoachIncome && (
+                    <div>
+                      <Label>Tipo comprobante</Label>
+                      <Input value={cashMovementForm.receiptType} onChange={(event) => setCashMovementForm((current) => ({ ...current, receiptType: event.target.value }))} placeholder="RECIBO / TICKET" />
+                    </div>
+                  )}
                   <div>
                     <Label>N° comprobante</Label>
                     <Input value={cashMovementForm.receiptNumber} onChange={(event) => setCashMovementForm((current) => ({ ...current, receiptNumber: event.target.value }))} />
