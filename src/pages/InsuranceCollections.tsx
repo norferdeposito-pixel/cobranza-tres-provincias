@@ -2380,11 +2380,40 @@ const InsuranceCollections = () => {
   }, [activeOffice, cashMovements, cashOfficeFilter, cashOpeningBalances, cashReportDate, cashReportShift, isAdminUser, visibleCashOpeningBalances]);
 
   const tresProvinciasCollectedForTurn = useMemo(() => {
-    const collected = visibleCashMovements.filter((item) => item.type === "ingreso" && item.source === "TRES PROVINCIAS").reduce((sum, item) => sum + item.amount, 0);
-    const transferred = visibleCashMovements.filter((item) => item.type === "ingreso" && item.source === "FONDO FIJO" && item.fundingSource === "TRES PROVINCIAS").reduce((sum, item) => sum + item.amount, 0);
-    const expenseSupport = visibleCashMovements.filter((item) => item.type === "egreso" && item.fundingSource === "TRES PROVINCIAS").reduce((sum, item) => sum + (item.fundingAmount || 0), 0);
-    return collected - transferred - expenseSupport;
-  }, [visibleCashMovements]);
+    const reportOffice = isAdminUser ? cashOfficeFilter : activeOffice;
+    const normalizedShift = cashReportShift.trim().toLocaleUpperCase("es-AR");
+    const officeMatches = (office: string) => reportOffice === "todos" || office === reportOffice;
+    const movementMatchesTurn = (movement?: CashMovement) => !!movement
+      && movement.date === cashReportDate
+      && officeMatches(movement.office)
+      && (movement.shift || "").trim().toLocaleUpperCase("es-AR") === normalizedShift;
+
+    const ticketTotal = ticketCollections
+      .filter((collection) => {
+        const movement = cashMovements.find((item) => item.relatedTicketCollectionId === collection.id);
+        return movementMatchesTurn(movement);
+      })
+      .reduce((sum, collection) => sum + ((collection.ticketValue || 0) * collection.ticketsCharged), 0);
+
+    const receiptTotal = receipts
+      .filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction)
+      .filter((receipt) => {
+        const movement = cashMovements.find((item) => item.relatedReceiptCollectionId === receipt.id);
+        if (movement) return movementMatchesTurn(movement);
+        const office = officeFromCollector(receipt.collector || "");
+        return receipt.loadedDate === cashReportDate && officeMatches(office);
+      })
+      .reduce((sum, receipt) => sum + (receipt.monthCount * receipt.monthlyAmount), 0);
+
+    const transferred = visibleCashMovements
+      .filter((item) => item.type === "ingreso" && item.source === "FONDO FIJO" && item.fundingSource === "TRES PROVINCIAS")
+      .reduce((sum, item) => sum + item.amount, 0);
+    const expenseSupport = visibleCashMovements
+      .filter((item) => item.type === "egreso" && item.fundingSource === "TRES PROVINCIAS")
+      .reduce((sum, item) => sum + (item.fundingAmount || 0), 0);
+
+    return ticketTotal + receiptTotal - transferred - expenseSupport;
+  }, [activeOffice, cashMovements, cashOfficeFilter, cashReportDate, cashReportShift, isAdminUser, receipts, ticketCollections, visibleCashMovements]);
 
   const saveCashTurnClosure = async () => {
     const office = isAdminUser ? cashOfficeFilter : activeOffice;
