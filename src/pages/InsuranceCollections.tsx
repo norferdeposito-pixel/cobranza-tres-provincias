@@ -3607,7 +3607,7 @@ const InsuranceCollections = () => {
         ...current,
         policyNumber: affiliate.policyNumber,
         fullName: affiliate.fullName,
-        collector: isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
+        collector: !isAdminUser && isOfficeUser ? activeOfficeCollectorName || normalizeCollectorName(affiliate.collector || "OFICINA") : isOfficeUser ? normalizeCollectorName(affiliate.collector || "OFICINA") : currentCollectorName,
         plan: affiliate.plan,
         totalAmount,
         monthlyAmount,
@@ -3793,7 +3793,7 @@ const InsuranceCollections = () => {
       receiptNumber: receiptForm.receiptNumber.trim() || `S/N-${Date.now()}`,
       policyNumber: receiptForm.policyNumber.trim(),
       fullName: receiptForm.fullName.trim().toLocaleUpperCase("es-AR"),
-      collector: normalizeCollectorName(isOfficeUser ? receiptForm.collector || selectedCollectorName || "OFICINA" : currentCollectorName || "OFICINA"),
+      collector: normalizeCollectorName(!isAdminUser && isOfficeUser ? activeOfficeCollectorName || receiptForm.collector || "OFICINA" : isOfficeUser ? receiptForm.collector || selectedCollectorName || "OFICINA" : currentCollectorName || "OFICINA"),
       plan: receiptForm.plan,
       paidMonth: receiptForm.paidMonths[0] || receiptForm.paidMonth,
       paidMonths: receiptForm.paidMonths,
@@ -3822,8 +3822,11 @@ const InsuranceCollections = () => {
       : current.some((receipt) => receipt.id === receiptPayload.id) ? current : [...current, receiptPayload]);
     setCashMovements(nextCashMovements);
     resetReceiptForm();
-    await saveReceiptsOnline(nextReceipts, nextCashMovements, [receiptPayload.id]);
-    setIsSavingReceipt(false);
+    try {
+      await saveReceiptsOnline(nextReceipts, nextCashMovements, [receiptPayload.id]);
+    } finally {
+      setIsSavingReceipt(false);
+    }
   };
 
   const exportAffiliatesExcel = async () => {
