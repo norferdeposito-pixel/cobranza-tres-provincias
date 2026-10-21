@@ -554,7 +554,14 @@ const loadStorage = <T,>(key: string, fallback: T): T => {
 };
 
 const saveStorage = (key: string, value: unknown) => {
-  window.localStorage.setItem(key, JSON.stringify(value));
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.warn(`No se pudo guardar ${key} en el almacenamiento local.`, error);
+    return false;
+  }
 };
 
 const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : method === "T" ? "Transferencia" : "Sin definir";
@@ -857,6 +864,7 @@ const InsuranceCollections = () => {
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [lastCloudLoadedAt, setLastCloudLoadedAt] = useState("");
+  const [localStorageWarning, setLocalStorageWarning] = useState(false);
   const autoSaveTimer = useRef<number | null>(null);
   // Snapshot sync is intentionally version-based: never let a remote hydration
   // look like a local edit, and never overwrite a newer remote snapshot.
@@ -961,7 +969,7 @@ const InsuranceCollections = () => {
 
   const defaultCashDateForActiveMonth = () => today();
 
-  useEffect(() => saveStorage(affiliatesStorageKey, affiliates), [affiliates]);
+  useEffect(() => setLocalStorageWarning(!saveStorage(affiliatesStorageKey, affiliates)), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
   useEffect(() => saveStorage(monthlyNewPoliciesStorageKey, monthlyNewPolicyIds), [monthlyNewPolicyIds]);
   useEffect(() => saveStorage(ticketCollectionsStorageKey, ticketCollections), [ticketCollections]);
@@ -3236,14 +3244,15 @@ const InsuranceCollections = () => {
   };
 
   const importCsv = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
+    input.value = "";
     const reader = new FileReader();
     reader.onload = () => {
       const parsed = parseAffiliatesCsv(String(reader.result || ""));
       if (parsed.affiliates.length > 0) previewAffiliates(parsed.affiliates, file.name, parsed.duplicatedCount);
       else setImportMessage("No encontré afiliados válidos en el archivo.");
-      event.target.value = "";
     };
     reader.readAsText(file, "windows-1252");
   };
@@ -4834,7 +4843,10 @@ const InsuranceCollections = () => {
             </Button>
           </div>
         </div>
-        <div className="px-3 pb-3 text-xs text-muted-foreground sm:px-5">{cloudStatus}</div>
+        <div className="px-3 pb-3 text-xs text-muted-foreground sm:px-5">
+          <p>{cloudStatus}</p>
+          {localStorageWarning && <p className="mt-1 text-amber-700">El almacenamiento local está lleno. La copia online continuará guardándose normalmente.</p>}
+        </div>
       </div>
 
       <div className="grid w-full gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
