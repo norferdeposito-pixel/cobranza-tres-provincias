@@ -3221,21 +3221,30 @@ const InsuranceCollections = () => {
       .map((item) => ({ ...item, selectedForMonthly: false }));
     const nextAffiliates = [...merged, ...retained];
     const importedCollectors = uniqueSorted(nextAffiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
-    setAffiliates(nextAffiliates);
-    setMonthlyNewPolicyIds((current) => ({
-      ...current,
-      [activeMonth]: Array.from(new Set([...(current[activeMonth] || []), ...newPolicyIds])),
-    }));
-    setCollectorRecords((current) => normalizeCollectorRecords([
-      ...current,
+    const nextMonthlyNewPolicyIds = {
+      ...monthlyNewPolicyIds,
+      [activeMonth]: Array.from(new Set([...(monthlyNewPolicyIds[activeMonth] || []), ...newPolicyIds])),
+    };
+    const nextCollectorRecords = normalizeCollectorRecords([
+      ...collectorRecords,
       ...importedCollectors.map((collector) => defaultCollectorConfig(collector)),
-    ]));
-    setMonthlyItems((current) => [
-      ...current.filter((item) => item.month !== activeMonth),
+    ]);
+    const nextMonthlyItems = [
+      ...monthlyItems.filter((item) => item.month !== activeMonth),
       ...merged
         .filter((item) => item.selectedForMonthly)
         .map((item) => ({ month: activeMonth, affiliateId: item.id, tickets: Math.max(0, item.sourceTickets || 0) })),
-    ]);
+    ];
+    setAffiliates(nextAffiliates);
+    setMonthlyNewPolicyIds(nextMonthlyNewPolicyIds);
+    setCollectorRecords(nextCollectorRecords);
+    setMonthlyItems(nextMonthlyItems);
+    void saveCloudSnapshot({
+      affiliates: nextAffiliates,
+      monthlyNewPolicyIds: nextMonthlyNewPolicyIds,
+      collectorRecords: nextCollectorRecords,
+      monthlyItems: nextMonthlyItems,
+    });
     setImportMessage(`Cobranza importada: ${merged.length} afiliados para ${activeMonth}. La base general conserva ${retained.length} pólizas sin tickets en este listado.`);
     setAffiliateImportPreview(null);
   };
