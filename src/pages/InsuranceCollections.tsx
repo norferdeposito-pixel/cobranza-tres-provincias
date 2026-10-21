@@ -226,34 +226,6 @@ type CloudSnapshot = {
   activeMonth: string;
 };
 
-type CompressedCloudSnapshot = {
-  format: "gzip-base64";
-  payload: string;
-};
-
-const isCompressedCloudSnapshot = (value: unknown): value is CompressedCloudSnapshot => (
-  Boolean(value)
-  && typeof value === "object"
-  && (value as CompressedCloudSnapshot).format === "gzip-base64"
-  && typeof (value as CompressedCloudSnapshot).payload === "string"
-);
-
-const encodeCloudSnapshot = async (snapshot: CloudSnapshot): Promise<CloudSnapshot | CompressedCloudSnapshot> => {
-  if (typeof CompressionStream === "undefined") return snapshot;
-  const bytes = new TextEncoder().encode(JSON.stringify(snapshot));
-  const compressed = await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
-  const binary = Array.from(new Uint8Array(compressed), (byte) => String.fromCharCode(byte)).join("");
-  return { format: "gzip-base64", payload: btoa(binary) };
-};
-
-const decodeCloudSnapshot = async (stored: unknown): Promise<Partial<CloudSnapshot>> => {
-  if (!isCompressedCloudSnapshot(stored)) return (stored || {}) as Partial<CloudSnapshot>;
-  if (typeof DecompressionStream === "undefined") throw new Error("Este navegador no puede leer la copia online comprimida.");
-  const bytes = Uint8Array.from(atob(stored.payload), (character) => character.charCodeAt(0));
-  const content = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-  return JSON.parse(content) as Partial<CloudSnapshot>;
-};
-
 type UserAdminProfile = {
   email: string;
   nombre: string;
@@ -1206,11 +1178,10 @@ const InsuranceCollections = () => {
     snapshotWriteInFlightRef.current = true;
     const updatedAt = new Date().toISOString();
     try {
-      const storedSnapshot = await encodeCloudSnapshot(snapshot);
       if (!expectedVersion) {
         const { data, error } = await supabase
           .from("app_snapshots")
-          .insert({ key: cloudSnapshotKey, data: storedSnapshot, updated_at: updatedAt })
+          .insert({ key: cloudSnapshotKey, data: snapshot, updated_at: updatedAt })
           .select("updated_at")
           .maybeSingle();
         if (error) {
@@ -1222,7 +1193,7 @@ const InsuranceCollections = () => {
 
       const { data, error } = await supabase
         .from("app_snapshots")
-        .update({ data: storedSnapshot, updated_at: updatedAt })
+        .update({ data: snapshot, updated_at: updatedAt })
         .eq("key", cloudSnapshotKey)
         .eq("updated_at", expectedVersion)
         .select("updated_at")
@@ -1566,13 +1537,11 @@ const InsuranceCollections = () => {
     }
     specializedSnapshotReadInFlightRef.current = true;
     try {
-      const result = await supabase
+      return await supabase
         .from("app_snapshots")
         .select("data, updated_at")
         .eq("key", cloudSnapshotKey)
         .maybeSingle();
-      if (result.data?.data) result.data.data = await decodeCloudSnapshot(result.data.data);
-      return result;
     } finally {
       specializedSnapshotReadInFlightRef.current = false;
     }
@@ -1629,8 +1598,7 @@ const InsuranceCollections = () => {
         setCloudStatus("Llegaron cambios online, pero esta pantalla cambió durante la carga. No se reemplazaron tus datos.");
         return false;
       }
-      const onlineSnapshot = await decodeCloudSnapshot(data.data);
-      applyRemoteSnapshot(onlineSnapshot, data.updated_at || new Date().toISOString(), { preserveActiveMonth: automatic });
+      applyRemoteSnapshot(data.data as Partial<CloudSnapshot>, data.updated_at || new Date().toISOString(), { preserveActiveMonth: automatic });
       setCloudStatus(`Datos online cargados. Última actualización: ${new Date(data.updated_at).toLocaleString("es-AR")}`);
       setCloudReady(true);
       return true;
