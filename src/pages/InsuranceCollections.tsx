@@ -553,7 +553,7 @@ const loadStorage = <T,>(key: string, fallback: T): T => {
   }
 };
 
-const saveStorage = (key: string, value: unknown) => {
+const trySaveStorage = (key: string, value: unknown) => {
   if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
@@ -562,6 +562,9 @@ const saveStorage = (key: string, value: unknown) => {
     console.warn(`No se pudo guardar ${key} en el almacenamiento local.`, error);
     return false;
   }
+};
+const saveStorage = (key: string, value: unknown) => {
+  void trySaveStorage(key, value);
 };
 
 const methodLabel = (method: PaymentMethod) => method === "E" ? "Efectivo" : method === "T" ? "Transferencia" : "Sin definir";
@@ -969,7 +972,7 @@ const InsuranceCollections = () => {
 
   const defaultCashDateForActiveMonth = () => today();
 
-  useEffect(() => setLocalStorageWarning(!saveStorage(affiliatesStorageKey, affiliates)), [affiliates]);
+  useEffect(() => setLocalStorageWarning(!trySaveStorage(affiliatesStorageKey, affiliates)), [affiliates]);
   useEffect(() => saveStorage(monthlyStorageKey, monthlyItems), [monthlyItems]);
   useEffect(() => saveStorage(monthlyNewPoliciesStorageKey, monthlyNewPolicyIds), [monthlyNewPolicyIds]);
   useEffect(() => saveStorage(ticketCollectionsStorageKey, ticketCollections), [ticketCollections]);
