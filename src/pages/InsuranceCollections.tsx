@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
+import { collectorOptions, createCollector, normalizeCollectorEntry, type CollectorRecord } from "@/lib/collector-management";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
@@ -198,15 +199,6 @@ type AffiliateImportPreview = {
   duplicatedCount: number;
 };
 
-type CollectorRecord = {
-  name: string;
-  phone: string;
-  commissionBase: number;
-  bonusEnabled: boolean;
-  bonusThreshold: number;
-  bonusRate: number;
-};
-
 type CloudSnapshot = {
   affiliates: Affiliate[];
   monthlyItems: MonthlyItem[];
@@ -287,7 +279,7 @@ const sortReceiptsByNumber = (a: ReceiptCollection, b: ReceiptCollection) => (
     || a.fullName.localeCompare(b.fullName, "es-AR")
 );
 function normalizeCollectorName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-AR") || "OFICINA";
+  return normalizeCollectorEntry(value) || "OFICINA";
 }
 
 const officeNames = ["SAN MARTIN", "TUNUYAN", "EUGENIO BUSTOS"];
@@ -851,6 +843,7 @@ const InsuranceCollections = () => {
   const [transferRenderForm, setTransferRenderForm] = useState({ date: today(), amount: "", proof: "" });
   const [nextCollectionMonth, setNextCollectionMonth] = useState(() => addMonths(currentMonth(), 1));
   const [userForm, setUserForm] = useState({ nombre: "", email: "", password: "", rol: "cobrador", collectorName: "", offices: [] as string[] });
+  const [newAdminCollectorName, setNewAdminCollectorName] = useState("");
   const [userProfiles, setUserProfiles] = useState<UserAdminProfile[]>([]);
   const [userAdminStatus, setUserAdminStatus] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
@@ -1217,16 +1210,17 @@ const InsuranceCollections = () => {
     if (!validation.ok) {
       setCloudBusy(false);
       setCloudStatus(validation.message);
-      return;
+      return false;
     }
     const result = await writeSnapshotWithVersionGuard(snapshot, loadedRemoteVersionRef.current);
     setCloudBusy(false);
     if (!result.ok) {
       setCloudStatus(`No se pudo guardar online: ${result.message}`);
-      return;
+      return false;
     }
     markSnapshotSaved(result.updatedAt, snapshot);
     setCloudStatus(`Guardado online ${new Date().toLocaleString("es-AR")}`);
+    return true;
   };
 
   const saveCloudSnapshotSilent = async () => {
@@ -1847,7 +1841,7 @@ const InsuranceCollections = () => {
     : dependencies;
 
   const collectors = useMemo(() => {
-    const rows = uniqueSorted([...collectorRecords.map((item) => item.name), ...affiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA"))]);
+    const rows = collectorOptions(collectorRecords, affiliates.map((item) => item.collector || "OFICINA"));
     return rows.length > 0 ? rows : ["OFICINA"];
   }, [affiliates, collectorRecords]);
 
@@ -3332,20 +3326,60 @@ const InsuranceCollections = () => {
   };
 
   const addCollector = () => {
-    const name = normalizeCollectorName(newCollectorName);
-    if (!name) return;
-    setCollectorRecords((current) => normalizeCollectorRecords([...current, {
-      name,
-      phone: newCollectorPhone.trim(),
-      commissionBase: Math.max(0, parseNumber(newCollectorCommission) || 12),
-      bonusEnabled: newCollectorBonusEnabled,
-      bonusThreshold: 90,
-      bonusRate: 13,
-    }]));
+    const result = createCollector({
+      isAdmin: isAdminUser,
+      name: newCollectorName,
+      collectorRecords,
+      existingCollectorNames: collectors,
+      createRecord: (name) => ({
+        name,
+        phone: newCollectorPhone.trim(),
+        commissionBase: Math.max(0, parseNumber(newCollectorCommission) || 12),
+        bonusEnabled: newCollectorBonusEnabled,
+        bonusThreshold: 90,
+        bonusRate: 13,
+      }),
+    });
+    if (!result.ok) {
+      if (result.reason === "duplicate") alert("Ya existe un cobrador con ese nombre.");
+      return;
+    }
+    setCollectorRecords(normalizeCollectorRecords(result.collectorRecords));
     setNewCollectorName("");
     setNewCollectorPhone("");
     setNewCollectorCommission("12");
     setNewCollectorBonusEnabled(false);
+  };
+
+  const addAdminCollector = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!isAdminUser) return;
+
+    const result = createCollector({
+      isAdmin: isAdminUser,
+      name: newAdminCollectorName,
+      collectorRecords,
+      existingCollectorNames: collectors,
+      createRecord: defaultCollectorConfig,
+    });
+    if (!result.ok && result.reason === "empty") {
+      setUserAdminStatus("Ingresá el nombre del cobrador.");
+      return;
+    }
+    if (!result.ok && result.reason === "duplicate") {
+      setUserAdminStatus("Ya existe un cobrador con ese nombre.");
+      return;
+    }
+    if (!result.ok) return;
+
+    const { name } = result;
+    const nextCollectorRecords = normalizeCollectorRecords(result.collectorRecords);
+    setCollectorRecords(nextCollectorRecords);
+    setNewAdminCollectorName("");
+    const saved = await saveCloudSnapshot({ collectorRecords: nextCollectorRecords });
+    setUserAdminStatus(saved
+      ? `Cobrador ${name} creado. Ya podés vincularlo a un usuario.`
+      : `El cobrador ${name} quedó creado localmente, pero no se pudo guardar online. Revisá el estado de sincronización antes de recargar.`);
   };
 
   const renameCollector = () => {
@@ -5345,23 +5379,24 @@ const InsuranceCollections = () => {
                 <div className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-md border bg-surface-subtle p-3">
                 <h3 className="font-semibold">Agregar / modificar cobrador</h3>
+                {!isAdminUser && <p className="mt-1 text-xs text-muted-foreground">Sólo un administrador puede crear cobradores.</p>}
                 <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_120px_auto]">
                   <div className="space-y-1">
                     <Label htmlFor="new-collector">Nombre y apellido</Label>
-                    <Input id="new-collector" value={newCollectorName} onChange={(event) => setNewCollectorName(event.target.value)} placeholder="Ej: JUAN PEREZ" />
+                    <Input id="new-collector" value={newCollectorName} onChange={(event) => setNewCollectorName(event.target.value)} placeholder="Ej: JUAN PEREZ" disabled={!isAdminUser} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="new-collector-phone">Teléfono</Label>
-                    <Input id="new-collector-phone" value={newCollectorPhone} onChange={(event) => setNewCollectorPhone(event.target.value)} placeholder="549..." />
+                    <Input id="new-collector-phone" value={newCollectorPhone} onChange={(event) => setNewCollectorPhone(event.target.value)} placeholder="549..." disabled={!isAdminUser} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="new-collector-commission">% comisión</Label>
-                    <Input id="new-collector-commission" type="number" min="0" step="0.1" value={newCollectorCommission} onChange={(event) => setNewCollectorCommission(event.target.value)} />
+                    <Input id="new-collector-commission" type="number" min="0" step="0.1" value={newCollectorCommission} onChange={(event) => setNewCollectorCommission(event.target.value)} disabled={!isAdminUser} />
                   </div>
-                  <Button type="button" variant="command" className="self-end" onClick={addCollector}>Agregar</Button>
+                  <Button type="button" variant="command" className="self-end" onClick={addCollector} disabled={!isAdminUser}>Agregar</Button>
                 </div>
                 <label className="mt-3 flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={newCollectorBonusEnabled} onChange={(event) => setNewCollectorBonusEnabled(event.target.checked)} />
+                  <input type="checkbox" checked={newCollectorBonusEnabled} onChange={(event) => setNewCollectorBonusEnabled(event.target.checked)} disabled={!isAdminUser} />
                   Tiene premio: si cobra 90% o más, pasa al 13%
                 </label>
                 <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_120px_auto]">
@@ -6549,6 +6584,20 @@ const InsuranceCollections = () => {
               <p className="mt-1 text-sm text-muted-foreground">
                 Alta inicial de usuarios de cobranza. Los roles base son cobrador, oficina, oficina + cobrador y administrador.
               </p>
+              <form className="mt-4 flex flex-col gap-3 rounded-md border bg-surface-subtle p-3 sm:flex-row sm:items-end" onSubmit={addAdminCollector}>
+                <div className="w-full space-y-1 sm:max-w-md">
+                  <Label htmlFor="new-admin-collector">Nuevo cobrador</Label>
+                  <Input
+                    id="new-admin-collector"
+                    value={newAdminCollectorName}
+                    onChange={(event) => setNewAdminCollectorName(event.target.value)}
+                    placeholder="Ej: CORIA"
+                    aria-describedby="new-admin-collector-help"
+                  />
+                  <p id="new-admin-collector-help" className="text-xs text-muted-foreground">El nombre es único, sin distinguir mayúsculas ni espacios.</p>
+                </div>
+                <Button type="submit" variant="command">Crear cobrador</Button>
+              </form>
               <form className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_220px_260px_auto]" onSubmit={saveUserProfile}>
                 <div className="space-y-1">
                   <Label htmlFor="new-user-name">Nombre</Label>
