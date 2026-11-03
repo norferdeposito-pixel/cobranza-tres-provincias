@@ -821,7 +821,6 @@ const InsuranceCollections = () => {
   const [affiliateImportPreview, setAffiliateImportPreview] = useState<AffiliateImportPreview | null>(null);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [affiliateDialogOpen, setAffiliateDialogOpen] = useState(false);
-  const [editingAffiliateId, setEditingAffiliateId] = useState<string | null>(null);
   const [affiliateForm, setAffiliateForm] = useState<AffiliateForm>(emptyAffiliateForm);
   const [affiliateCorrectionId, setAffiliateCorrectionId] = useState<string | null>(null);
   const [affiliateCorrectionForm, setAffiliateCorrectionForm] = useState({ ...emptyAffiliateForm(), tickets: "0", reason: "" });
@@ -3091,21 +3090,8 @@ const InsuranceCollections = () => {
     reportWindow.focus();
   };
 
-  const openAffiliateForm = (affiliate?: Affiliate) => {
-    setEditingAffiliateId(affiliate?.id || null);
-    setAffiliateForm(affiliate ? {
-      fullName: affiliate.fullName,
-      policyNumber: affiliate.policyNumber,
-      plan: affiliate.plan,
-      value: affiliate.value,
-      phone: affiliate.phone,
-      address: affiliate.address,
-      dependency: affiliate.dependency || "001",
-      collector: affiliate.collector || "OFICINA",
-      request: affiliate.request || "",
-      latestNews: affiliate.latestNews || "",
-      sourceTickets: affiliate.sourceTickets || 0,
-    } : emptyAffiliateForm());
+  const openNewAffiliateForm = () => {
+    setAffiliateForm(emptyAffiliateForm());
     setAffiliateDialogOpen(true);
   };
 
@@ -3269,7 +3255,7 @@ const InsuranceCollections = () => {
 
   const saveAffiliate = (event: FormEvent) => {
     event.preventDefault();
-    const id = editingAffiliateId || `${affiliateForm.policyNumber || Date.now()}-${affiliateForm.plan}`;
+    const id = `${affiliateForm.policyNumber || Date.now()}-${affiliateForm.plan}`;
     const payload: Affiliate = {
       id,
       fullName: affiliateForm.fullName.trim().toLocaleUpperCase("es-AR"),
@@ -3282,10 +3268,10 @@ const InsuranceCollections = () => {
       collector: affiliateForm.collector.trim().toLocaleUpperCase("es-AR") || "OFICINA",
       request: affiliateForm.request.trim(),
       latestNews: affiliateForm.latestNews.trim(),
-      selectedForMonthly: affiliates.find((item) => item.id === editingAffiliateId)?.selectedForMonthly || false,
+      selectedForMonthly: false,
       sourceTickets: Math.max(0, Number(affiliateForm.sourceTickets) || 0),
     };
-    setAffiliates((current) => editingAffiliateId ? current.map((item) => item.id === editingAffiliateId ? payload : item) : [payload, ...current]);
+    setAffiliates((current) => [payload, ...current]);
     setAffiliateDialogOpen(false);
   };
 
@@ -5000,7 +4986,7 @@ const InsuranceCollections = () => {
                 {activeMonthOptions.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}
               </select>
             </div>
-            {isOfficeUser && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={() => openAffiliateForm()}>
+            {isOfficeUser && <Button type="button" variant="command" className="w-full sm:w-auto" onClick={openNewAffiliateForm}>
               <Plus className="h-4 w-4" />
               Nuevo afiliado
             </Button>}
@@ -7095,7 +7081,7 @@ const InsuranceCollections = () => {
 
       <Dialog open={affiliateDialogOpen} onOpenChange={setAffiliateDialogOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{editingAffiliateId ? "Editar afiliado" : "Nuevo afiliado"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Nuevo afiliado</DialogTitle></DialogHeader>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveAffiliate}>
             <div className="space-y-2 md:col-span-2"><Label>Nombre y apellido</Label><Input value={affiliateForm.fullName} onChange={(event) => setAffiliateForm({ ...affiliateForm, fullName: event.target.value })} required /></div>
             <div className="space-y-2"><Label>N° de póliza</Label><Input value={affiliateForm.policyNumber} onChange={(event) => setAffiliateForm({ ...affiliateForm, policyNumber: event.target.value })} /></div>
