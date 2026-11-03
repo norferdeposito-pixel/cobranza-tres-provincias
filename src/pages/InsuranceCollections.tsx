@@ -22,6 +22,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUserProfile } from "@/contexts/UserProfileContext";
 import { collectorOptions, createCollector, normalizeCollectorEntry, type CollectorRecord } from "@/lib/collector-management";
+import { canCorrectAffiliate, correctionBlockReason, validateAffiliateCorrection } from "@/lib/affiliate-correction";
+import { periodTicketTotal, resolvePeriodTicketValue } from "@/lib/period-ticket-value";
+import { mergeMonthlyImport } from "@/lib/monthly-import";
 
 type PlanType = string;
 type PaymentMethod = "E" | "T" | "";
@@ -56,6 +59,7 @@ type MonthlyItem = {
   month: string;
   affiliateId: string;
   tickets: number;
+  ticketValue?: number;
 };
 
 type TicketCollection = {
@@ -189,6 +193,17 @@ type CashTurnClosure = {
 
 type AffiliateForm = Omit<Affiliate, "id" | "selectedForMonthly">;
 
+type AffiliateCorrectionAudit = {
+  id: string;
+  affiliateId: string;
+  user: string;
+  date: string;
+  month: string;
+  reason: string;
+  before: { affiliate: Affiliate; tickets: number; ticketValue: number; total: number };
+  after: { affiliate: Affiliate; tickets: number; ticketValue: number; total: number };
+};
+
 type AffiliateImportPreview = {
   source: string;
   rows: Affiliate[];
@@ -212,6 +227,7 @@ type CloudSnapshot = {
   cashOpeningBalances: CashOpeningBalance[];
   cashTurnNotes?: CashTurnNote[];
   cashTurnClosures?: CashTurnClosure[];
+  affiliateCorrectionAudits?: AffiliateCorrectionAudit[];
   collectorRecords: CollectorRecord[];
   customDependencies: string[];
   collectorWhatsapp: string;
@@ -241,6 +257,7 @@ const cashMovementsStorageKey = "insurance-cash-movements-v1";
 const cashOpeningBalancesStorageKey = "insurance-cash-opening-balances-v1";
 const cashTurnNotesStorageKey = "insurance-cash-turn-notes-v1";
 const cashTurnClosuresStorageKey = "insurance-cash-turn-closures-v1";
+const affiliateCorrectionAuditsStorageKey = "insurance-affiliate-correction-audits-v1";
 const collectorWhatsappStorageKey = "insurance-collector-whatsapp-v2";
 const collectorsStorageKey = "insurance-collectors-v2";
 const dependenciesStorageKey = "insurance-dependencies-v2";
@@ -746,6 +763,7 @@ const InsuranceCollections = () => {
   const [cashOpeningBalances, setCashOpeningBalances] = useState<CashOpeningBalance[]>(() => loadStorage(cashOpeningBalancesStorageKey, []));
   const [cashTurnNotes, setCashTurnNotes] = useState<CashTurnNote[]>(() => loadStorage(cashTurnNotesStorageKey, []));
   const [cashTurnClosures, setCashTurnClosures] = useState<CashTurnClosure[]>(() => loadStorage(cashTurnClosuresStorageKey, []));
+  const [affiliateCorrectionAudits, setAffiliateCorrectionAudits] = useState<AffiliateCorrectionAudit[]>(() => loadStorage(affiliateCorrectionAuditsStorageKey, []));
   const [cashMovementForm, setCashMovementForm] = useState(emptyCashMovementForm);
   const [cashCardPayments, setCashCardPayments] = useState([{ id: "card-1", amount: "", detail: "" }]);
   const [cashTransferPayments, setCashTransferPayments] = useState([{ id: "transfer-1", amount: "", detail: "" }]);
@@ -805,6 +823,9 @@ const InsuranceCollections = () => {
   const [affiliateDialogOpen, setAffiliateDialogOpen] = useState(false);
   const [editingAffiliateId, setEditingAffiliateId] = useState<string | null>(null);
   const [affiliateForm, setAffiliateForm] = useState<AffiliateForm>(emptyAffiliateForm);
+  const [affiliateCorrectionId, setAffiliateCorrectionId] = useState<string | null>(null);
+  const [affiliateCorrectionForm, setAffiliateCorrectionForm] = useState({ ...emptyAffiliateForm(), tickets: "0", reason: "" });
+  const [pendingAffiliateCorrection, setPendingAffiliateCorrection] = useState<{ affiliate: Affiliate; tickets: number; ticketValue: number; reason: string; before: Affiliate; beforeTickets: number; beforeTicketValue: number } | null>(null);
   const [noteAffiliateId, setNoteAffiliateId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
   const [newsAffiliateQuery, setNewsAffiliateQuery] = useState("");
@@ -976,6 +997,7 @@ const InsuranceCollections = () => {
   useEffect(() => saveStorage(cashOpeningBalancesStorageKey, cashOpeningBalances), [cashOpeningBalances]);
   useEffect(() => saveStorage(cashTurnNotesStorageKey, cashTurnNotes), [cashTurnNotes]);
   useEffect(() => saveStorage(cashTurnClosuresStorageKey, cashTurnClosures), [cashTurnClosures]);
+  useEffect(() => saveStorage(affiliateCorrectionAuditsStorageKey, affiliateCorrectionAudits), [affiliateCorrectionAudits]);
   useEffect(() => saveStorage(renditionStorageKey, rendition), [rendition]);
   useEffect(() => saveStorage(collectorWhatsappStorageKey, collectorWhatsapp), [collectorWhatsapp]);
   useEffect(() => saveStorage(collectorsStorageKey, collectorRecords), [collectorRecords]);
@@ -1066,6 +1088,7 @@ const InsuranceCollections = () => {
     cashOpeningBalances: overrides.cashOpeningBalances ?? cashOpeningBalances,
     cashTurnNotes: overrides.cashTurnNotes ?? cashTurnNotes,
     cashTurnClosures: overrides.cashTurnClosures ?? cashTurnClosures,
+    affiliateCorrectionAudits: overrides.affiliateCorrectionAudits ?? affiliateCorrectionAudits,
     collectorRecords: overrides.collectorRecords ?? collectorRecords,
     customDependencies: overrides.customDependencies ?? customDependencies,
     collectorWhatsapp: overrides.collectorWhatsapp ?? collectorWhatsapp,
@@ -1087,6 +1110,7 @@ const InsuranceCollections = () => {
     setCashOpeningBalances(Array.isArray(snapshot.cashOpeningBalances) ? snapshot.cashOpeningBalances : []);
     setCashTurnNotes(Array.isArray(snapshot.cashTurnNotes) ? snapshot.cashTurnNotes : []);
     setCashTurnClosures(Array.isArray(snapshot.cashTurnClosures) ? snapshot.cashTurnClosures : []);
+    setAffiliateCorrectionAudits(Array.isArray(snapshot.affiliateCorrectionAudits) ? snapshot.affiliateCorrectionAudits : []);
     setRendition(snapshot.rendition && Array.isArray(snapshot.rendition.cashRenders) && Array.isArray(snapshot.rendition.transferRenders) ? snapshot.rendition : { cashRenders: [], transferRenders: [] });
     setCollectorRecords(normalizeCollectorRecords(snapshot.collectorRecords || ["OFICINA"]));
     setCustomDependencies(Array.isArray(snapshot.customDependencies) ? snapshot.customDependencies : []);
@@ -1716,7 +1740,7 @@ const InsuranceCollections = () => {
     return () => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, cashTurnNotes, cashTurnClosures, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
+  }, [affiliates, monthlyItems, monthlyNewPolicyIds, ticketCollections, ticketReturnControls, receipts, notes, rendition, cashMovements, cashOpeningBalances, cashTurnNotes, cashTurnClosures, affiliateCorrectionAudits, collectorRecords, customDependencies, collectorWhatsapp, activeMonth, cloudReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1759,6 +1783,11 @@ const InsuranceCollections = () => {
   }, [isAdminUser]);
 
   const affiliatesById = useMemo(() => new Map(affiliates.map((item) => [item.id, item])), [affiliates]);
+  const ticketValueForPeriod = (affiliate: Affiliate | undefined, month = activeMonth) => affiliate
+    ? resolvePeriodTicketValue(monthlyItems, affiliate.id, month, affiliate.value)
+    : 0;
+  const ticketCollectionValue = (collection: TicketCollection) => collection.ticketValue
+    ?? ticketValueForPeriod(affiliatesById.get(collection.affiliateId), collection.month);
   const collectorPickerAffiliate = collectorPickerAffiliateId ? affiliatesById.get(collectorPickerAffiliateId) || null : null;
   const canSeeAffiliateInCobranza = (affiliate: Affiliate) => {
     if (hasOfficeCollectorScope) return normalizeCollectorName(affiliate.collector || "OFICINA") === officeCollectorScope;
@@ -1859,7 +1888,7 @@ const InsuranceCollections = () => {
       }, 0);
       const assignedAmount = assigned.reduce((sum, affiliate) => {
         const monthly = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id);
-        return sum + (monthly?.tickets || 0) * affiliate.value;
+        return sum + periodTicketTotal(monthly?.tickets || 0, ticketValueForPeriod(affiliate));
       }, 0);
       const ticketCollectionsForCollector = ticketCollections
         .filter((item) => item.month === activeMonth && normalizeCollectorName(item.collector || affiliatesById.get(item.affiliateId)?.collector || "OFICINA") === normalizedCollector);
@@ -1872,7 +1901,7 @@ const InsuranceCollections = () => {
       });
       const chargedTickets = ticketCollectionsForCollector.reduce((sum, item) => sum + item.ticketsCharged, 0);
       const assignedChargedTickets = ticketCollectionsForAssigned.reduce((sum, item) => sum + item.ticketsCharged, 0);
-      const ticketChargedAmount = ticketCollectionsForCollector.reduce((sum, item) => sum + (affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged, 0);
+      const ticketChargedAmount = ticketCollectionsForCollector.reduce((sum, item) => sum + periodTicketTotal(item.ticketsCharged, ticketCollectionValue(item)), 0);
       const receiptAmount = receiptsForCollector.reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
       const chargedAmount = ticketChargedAmount + receiptAmount;
       const config = collectorConfigByName.get(normalizedCollector) || defaultCollectorConfig(collector);
@@ -2012,8 +2041,8 @@ const InsuranceCollections = () => {
           tickets,
           chargedTickets,
           pendingTickets: Math.max(tickets - chargedTickets, 0),
-          chargedAmount: chargedTickets * affiliate.value,
-          pendingAmount: Math.max(tickets - chargedTickets, 0) * affiliate.value,
+          chargedAmount: periodTicketTotal(chargedTickets, ticketValueForPeriod(affiliate)),
+          pendingAmount: periodTicketTotal(Math.max(tickets - chargedTickets, 0), ticketValueForPeriod(affiliate)),
         };
       })
       .sort((a, b) => b.pendingTickets - a.pendingTickets || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
@@ -2029,7 +2058,7 @@ const InsuranceCollections = () => {
     });
     const cashCollections = collections.filter((item) => item.paymentMethod === "E");
     const transferCollections = collections.filter((item) => item.paymentMethod === "T");
-    const amountFor = (collection: TicketCollection) => (affiliatesById.get(collection.affiliateId)?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
+    const amountFor = (collection: TicketCollection) => periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection));
     const normalizedCollector = normalizeCollectorName(selectedCollectorName || "OFICINA");
     const affiliateCollectorByName = new Map(affiliates.map((affiliate) => [normalizeHeader(affiliate.fullName), normalizeCollectorName(affiliate.collector || "OFICINA")]));
     const receiptsForCollector = collectionReceipts.filter((receipt) => {
@@ -2211,7 +2240,7 @@ const InsuranceCollections = () => {
       const receiptsForPlan = collectionReceipts.filter((item) => item.collectionMonth === activeMonth && item.plan === plan && canSeeReceiptInCobranza(item));
       const ticketValue = (collection: TicketCollection) => {
         const affiliate = affiliatesById.get(collection.affiliateId);
-        return (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
+        return periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection));
       };
       const receiptValue = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
       const ticketCash = collectionsForPlan.filter((item) => item.paymentMethod === "E");
@@ -2274,7 +2303,7 @@ const InsuranceCollections = () => {
   });
   const visibleCollectionAmount = visibleTicketCollections.reduce((sum, item) => {
     const affiliate = affiliatesById.get(item.affiliateId);
-    return sum + (affiliate?.value ?? item.ticketValue ?? 0) * item.ticketsCharged;
+    return sum + periodTicketTotal(item.ticketsCharged, ticketCollectionValue(item));
   }, 0) + visibleReceipts
     .filter((item) => item.status !== "anulado" && !item.isProduction)
     .reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0);
@@ -2401,7 +2430,7 @@ const InsuranceCollections = () => {
         const movement = cashMovements.find((item) => item.relatedTicketCollectionId === collection.id);
         return movementMatchesTurn(movement);
       })
-      .reduce((sum, collection) => sum + ((collection.ticketValue || 0) * collection.ticketsCharged), 0);
+      .reduce((sum, collection) => sum + periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection)), 0);
 
     const receiptTotal = receipts
       .filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction)
@@ -2845,8 +2874,8 @@ const InsuranceCollections = () => {
         current.received += received;
         current.charged += charged;
         current.pending += pending;
-        current.chargedAmount += charged * affiliate.value;
-        current.pendingAmount += pending * affiliate.value;
+        current.chargedAmount += periodTicketTotal(charged, ticketValueForPeriod(affiliate));
+        current.pendingAmount += periodTicketTotal(pending, ticketValueForPeriod(affiliate));
         planStats.set(affiliate.plan, current);
       });
     const planRows = Array.from(planStats.entries()).sort((a, b) => a[0].localeCompare(b[0], "es-AR", { numeric: true }));
@@ -2867,7 +2896,7 @@ const InsuranceCollections = () => {
           plan: collection.plan || affiliate?.plan || "-",
           fullName: collection.fullName || affiliate?.fullName || "AFILIADO",
           policyNumber: collection.policyNumber || affiliate?.policyNumber || "-",
-          amount: movement?.amount ?? ((affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged),
+          amount: movement?.amount ?? periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection)),
         };
       })
       .sort((a, b) => `${a.plan}-${a.fullName}-${a.policyNumber}`.localeCompare(`${b.plan}-${b.fullName}-${b.policyNumber}`, "es-AR", { numeric: true }));
@@ -3080,6 +3109,126 @@ const InsuranceCollections = () => {
     setAffiliateDialogOpen(true);
   };
 
+  const correctionBlockFor = (before: Affiliate, after: Affiliate, beforeTickets: number, afterTickets: number, beforeTicketValue: number, afterTicketValue: number) => {
+    const relatedCollections = ticketCollections.filter((item) => item.month === activeMonth && item.affiliateId === before.id);
+    const relatedCollectionIds = new Set(relatedCollections.map((item) => item.id));
+    const relatedMovements = cashMovements.filter((item) => item.relatedTicketCollectionId && relatedCollectionIds.has(item.relatedTicketCollectionId));
+    const relatedClosures = cashTurnClosures.filter((closure) => closure.movements.some((movement) => movement.relatedTicketCollectionId && relatedCollectionIds.has(movement.relatedTicketCollectionId)));
+    const relatedReceipts = receipts.filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction
+      && receipt.collectionMonth === activeMonth && receipt.policyNumber === before.policyNumber && receipt.plan === before.plan);
+    const otherPeriodLoads = monthlyItems.filter((item) => item.affiliateId === before.id && item.month !== activeMonth && item.tickets > 0);
+    const changesFinancialData = beforeTickets !== afterTickets || beforeTicketValue !== afterTicketValue || before.policyNumber !== after.policyNumber || before.plan !== after.plan;
+    const changesHistoricalData = before.fullName !== after.fullName || before.policyNumber !== after.policyNumber || before.plan !== after.plan
+      || before.dependency !== after.dependency || before.collector !== after.collector || (before.sourceTickets || 0) !== (after.sourceTickets || 0);
+    return correctionBlockReason({
+      chargedTickets: changesFinancialData ? relatedCollections.reduce((sum, item) => sum + item.ticketsCharged, 0) : 0,
+      receipts: changesFinancialData ? relatedReceipts.length : 0,
+      cashMovements: changesFinancialData ? relatedMovements.length : 0,
+      closures: changesFinancialData ? relatedClosures.length : 0,
+      otherPeriods: changesHistoricalData ? otherPeriodLoads.length : 0,
+    });
+  };
+
+  const openAffiliateCorrection = (affiliate: Affiliate) => {
+    if (!canCorrectAffiliate(isAdminUser)) return;
+    const tickets = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === affiliate.id)?.tickets || 0;
+    setAffiliateCorrectionId(affiliate.id);
+    setAffiliateCorrectionForm({
+      fullName: affiliate.fullName,
+      policyNumber: affiliate.policyNumber,
+      plan: affiliate.plan,
+      value: ticketValueForPeriod(affiliate),
+      phone: affiliate.phone,
+      address: affiliate.address,
+      dependency: affiliate.dependency || "001",
+      collector: affiliate.collector || "OFICINA",
+      request: affiliate.request || "",
+      latestNews: affiliate.latestNews || "",
+      sourceTickets: affiliate.sourceTickets || 0,
+      tickets: String(tickets),
+      reason: "",
+    });
+    setPendingAffiliateCorrection(null);
+  };
+
+  const prepareAffiliateCorrection = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canCorrectAffiliate(isAdminUser) || !affiliateCorrectionId) return;
+    const before = affiliates.find((item) => item.id === affiliateCorrectionId);
+    if (!before) return;
+    const tickets = Number(affiliateCorrectionForm.tickets);
+    const nextAffiliate: Affiliate = {
+      ...before,
+      fullName: affiliateCorrectionForm.fullName.trim().toLocaleUpperCase("es-AR"),
+      policyNumber: affiliateCorrectionForm.policyNumber.trim(),
+      plan: affiliateCorrectionForm.plan,
+      value: before.value,
+      phone: affiliateCorrectionForm.phone.trim(),
+      address: affiliateCorrectionForm.address.trim(),
+      dependency: affiliateCorrectionForm.dependency.trim() || "001",
+      collector: normalizeCollectorName(affiliateCorrectionForm.collector),
+      request: affiliateCorrectionForm.request.trim(),
+      latestNews: affiliateCorrectionForm.latestNews.trim(),
+      sourceTickets: Math.max(0, Number(affiliateCorrectionForm.sourceTickets) || 0),
+    };
+    const duplicatePolicyPlan = affiliates.some((item) => item.id !== before.id
+      && item.policyNumber.trim() === nextAffiliate.policyNumber && item.plan === nextAffiliate.plan);
+    const validation = validateAffiliateCorrection({
+      fullName: nextAffiliate.fullName,
+      policyNumber: nextAffiliate.policyNumber,
+      plan: nextAffiliate.plan,
+      ticketValue: affiliateCorrectionForm.value,
+      tickets,
+      reason: affiliateCorrectionForm.reason,
+      duplicatePolicyPlan,
+    });
+    if (validation) {
+      alert(validation);
+      return;
+    }
+    const beforeMonthlyItem = monthlyItems.find((item) => item.month === activeMonth && item.affiliateId === before.id);
+    const beforeTickets = beforeMonthlyItem?.tickets || 0;
+    const beforeTicketValue = ticketValueForPeriod(before);
+    const ticketValue = parseNumber(String(affiliateCorrectionForm.value));
+    const blocked = correctionBlockFor(before, nextAffiliate, beforeTickets, tickets, beforeTicketValue, ticketValue);
+    if (blocked) {
+      alert(blocked);
+      return;
+    }
+    setPendingAffiliateCorrection({ affiliate: nextAffiliate, tickets, ticketValue, reason: affiliateCorrectionForm.reason.trim(), before, beforeTickets, beforeTicketValue });
+  };
+
+  const confirmAffiliateCorrection = async () => {
+    if (!canCorrectAffiliate(isAdminUser) || !pendingAffiliateCorrection) return;
+    const { affiliate, tickets, ticketValue, reason, before, beforeTickets, beforeTicketValue } = pendingAffiliateCorrection;
+    const nextAffiliates = affiliates.map((item) => item.id === before.id ? affiliate : item);
+    const nextMonthlyItems = monthlyItems.some((item) => item.month === activeMonth && item.affiliateId === before.id)
+      ? monthlyItems.map((item) => item.month === activeMonth && item.affiliateId === before.id ? { ...item, tickets, ticketValue } : item)
+      : [...monthlyItems, { month: activeMonth, affiliateId: before.id, tickets, ticketValue }];
+    const audit: AffiliateCorrectionAudit = {
+      id: `affiliate-correction-${Date.now()}`,
+      affiliateId: before.id,
+      user: (currentUserProfile?.nombre || userEmail || "USUARIO").toLocaleUpperCase("es-AR"),
+      date: new Date().toISOString(),
+      month: activeMonth,
+      reason,
+      before: { affiliate: before, tickets: beforeTickets, ticketValue: beforeTicketValue, total: periodTicketTotal(beforeTickets, beforeTicketValue) },
+      after: { affiliate, tickets, ticketValue, total: periodTicketTotal(tickets, ticketValue) },
+    };
+    const nextAudits = [audit, ...affiliateCorrectionAudits];
+    const saved = await saveCloudSnapshot({ affiliates: nextAffiliates, monthlyItems: nextMonthlyItems, affiliateCorrectionAudits: nextAudits });
+    if (!saved) {
+      alert("No se pudo guardar la corrección online. No se aplicaron cambios en esta pantalla.");
+      return;
+    }
+    setAffiliates(nextAffiliates);
+    setMonthlyItems(nextMonthlyItems);
+    setAffiliateCorrectionAudits(nextAudits);
+    setPendingAffiliateCorrection(null);
+    setAffiliateCorrectionId(null);
+    setCloudStatus("Corrección guardada online.");
+  };
+
   const openNoteDialog = (affiliateId: string) => {
     setNoteAffiliateId(affiliateId);
     setNoteText("");
@@ -3204,16 +3353,7 @@ const InsuranceCollections = () => {
         return true;
       })
       .map((item) => item.id);
-    const currentById = new Map(affiliates.map((item) => [item.id, item]));
-    const merged = prepared.map((item) => {
-      const previous = currentById.get(item.id);
-      return previous ? { ...item, phone: previous.phone, address: previous.address, dependency: item.dependency || previous.dependency, collector: previous.collector || item.collector || "OFICINA", request: previous.request || item.request || "", latestNews: previous.latestNews || item.latestNews || "", selectedForMonthly: true } : { ...item, selectedForMonthly: true };
-    });
-    const importedIds = new Set(merged.map((item) => item.id));
-    const retained = affiliates
-      .filter((item) => !importedIds.has(item.id))
-      .map((item) => ({ ...item, selectedForMonthly: false }));
-    const nextAffiliates = [...merged, ...retained];
+    const { merged, retained, nextAffiliates, nextMonthlyItems } = mergeMonthlyImport({ prepared, affiliates, monthlyItems, activeMonth });
     const importedCollectors = uniqueSorted(nextAffiliates.map((item) => normalizeCollectorName(item.collector || "OFICINA")));
     const nextMonthlyNewPolicyIds = {
       ...monthlyNewPolicyIds,
@@ -3223,12 +3363,6 @@ const InsuranceCollections = () => {
       ...collectorRecords,
       ...importedCollectors.map((collector) => defaultCollectorConfig(collector)),
     ]);
-    const nextMonthlyItems = [
-      ...monthlyItems.filter((item) => item.month !== activeMonth),
-      ...merged
-        .filter((item) => item.selectedForMonthly)
-        .map((item) => ({ month: activeMonth, affiliateId: item.id, tickets: Math.max(0, item.sourceTickets || 0) })),
-    ];
     setAffiliates(nextAffiliates);
     setMonthlyNewPolicyIds(nextMonthlyNewPolicyIds);
     setCollectorRecords(nextCollectorRecords);
@@ -3487,7 +3621,7 @@ const InsuranceCollections = () => {
     const office = existingMovement?.office || activeOffice || officeFromCollector(collection.collector || "") || cashMovementForm.office.trim().toLocaleUpperCase("es-AR");
     if (!office) return null;
     if (!existingMovement && !isOfficeUser && !isAdminUser) return null;
-    const amount = (collection.ticketValue || 0) * collection.ticketsCharged;
+    const amount = periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection));
     if (amount <= 0) return null;
     const date = existingMovement?.date || cashMovementForm.date || defaultCashDateForActiveMonth();
     const receiptNumber = collection.paymentMethod === "T"
@@ -3569,7 +3703,7 @@ const InsuranceCollections = () => {
       plan: selectedMonthlyAffiliate.plan,
       dependency: selectedMonthlyAffiliate.dependency,
       collector: actualCollector,
-      ticketValue: selectedMonthlyAffiliate.value,
+      ticketValue: ticketValueForPeriod(selectedMonthlyAffiliate),
       ticketsCharged: tickets,
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
@@ -3654,9 +3788,10 @@ const InsuranceCollections = () => {
   const applyReceiptAffiliate = (affiliate: Affiliate | null) => {
     if (!affiliate) return;
     setReceiptForm((current) => {
-      const monthlyAmount = affiliate.value ? formatReceiptAmountInput(affiliate.value) : current.monthlyAmount;
-      const totalAmount = affiliate.value && current.paidMonths.length
-        ? formatReceiptAmountInput(affiliate.value * current.paidMonths.length)
+      const ticketValue = ticketValueForPeriod(affiliate);
+      const monthlyAmount = ticketValue ? formatReceiptAmountInput(ticketValue) : current.monthlyAmount;
+      const totalAmount = ticketValue && current.paidMonths.length
+        ? formatReceiptAmountInput(ticketValue * current.paidMonths.length)
         : "";
       return {
         ...current,
@@ -3732,7 +3867,7 @@ const InsuranceCollections = () => {
         ? uniqueSorted([...current.paidMonths, month])
         : current.paidMonths.filter((item) => item !== month);
       const affiliate = editingReceiptId ? null : findReceiptAffiliate(current.policyNumber, current.plan);
-      const monthlyValue = affiliate?.value || parseMoney(current.monthlyAmount);
+      const monthlyValue = affiliate ? ticketValueForPeriod(affiliate) : parseMoney(current.monthlyAmount);
       const monthlyAmount = monthlyValue ? formatReceiptAmountInput(monthlyValue) : "";
       const totalAmount = monthlyValue && paidMonths.length
         ? formatReceiptAmountInput(monthlyValue * paidMonths.length)
@@ -3896,7 +4031,7 @@ const InsuranceCollections = () => {
       .filter((affiliate) => canSeeAffiliateInCobranza(affiliate))
       .map((affiliate) => {
         const tickets = Math.max(0, monthlyByAffiliate.get(affiliate.id) || 0);
-        return { affiliate, tickets, monthlyAmount: tickets * affiliate.value };
+        return { affiliate, tickets, monthlyAmount: periodTicketTotal(tickets, ticketValueForPeriod(affiliate)) };
       })
       .sort((a, b) => Number(a.tickets === 0) - Number(b.tickets === 0)
         || a.affiliate.fullName.localeCompare(b.affiliate.fullName, "es-AR"));
@@ -3935,7 +4070,7 @@ const InsuranceCollections = () => {
         affiliate.plan,
         numericTextCell(affiliate.dependency || ""),
         affiliate.collector || "OFICINA",
-        moneyCell(affiliate.value),
+        moneyCell(ticketValueForPeriod(affiliate)),
         { ...numberCell(tickets), align: "center" },
         moneyCell(monthlyAmount),
         statusCell(tickets),
@@ -4057,7 +4192,7 @@ const InsuranceCollections = () => {
         return {
           collection,
           affiliate,
-          amount: (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged,
+          amount: periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection)),
         };
       })
       .sort((a, b) =>
@@ -4261,7 +4396,7 @@ const InsuranceCollections = () => {
     const activeVisibleReceipts = visibleReceipts.filter((receipt) => receipt.status !== "anulado" && !receipt.isProduction);
     const ticketAmount = (collection: TicketCollection) => {
       const affiliate = affiliatesById.get(collection.affiliateId);
-      return (affiliate?.value ?? collection.ticketValue ?? 0) * collection.ticketsCharged;
+      return periodTicketTotal(collection.ticketsCharged, ticketCollectionValue(collection));
     };
     const receiptAmount = (receipt: ReceiptCollection) => receipt.monthCount * receipt.monthlyAmount;
     const ticketCash = visibleTicketCollections.filter((item) => item.paymentMethod === "E");
@@ -4309,7 +4444,7 @@ const InsuranceCollections = () => {
         return {
           affiliate,
           pendingTickets,
-          pendingAmount: pendingTickets * affiliate.value,
+          pendingAmount: periodTicketTotal(pendingTickets, ticketValueForPeriod(affiliate)),
         };
       })
       .filter((row) => row.pendingTickets > 0)
@@ -5058,7 +5193,7 @@ const InsuranceCollections = () => {
                   {monthlyNewPolicyRows.slice(0, 18).map((item) => (
                     <div key={`monthly-new-${item.id}`} className="rounded-md border bg-card px-3 py-2 text-sm">
                       <strong>{item.fullName || "Sin nombre"}</strong>
-                      <p className="mt-1 text-xs text-muted-foreground">Poliza {item.policyNumber || "-"} · {item.plan} · Dep. {item.dependency || "-"} · {monthlyTicketsByAffiliate.get(item.id) || item.sourceTickets || 0} tickets · {currency.format(item.value)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Poliza {item.policyNumber || "-"} · {item.plan} · Dep. {item.dependency || "-"} · {monthlyTicketsByAffiliate.get(item.id) || item.sourceTickets || 0} tickets · {currency.format(ticketValueForPeriod(item))}</p>
                       <p className="mt-1 text-xs font-medium text-foreground">Cobrador: {item.collector || "OFICINA"}</p>
                     </div>
                   ))}
@@ -5171,7 +5306,7 @@ const InsuranceCollections = () => {
                           {item.collector || "OFICINA"}
                         </Button>
                       </td>
-                      <td className="w-28 px-3 py-3 text-right">{currency.format(item.value)}</td>
+                      <td className="w-28 px-3 py-3 text-right">{currency.format(ticketValueForPeriod(item))}</td>
                       <td className="w-20 px-2 py-3 text-center">{monthlyTicketsByAffiliate.get(item.id) || 0}</td>
                       <td className="w-24 px-2 py-3 text-center">{getPendingTickets(item.id)}</td>
                       <td className="w-96 px-3 py-3">
@@ -5200,7 +5335,7 @@ const InsuranceCollections = () => {
                           >
                             WhatsApp
                           </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => openAffiliateForm(item)}>Editar</Button>
+                          {isAdminUser && <Button type="button" size="sm" variant="outline" onClick={() => openAffiliateCorrection(item)}>Editar</Button>}
                         </div>
                       </td>
                     </tr>
@@ -5610,7 +5745,7 @@ const InsuranceCollections = () => {
                         <td className="px-3 py-3">{affiliate.policyNumber || "-"}</td>
                         <td className="px-3 py-3">{affiliate.plan}</td>
                         <td className="px-3 py-3">{affiliate.dependency || "-"}</td>
-                        <td className="px-3 py-3 text-right">{currency.format(affiliate.value)}</td>
+                        <td className="px-3 py-3 text-right">{currency.format(ticketValueForPeriod(affiliate))}</td>
                         <td className="px-3 py-3 text-center">{tickets}</td>
                         <td className="px-3 py-3 text-center">{chargedTickets}</td>
                         <td className="px-3 py-3 text-center font-medium">{pendingTickets}</td>
@@ -6191,11 +6326,11 @@ const InsuranceCollections = () => {
                       <td className="px-4 py-3 font-medium">{affiliate.fullName}</td>
                       <td className="px-4 py-3">{affiliate.policyNumber}</td>
                       <td className="px-4 py-3">{affiliate.plan}</td>
-                      <td className="px-4 py-3 text-right">{currency.format(affiliate.value)}</td>
+                      <td className="px-4 py-3 text-right">{currency.format(ticketValueForPeriod(affiliate))}</td>
                       <td className="px-4 py-3 text-right">
                         <Input className="ml-auto w-28 text-right" type="number" min="0" value={monthly.tickets} onChange={(event) => updateMonthlyTickets(affiliate.id, Math.max(0, parseNumber(event.target.value)))} />
                       </td>
-                      <td className="px-4 py-3 text-right">{currency.format(affiliate.value * monthly.tickets)}</td>
+                      <td className="px-4 py-3 text-right">{currency.format(periodTicketTotal(monthly.tickets, ticketValueForPeriod(affiliate)))}</td>
                     </tr>
                   ))}
                   {monthlyRows.length === 0 && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>No hay afiliados seleccionados para la cobranza mensual.</td></tr>}
@@ -6238,7 +6373,7 @@ const InsuranceCollections = () => {
                       .sort((a, b) => a.fullName.localeCompare(b.fullName, "es-AR") || a.plan.localeCompare(b.plan, "es-AR", { numeric: true }))
                       .map((affiliate) => (
                         <option key={affiliate.id} value={affiliate.id}>
-                          {affiliate.fullName} · {affiliate.plan} · {currency.format(affiliate.value)} · {getPendingTickets(affiliate.id)} pend.
+                          {affiliate.fullName} · {affiliate.plan} · {currency.format(ticketValueForPeriod(affiliate))} · {getPendingTickets(affiliate.id)} pend.
                         </option>
                       ))}
                   </select>
@@ -6256,7 +6391,7 @@ const InsuranceCollections = () => {
                     </p>
                   )}
                   <p className="text-muted-foreground">Póliza {selectedMonthlyAffiliate.policyNumber} · Plan detectado: {selectedMonthlyAffiliate.plan}</p>
-                  <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(selectedMonthlyAffiliate.value)}</p>
+                  <p className="text-muted-foreground">Tickets a cobrar: {ticketsToCharge} · Valor ticket: {currency.format(ticketValueForPeriod(selectedMonthlyAffiliate))}</p>
                   {selectedMonthlyCandidates.length > 1 && (
                     <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                       Seleccionado: {selectedMonthlyAffiliate.fullName} · {selectedMonthlyAffiliate.plan}.
@@ -6751,8 +6886,8 @@ const InsuranceCollections = () => {
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <SummaryBox label="Tickets cobrados" value={String(visibleTicketCollections.reduce((sum, item) => sum + item.ticketsCharged, 0))} />
                   <SummaryBox label="Tickets devueltos" value={String(visibleCollectorRows.reduce((sum, item) => sum + item.pendingTickets, 0))} />
-                  <SummaryBox label="Cobranza efectivo" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "E").reduce((sum, item) => sum + ((affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "E").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
-                  <SummaryBox label="Cobranza transferencia" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "T").reduce((sum, item) => sum + ((affiliatesById.get(item.affiliateId)?.value ?? item.ticketValue ?? 0) * item.ticketsCharged), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "T").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
+                  <SummaryBox label="Cobranza efectivo" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "E").reduce((sum, item) => sum + periodTicketTotal(item.ticketsCharged, ticketCollectionValue(item)), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "E").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
+                  <SummaryBox label="Cobranza transferencia" value={currency.format(visibleTicketCollections.filter((item) => item.paymentMethod === "T").reduce((sum, item) => sum + periodTicketTotal(item.ticketsCharged, ticketCollectionValue(item)), 0) + visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction && item.paymentMethod === "T").reduce((sum, item) => sum + item.monthCount * item.monthlyAmount, 0))} />
                   <SummaryBox label="Recibos cobrados" value={String(new Set(visibleReceipts.filter((item) => item.status !== "anulado" && !item.isProduction).map((item) => `${item.receiptNumber}-${item.plan}`)).size)} />
                   <SummaryBox label="Monto cobranza" value={currency.format(visibleCollectionAmount)} />
                   <SummaryBox label="ComisiÃ³n" value={currency.format(visibleCommissionAmount)} />
@@ -6908,6 +7043,55 @@ const InsuranceCollections = () => {
         )}
       </div>
       </div>
+
+      <Dialog open={!!affiliateCorrectionId} onOpenChange={(open) => !open && (setAffiliateCorrectionId(null), setPendingAffiliateCorrection(null))}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Corregir carga de afiliado</DialogTitle></DialogHeader>
+          {affiliateCorrectionId && affiliatesById.get(affiliateCorrectionId) && (
+            <form className="grid gap-4 md:grid-cols-2" onSubmit={prepareAffiliateCorrection}>
+              <div className="rounded-md border bg-surface-subtle p-3 text-sm md:col-span-2">
+                <strong>Período afectado: {monthLabel(activeMonth)}</strong>
+                <p className="mt-1 text-muted-foreground">Teléfono, dirección, pedido y novedad pueden corregirse sin afectar otros períodos. Los cambios financieros e históricos se validarán antes de confirmar.</p>
+              </div>
+              <div className="space-y-2 md:col-span-2"><Label>Nombre y apellido</Label><Input value={affiliateCorrectionForm.fullName} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, fullName: event.target.value })} required /></div>
+              <div className="space-y-2"><Label>N° de póliza</Label><Input value={affiliateCorrectionForm.policyNumber} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, policyNumber: event.target.value })} required /></div>
+              <div className="space-y-2"><Label>Plan</Label><select value={affiliateCorrectionForm.plan} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, plan: event.target.value as PlanType })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{availablePlans.map((plan) => <option key={plan}>{plan}</option>)}</select></div>
+              <div className="space-y-2"><Label>Importe por ticket</Label><Input type="number" min="0" step="0.01" value={affiliateCorrectionForm.value} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, value: event.target.value as unknown as number })} required /></div>
+              <div className="space-y-2"><Label>Tickets de {monthLabel(activeMonth)}</Label><Input type="number" min="0" step="1" value={affiliateCorrectionForm.tickets} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, tickets: event.target.value })} required /></div>
+              <div className="space-y-2"><Label>Teléfono</Label><Input value={affiliateCorrectionForm.phone} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, phone: event.target.value })} /></div>
+              <div className="space-y-2"><Label>Dependencia</Label><Input value={affiliateCorrectionForm.dependency} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, dependency: event.target.value })} /></div>
+              <div className="space-y-2"><Label>Cobrador</Label><Input value={affiliateCorrectionForm.collector} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, collector: event.target.value })} /></div>
+              <div className="space-y-2"><Label>Tickets base</Label><Input type="number" min="0" step="1" value={affiliateCorrectionForm.sourceTickets || 0} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, sourceTickets: parseNumber(event.target.value) })} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Dirección</Label><Input value={affiliateCorrectionForm.address} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, address: event.target.value })} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Pedido al cobrador</Label><Textarea value={affiliateCorrectionForm.request} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, request: event.target.value })} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Novedad / respuesta</Label><Textarea value={affiliateCorrectionForm.latestNews} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, latestNews: event.target.value })} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Motivo de la corrección</Label><Textarea value={affiliateCorrectionForm.reason} onChange={(event) => setAffiliateCorrectionForm({ ...affiliateCorrectionForm, reason: event.target.value })} required /></div>
+              <div className="flex justify-end gap-2 md:col-span-2"><Button type="button" variant="outline" onClick={() => setAffiliateCorrectionId(null)}>Cancelar</Button><Button type="submit" variant="command">Revisar corrección</Button></div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pendingAffiliateCorrection} onOpenChange={(open) => !open && setPendingAffiliateCorrection(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Confirmar corrección de carga</DialogTitle></DialogHeader>
+          {pendingAffiliateCorrection && <div className="space-y-4 text-sm">
+            <p><strong>Período:</strong> {monthLabel(activeMonth)}. Motivo: {pendingAffiliateCorrection.reason}</p>
+            <div className="overflow-x-auto rounded-md border"><table className="w-full text-left text-xs sm:text-sm"><thead className="bg-muted"><tr><th className="p-2">Campo</th><th className="p-2">Anterior</th><th className="p-2">Nuevo</th></tr></thead><tbody>
+              <tr><td className="p-2">Nombre</td><td className="p-2">{pendingAffiliateCorrection.before.fullName}</td><td className="p-2">{pendingAffiliateCorrection.affiliate.fullName}</td></tr>
+              <tr><td className="p-2">Póliza / plan</td><td className="p-2">{pendingAffiliateCorrection.before.policyNumber} · {pendingAffiliateCorrection.before.plan}</td><td className="p-2">{pendingAffiliateCorrection.affiliate.policyNumber} · {pendingAffiliateCorrection.affiliate.plan}</td></tr>
+              <tr><td className="p-2">Contacto</td><td className="p-2">{pendingAffiliateCorrection.before.phone || "-"} · {pendingAffiliateCorrection.before.address || "-"}</td><td className="p-2">{pendingAffiliateCorrection.affiliate.phone || "-"} · {pendingAffiliateCorrection.affiliate.address || "-"}</td></tr>
+              <tr><td className="p-2">Dependencia / cobrador</td><td className="p-2">{pendingAffiliateCorrection.before.dependency} · {pendingAffiliateCorrection.before.collector}</td><td className="p-2">{pendingAffiliateCorrection.affiliate.dependency} · {pendingAffiliateCorrection.affiliate.collector}</td></tr>
+              <tr><td className="p-2">Pedido / novedad</td><td className="p-2">{pendingAffiliateCorrection.before.request || "-"} · {pendingAffiliateCorrection.before.latestNews || "-"}</td><td className="p-2">{pendingAffiliateCorrection.affiliate.request || "-"} · {pendingAffiliateCorrection.affiliate.latestNews || "-"}</td></tr>
+              <tr><td className="p-2">Tickets</td><td className="p-2">{pendingAffiliateCorrection.beforeTickets}</td><td className="p-2">{pendingAffiliateCorrection.tickets}</td></tr>
+              <tr><td className="p-2">Importe unitario</td><td className="p-2">{currency.format(pendingAffiliateCorrection.beforeTicketValue)}</td><td className="p-2">{currency.format(pendingAffiliateCorrection.ticketValue)}</td></tr>
+              <tr><td className="p-2 font-semibold">Importe total</td><td className="p-2 font-semibold">{currency.format(periodTicketTotal(pendingAffiliateCorrection.beforeTickets, pendingAffiliateCorrection.beforeTicketValue))}</td><td className="p-2 font-semibold">{currency.format(periodTicketTotal(pendingAffiliateCorrection.tickets, pendingAffiliateCorrection.ticketValue))}</td></tr>
+            </tbody></table></div>
+            <p className="text-muted-foreground">Al confirmar, se guardará la corrección y su auditoría online. No se crearán ni regenerarán tickets cobrados.</p>
+            <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setPendingAffiliateCorrection(null)}>Volver</Button><Button type="button" variant="command" onClick={confirmAffiliateCorrection} disabled={cloudBusy}>Confirmar y guardar</Button></div>
+          </div>}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={affiliateDialogOpen} onOpenChange={setAffiliateDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -7133,7 +7317,7 @@ const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = fa
         const policyNumber = affiliate?.policyNumber || item.policyNumber || "-";
         const plan = affiliate?.plan || item.plan || "-";
         const dependency = affiliate?.dependency || item.dependency || "-";
-        const amountLabel = currency.format((affiliate?.value ?? item.ticketValue ?? 0) * item.ticketsCharged);
+        const amountLabel = currency.format(periodTicketTotal(item.ticketsCharged, ticketCollectionValue(item)));
         return (
           <div key={item.id} className="rounded-md border bg-surface-subtle p-3 text-sm">
             <strong>{fullName}</strong>
