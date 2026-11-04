@@ -6409,7 +6409,7 @@ const InsuranceCollections = () => {
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={isSavingTicketCollection || !selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{isSavingTicketCollection ? "Guardando..." : editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
-              <TicketCollectionsDetail collections={visibleTicketCollections} affiliatesById={affiliatesById} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
+              <TicketCollectionsDetail collections={visibleTicketCollections} affiliatesById={affiliatesById} ticketCollectionValue={ticketCollectionValue} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
             </form>
             <div className="space-y-5">
               <RecentNotes notes={visibleNotes} affiliatesById={affiliatesById} />
@@ -7269,7 +7269,7 @@ const TransferFields = ({ value, onChange }: { value: TransferData; onChange: (v
   </div>
 );
 
-const TicketCollectionsDetail = ({ collections, affiliatesById, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => {
+export const TicketCollectionsDetail = ({ collections, affiliatesById, ticketCollectionValue, isAdminUser = false, onEdit, onDelete }: { collections: TicketCollection[]; affiliatesById: Map<string, Affiliate>; ticketCollectionValue: (collection: TicketCollection) => number; isAdminUser?: boolean; onEdit?: (collection: TicketCollection) => void; onDelete?: (collectionId: string) => void }) => {
   const [policySearch, setPolicySearch] = useState("");
   const normalizedSearch = policySearch.trim().replace(/\D/g, "");
   const filteredCollections = collections.filter((item) => {
