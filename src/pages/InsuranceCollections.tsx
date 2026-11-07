@@ -836,6 +836,7 @@ const InsuranceCollections = () => {
   const [collectionTransfer, setCollectionTransfer] = useState<TransferData>(emptyTransferForm);
   const [editingTicketCollectionId, setEditingTicketCollectionId] = useState<string | null>(null);
   const [isSavingTicketCollection, setIsSavingTicketCollection] = useState(false);
+  const [ticketCollectionSaveError, setTicketCollectionSaveError] = useState("");
   const [mobileCollector, setMobileCollector] = useState("todos");
   const [mobileSearch, setMobileSearch] = useState("");
   const [mobileTicketFilter, setMobileTicketFilter] = useState<"pending" | "all" | "paid">("pending");
@@ -896,6 +897,12 @@ const InsuranceCollections = () => {
   const snapshotWriteInFlightRef = useRef(false);
   const specializedSnapshotReadInFlightRef = useRef(false);
   const currentCloudSnapshotRef = useRef<CloudSnapshot | null>(null);
+  // A ref is deliberate here: React state does not prevent two submit events
+  // that occur before the next render. This is the authoritative form lock.
+  const ticketCollectionSaveInFlightRef = useRef(false);
+  // Retain the client-generated ID across a retry. If the server committed but
+  // its response was lost, mergeRowsById turns the retry into an update.
+  const pendingTicketCollectionRef = useRef<TicketCollection | null>(null);
   const userRole = (currentUserProfile?.rol || "").trim().toLowerCase();
   const isAdminUser = userRole === "admin";
   const isOfficeUser = ["admin", "oficina", "oficina_cobrador", "administracion", "compras"].includes(userRole);
@@ -1321,64 +1328,77 @@ const InsuranceCollections = () => {
     guard?: { affiliateId: string; month: string; requestedTickets: number; editingCollectionId?: string | null; monthlyTicketsFallback?: number },
   ) => {
     setCloudStatus("Guardando tickets online...");
-    const { data, error } = await readCloudSnapshotForMutation();
-    if (error) {
-      setCloudStatus(`No se pudieron guardar tickets online: ${error.message}`);
-      return false;
-    }
+    // A compare-and-swap can legitimately lose a race with another writer.
+    // Re-read and merge the same IDs, never append a replacement collection.
+    // This makes recovery safe after a version conflict and avoids requiring a
+    // user to sign out just to continue working.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { data, error } = await readCloudSnapshotForMutation();
+      if (error) {
+        if (attempt < 2 && error.message.includes("sincronización")) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
+          continue;
+        }
+        setCloudStatus(`No se pudieron guardar tickets online: ${error.message}`);
+        return false;
+      }
 
-    const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
-    const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
-    const onlineNotes = Array.isArray(onlineSnapshot.notes) ? onlineSnapshot.notes : [];
-    const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
-    if (guard) {
-      const onlineMonthlyItems = Array.isArray(onlineSnapshot.monthlyItems) ? onlineSnapshot.monthlyItems : [];
-      const onlineMonthlyTickets = onlineMonthlyItems.find((item) => item.month === guard.month && item.affiliateId === guard.affiliateId)?.tickets;
-      const monthTickets = onlineMonthlyTickets ?? guard.monthlyTicketsFallback ?? 0;
-      const onlineChargedTickets = onlineTicketCollections
-        .filter((item) => item.month === guard.month && item.affiliateId === guard.affiliateId && item.id !== guard.editingCollectionId)
-        .reduce((sum, item) => sum + item.ticketsCharged, 0);
-      const onlinePendingTickets = Math.max(monthTickets - onlineChargedTickets, 0);
-      if (guard.requestedTickets > onlinePendingTickets) {
-        // This is a partial remote reconciliation, not a local edit.
-        skipNextAutoSaveRef.current = true;
-        clearPendingAutoSave();
-        loadedRemoteVersionRef.current = data?.updated_at || loadedRemoteVersionRef.current;
-        loadedSnapshotStatsRef.current = snapshotStats(onlineSnapshot);
-        hasLocalChangesRef.current = false;
-        syncConflictRef.current = false;
-        setTicketCollections(onlineTicketCollections);
-        setNotes(onlineNotes);
-        setCashMovements(onlineCashMovements);
-        if (Array.isArray(onlineSnapshot.monthlyItems)) setMonthlyItems(onlineSnapshot.monthlyItems);
-        const message = "Esta póliza ya no tiene tickets pendientes en la base online. Cargá online y revisá antes de volver a cobrar.";
-        setCloudStatus(message);
-        alert(message);
+      const onlineSnapshot = (data?.data || {}) as Partial<CloudSnapshot>;
+      const onlineTicketCollections = Array.isArray(onlineSnapshot.ticketCollections) ? onlineSnapshot.ticketCollections : [];
+      const onlineNotes = Array.isArray(onlineSnapshot.notes) ? onlineSnapshot.notes : [];
+      const onlineCashMovements = Array.isArray(onlineSnapshot.cashMovements) ? onlineSnapshot.cashMovements : [];
+      if (guard) {
+        const onlineMonthlyItems = Array.isArray(onlineSnapshot.monthlyItems) ? onlineSnapshot.monthlyItems : [];
+        const onlineMonthlyTickets = onlineMonthlyItems.find((item) => item.month === guard.month && item.affiliateId === guard.affiliateId)?.tickets;
+        const monthTickets = onlineMonthlyTickets ?? guard.monthlyTicketsFallback ?? 0;
+        const onlineChargedTickets = onlineTicketCollections
+          .filter((item) => item.month === guard.month && item.affiliateId === guard.affiliateId && item.id !== guard.editingCollectionId)
+          .reduce((sum, item) => sum + item.ticketsCharged, 0);
+        const onlinePendingTickets = Math.max(monthTickets - onlineChargedTickets, 0);
+        if (guard.requestedTickets > onlinePendingTickets) {
+          // This is a partial remote reconciliation, not a local edit.
+          skipNextAutoSaveRef.current = true;
+          clearPendingAutoSave();
+          loadedRemoteVersionRef.current = data?.updated_at || loadedRemoteVersionRef.current;
+          loadedSnapshotStatsRef.current = snapshotStats(onlineSnapshot);
+          hasLocalChangesRef.current = false;
+          syncConflictRef.current = false;
+          setTicketCollections(onlineTicketCollections);
+          setNotes(onlineNotes);
+          setCashMovements(onlineCashMovements);
+          if (Array.isArray(onlineSnapshot.monthlyItems)) setMonthlyItems(onlineSnapshot.monthlyItems);
+          const message = "Esta póliza ya no tiene tickets pendientes en la base online. Cargá online y revisá antes de volver a cobrar.";
+          setCloudStatus(message);
+          alert(message);
+          return false;
+        }
+      }
+      const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
+      const mergedNotes = mergeRowsById(onlineNotes, nextNotes);
+      const mergedCashMovements = mergeRowsById(onlineCashMovements, nextCashMovements);
+      const snapshot = {
+        ...buildCloudSnapshot(),
+        ...onlineSnapshot,
+        ticketCollections: mergedTicketCollections,
+        notes: mergedNotes,
+        cashMovements: mergedCashMovements,
+      };
+
+      const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
+      if (saveResult.ok) {
+        setTicketCollections(mergedTicketCollections);
+        setNotes(mergedNotes);
+        setCashMovements(mergedCashMovements);
+        markSnapshotSaved(saveResult.updatedAt, snapshot, true);
+        setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
+        return true;
+      }
+      if (!saveResult.conflict || attempt === 2) {
+        setCloudStatus(`No se pudieron guardar tickets online: ${saveResult.message}`);
         return false;
       }
     }
-    const mergedTicketCollections = mergeRowsById(onlineTicketCollections, nextTicketCollections);
-    const mergedNotes = mergeRowsById(onlineNotes, nextNotes);
-    const mergedCashMovements = mergeRowsById(onlineCashMovements, nextCashMovements);
-    const snapshot = {
-      ...buildCloudSnapshot(),
-      ...onlineSnapshot,
-      ticketCollections: mergedTicketCollections,
-      notes: mergedNotes,
-      cashMovements: mergedCashMovements,
-    };
-
-    const saveResult = await writeSnapshotWithVersionGuard(snapshot, data?.updated_at || null);
-    if (!saveResult.ok) {
-      setCloudStatus(`No se pudieron guardar tickets online: ${saveResult.message}`);
-      return false;
-    }
-    setTicketCollections(mergedTicketCollections);
-    setNotes(mergedNotes);
-    setCashMovements(mergedCashMovements);
-    markSnapshotSaved(saveResult.updatedAt, snapshot, true);
-    setCloudStatus(`Tickets guardados online ${new Date().toLocaleTimeString("es-AR")}`);
-    return true;
+    return false;
   };
 
   const saveCashMovementsOnline = async (nextCashMovements: CashMovement[], successMessage = "Caja guardada online") => {
@@ -3661,7 +3681,7 @@ const InsuranceCollections = () => {
 
   const saveTicketCollection = async (event: FormEvent) => {
     event.preventDefault();
-    if (isSavingTicketCollection) return;
+    if (ticketCollectionSaveInFlightRef.current || isSavingTicketCollection) return;
     if (!selectedMonthlyAffiliate) return;
     if (hasUnansweredRequest) {
       alert("Esta póliza tiene un pedido pendiente. Para guardar el cobro, primero completá la novedad/respuesta.");
@@ -3676,8 +3696,17 @@ const InsuranceCollections = () => {
     }
     const tickets = Math.max(0, Math.min(parseNumber(collectionTickets), ticketsToCharge));
     if (tickets <= 0) return;
+    ticketCollectionSaveInFlightRef.current = true;
     setIsSavingTicketCollection(true);
-    const payload: TicketCollection = {
+    setTicketCollectionSaveError("");
+    const pendingPayload = pendingTicketCollectionRef.current;
+    const canRetryPendingPayload = !!pendingPayload
+      && !editingTicketCollectionId
+      && pendingPayload.affiliateId === selectedMonthlyAffiliate.id
+      && pendingPayload.month === activeMonth
+      && pendingPayload.ticketsCharged === tickets
+      && pendingPayload.paymentMethod === collectionMethod;
+    const payload: TicketCollection = canRetryPendingPayload ? pendingPayload : {
       id: editingTicketCollectionId || `ticket-${Date.now()}`,
       month: activeMonth,
       affiliateId: selectedMonthlyAffiliate.id,
@@ -3694,6 +3723,7 @@ const InsuranceCollections = () => {
       paymentMethod: collectionMethod,
       transfer: collectionMethod === "T" ? collectionTransfer : undefined,
     };
+    pendingTicketCollectionRef.current = payload;
     const automaticNote: AffiliateNote | null = isOtherCollectorTicket
       ? {
         id: `note-${Date.now()}`,
@@ -3715,24 +3745,33 @@ const InsuranceCollections = () => {
         ...cashMovements.filter((item) => item.relatedTicketCollectionId !== payload.id),
       ]
       : cashMovements;
-    const saved = await saveTicketCollectionsOnline(nextTicketCollections, nextNotes, nextCashMovements, {
-      affiliateId: selectedMonthlyAffiliate.id,
-      month: activeMonth,
-      requestedTickets: tickets,
-      editingCollectionId: editingTicketCollectionId,
-      monthlyTicketsFallback: selectedMonthlyItem?.tickets || 0,
-    });
-    if (!saved) {
+    try {
+      const saved = await saveTicketCollectionsOnline(nextTicketCollections, nextNotes, nextCashMovements, {
+        affiliateId: selectedMonthlyAffiliate.id,
+        month: activeMonth,
+        requestedTickets: tickets,
+        editingCollectionId: editingTicketCollectionId,
+        monthlyTicketsFallback: selectedMonthlyItem?.tickets || 0,
+      });
+      if (!saved) {
+        setTicketCollectionSaveError("El cobro no se guardó online. Revisá el estado y volvé a intentar; el formulario quedó disponible.");
+        return;
+      }
+      setEditingTicketCollectionId(null);
+      setCollectionTickets("1");
+      setCollectionMethod("E");
+      setCollectionTransfer(emptyTransfer());
+      setMobileSelectedAffiliateId("");
+      setMobileNoteText("");
+      pendingTicketCollectionRef.current = null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error inesperado al guardar el cobro.";
+      setCloudStatus(`No se pudieron guardar tickets online: ${message}`);
+      setTicketCollectionSaveError("Ocurrió un error al guardar. No se agregó un cobro local; podés reintentar sin cerrar sesión.");
+    } finally {
+      ticketCollectionSaveInFlightRef.current = false;
       setIsSavingTicketCollection(false);
-      return;
     }
-    setEditingTicketCollectionId(null);
-    setCollectionTickets("1");
-    setCollectionMethod("E");
-    setCollectionTransfer(emptyTransfer());
-    setMobileSelectedAffiliateId("");
-    setMobileNoteText("");
-    setIsSavingTicketCollection(false);
   };
 
   const editTicketCollection = (collection: TicketCollection) => {
@@ -5477,6 +5516,7 @@ const InsuranceCollections = () => {
               </div>
 
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
+              {ticketCollectionSaveError && <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{ticketCollectionSaveError}</p>}
               <Button type="submit" className="mt-4 w-full" variant="command" disabled={isSavingTicketCollection || !selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{isSavingTicketCollection ? "Guardando..." : "Guardar cobro"}</Button>
               {canUseManualSync && <Button type="button" className="mt-2 w-full" variant="outline" onClick={() => saveCloudSnapshot()} disabled={cloudBusy}>Guardar online</Button>}
             </form>
@@ -6408,6 +6448,7 @@ const InsuranceCollections = () => {
               </div>
               {collectionMethod === "T" && <TransferFields value={collectionTransfer} onChange={setCollectionTransfer} />}
               {hasUnansweredRequest && <p className="mt-3 text-sm text-amber-700">Para guardar el cobro, primero respondé el pedido pendiente.</p>}
+              {ticketCollectionSaveError && <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{ticketCollectionSaveError}</p>}
               <div className="mt-4 flex justify-end"><Button type="submit" className="w-full sm:w-auto" variant="command" disabled={isSavingTicketCollection || !selectedMonthlyAffiliate || ticketsToCharge <= 0 || hasUnansweredRequest}>{isSavingTicketCollection ? "Guardando..." : editingTicketCollectionId ? "Guardar cambios" : "Guardar cobro"}</Button></div>
               <TicketCollectionsDetail collections={visibleTicketCollections} affiliatesById={affiliatesById} ticketCollectionValue={ticketCollectionValue} isAdminUser={isAdminUser} onEdit={editTicketCollection} onDelete={deleteTicketCollection} />
             </form>
